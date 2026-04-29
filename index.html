@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard Casa Musa</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial; background:#f5f5f5; padding:20px; }
+    h1 { color:#2f3e46; }
+    .card { background:white; padding:20px; border-radius:12px; margin-bottom:20px; }
+  </style>
+</head>
+
+<body>
+
+<h1>Dashboard Casa Musa</h1>
+
+<div class="card">
+  <h3>Ventas vs Utilidad</h3>
+  <canvas id="ventasChart"></canvas>
+</div>
+
+<div class="card">
+  <h3>Top Productos Nacionales</h3>
+  <ul id="topNacionales"></ul>
+</div>
+
+<script>
+const meses = ["Enero","Febrero","Marzo","Abril"];
+
+const ventas = [523.9,515.5,543.0,511.1];
+const utilidad = [174.5,180.3,199.4,185.0];
+
+new Chart(document.getElementById('ventasChart'), {
+  type: 'bar',
+  data: {
+    labels: meses,
+    datasets: [
+      { label: 'Ventas', data: ventas, backgroundColor: '#38b000' },
+      { label: 'Utilidad', data: utilidad, backgroundColor: '#2f3e46' }
+    ]
+  }
+});
+
+const productos = [
+  {name:"PANEL LED 605X605MM", ventas:42.1},
+  {name:"INTERRUPTOR DIFERENCIAL", ventas:22.2},
+  {name:"CABLE FLEXIBLE 3X2,5MM", ventas:17.2},
+  {name:"FOCO EMBUTIDO 18W", ventas:13.8},
+  {name:"CITOFONO AUDIO", ventas:13.4}
+];
+
+const ul = document.getElementById("topNacionales");
+productos.forEach(p => {
+  const li = document.createElement("li");
+  li.textContent = `${p.name} - $${p.ventas}M`;
+  ul.appendChild(li);
+});
+</script>
+
+</body>
+</html>
