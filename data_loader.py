@@ -444,34 +444,34 @@ def get_resumen():
     dia_actual  = fecha_datos.day
 
     # Venta año acumulada — mismo periodo exacto (hasta dia_actual del mes_actual)
-    venta_ano_26 = df26["TOTAL"].sum()
-    venta_ano_25 = df25[
+    venta_ano_26 = float(df26["TOTAL"].sum())
+    venta_ano_25 = float(df25[
         (df25["MES"] < mes_actual) |
         ((df25["MES"] == mes_actual) & (df25["DIA"] <= dia_actual))
-    ]["TOTAL"].sum()
+    ]["TOTAL"].sum())
 
     # Venta mes actual vs mismo periodo año anterior
-    venta_mes_26   = df26[df26["MES"] == mes_actual]["TOTAL"].sum()
-    venta_mes_25   = df25[(df25["MES"] == mes_actual) & (df25["DIA"] <= dia_actual)]["TOTAL"].sum()
-    utilidad_mes   = df26[df26["MES"] == mes_actual]["UTILIDAD_BRUTA"].sum()
-    mg_pct = round(float(utilidad_mes) / float(venta_mes_26) * 100, 1) if venta_mes_26 > 0 else 0.0
+    venta_mes_26   = float(df26[df26["MES"] == mes_actual]["TOTAL"].sum())
+    venta_mes_25   = float(df25[(df25["MES"] == mes_actual) & (df25["DIA"] <= dia_actual)]["TOTAL"].sum())
+    utilidad_mes   = float(df26[df26["MES"] == mes_actual]["UTILIDAD_BRUTA"].sum())
+    mg_pct = round(utilidad_mes / venta_mes_26 * 100, 1) if venta_mes_26 > 0 else 0.0
 
     # Venta mes anterior — mismos dias (del 1 al dia_actual del mes anterior)
     mes_anterior  = mes_actual - 1 if mes_actual > 1 else 12
-    venta_mes_ant = df26[
+    venta_mes_ant = float(df26[
         (df26["MES"] == mes_anterior) & (df26["DIA"] <= dia_actual)
-    ]["TOTAL"].sum()
+    ]["TOTAL"].sum())
 
     return {
-        "venta_ano_actual":   fmt_clp(venta_ano_26),
-        "venta_ano_anterior": fmt_clp(venta_ano_25),
+        "v_ano_actual":       round(venta_ano_26, 0),
+        "v_ano_anterior":     round(venta_ano_25, 0),
         "var_ano":            var_pct(venta_ano_26, venta_ano_25),
-        "venta_mes_actual":   fmt_clp(venta_mes_26),
-        "venta_mes_anterior": fmt_clp(venta_mes_25),
-        "var_mes":            var_pct(venta_mes_26, venta_mes_25),
-        "venta_mes_ant_nombre": fmt_clp(venta_mes_ant),
-        "var_mes_ant":        var_pct(venta_mes_26, venta_mes_ant),
-        "utilidad_mes":       fmt_clp(utilidad_mes),
+        "v_mes_actual":       round(venta_mes_26, 0),
+        "v_mes_ant_ano":      round(venta_mes_25, 0),
+        "var_mes_ano":        var_pct(venta_mes_26, venta_mes_25),
+        "v_mes_ant_mes":      round(venta_mes_ant, 0),
+        "var_mes_mes":        var_pct(venta_mes_26, venta_mes_ant),
+        "utilidad_mes":       round(utilidad_mes, 0),
         "mg_pct":             mg_pct,
         "mes_nombre":         MESES.get(mes_actual, ""),
         "mes_anterior_nombre": MESES.get(mes_anterior, ""),
