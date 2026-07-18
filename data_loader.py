@@ -617,7 +617,13 @@ def get_ventas_por_sucursal():
 
 
 def get_ventas_por_vendedor():
-    return get_ventas_por_campo("VENDEDOR_RPT")
+    # Se agrupa por VENDEDOR (nombre real de SAP), no por VENDEDOR_RPT.
+    # VENDEDOR_RPT ata la venta a la sucursal "home" del vendedor y manda
+    # el resto a "OTROS" (correcto para el reporte de sucursales, pero
+    # incorrecto aqui: un vendedor que cambio de sucursal o vende bajo
+    # otro codigo de bodega (ej. SI-STK) debe ver el 100% de su venta,
+    # sin importar donde quedo registrada.
+    return get_ventas_por_campo("VENDEDOR")
 
 
 def get_ventas_por_canal():
