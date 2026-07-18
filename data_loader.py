@@ -659,25 +659,25 @@ FERIADOS_CL = {
 
 
 # ══════════════════════════════════════════════════════
-#  DIAS HABILES (lunes a sabado, excluyendo feriados CL)
-#  Las sucursales venden los sabados, asi que cuentan como dia
-#  habil para la proyeccion. Solo domingo y feriados quedan fuera.
+#  DIAS HABILES (lunes a viernes, excluyendo feriados CL)
+#  El sabado suma venta (esta en el numerador de la proyeccion)
+#  pero NO cuenta como dia habil transcurrido (el denominador).
 # ══════════════════════════════════════════════════════
 def _dias_habiles_mes(ano, mes):
-    """Total de dias habiles del mes (L-S, sin feriados)."""
+    """Total de dias habiles del mes (L-V, sin feriados)."""
     _, ultimo_dia = calendar.monthrange(ano, mes)
     return sum(
         1 for d in range(1, ultimo_dia + 1)
-        if date(ano, mes, d).weekday() < 6
+        if date(ano, mes, d).weekday() < 5
         and date(ano, mes, d) not in FERIADOS_CL
     )
 
 
 def _dias_habiles_hasta(ano, mes, dia):
-    """Dias habiles desde el dia 1 hasta 'dia' inclusive (L-S, sin feriados)."""
+    """Dias habiles desde el dia 1 hasta 'dia' inclusive (L-V, sin feriados)."""
     return sum(
         1 for d in range(1, dia + 1)
-        if date(ano, mes, d).weekday() < 6
+        if date(ano, mes, d).weekday() < 5
         and date(ano, mes, d) not in FERIADOS_CL
     )
 
