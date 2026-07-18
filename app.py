@@ -105,28 +105,53 @@ def sucursales():
 @app.route("/vendedores")
 @login_requerido
 def vendedores():
-    return render_template("en_construccion.html",
+    return render_template("vendedores.html",
                            active="vendedores",
-                           session_nombre=session.get("nombre"),
-                           pagina="Por Vendedor")
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/ventas_por_vendedor")
+@login_requerido
+def api_ventas_por_vendedor():
+    try:
+        return jsonify(data_loader.get_ventas_por_vendedor())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/canal")
 @login_requerido
 def canal():
-    return render_template("en_construccion.html",
+    return render_template("canal.html",
                            active="canal",
-                           session_nombre=session.get("nombre"),
-                           pagina="Por Canal de Venta")
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/ventas_por_canal")
+@login_requerido
+def api_ventas_por_canal():
+    try:
+        return jsonify(data_loader.get_ventas_por_canal())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/familia")
 @login_requerido
 def familia():
-    return render_template("en_construccion.html",
+    return render_template("familia.html",
                            active="familia",
-                           session_nombre=session.get("nombre"),
-                           pagina="Por Familia / Marca")
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/ventas_por_familia")
+@login_requerido
+def api_ventas_por_familia():
+    try:
+        agrupar_por = request.args.get("agrupar_por", "familia")
+        return jsonify(data_loader.get_ventas_por_familia(agrupar_por))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/datos")

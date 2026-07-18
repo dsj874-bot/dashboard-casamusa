@@ -533,23 +533,31 @@ def get_ventas_por_mes():
 # ══════════════════════════════════════════════════════
 #  VENTAS POR SUCURSAL
 # ══════════════════════════════════════════════════════
-def get_ventas_por_sucursal():
+def get_ventas_por_campo(campo, orden_map=None, top_n=None):
+    """
+    Agrupa venta mes/año actual vs año anterior por cualquier columna
+    categorica del dataset (SUCURSAL_LOGICA, VENDEDOR_RPT, TIPO_VENTA,
+    FAMILIA, MARCA, etc.). Reusado por sucursales/vendedores/canal/familia.
+
+    orden_map: dict valor->indice para orden fijo (ej. ORDEN_SUCURSALES).
+               Si es None, se ordena por venta del mes actual (desc).
+    top_n:     si se pasa, limita el resultado a los N con mayor venta
+               del mes actual (util para MARCA, que tiene ~50 valores).
+    """
     df25 = get_df_2025()
     df26 = get_df_2026()
     fecha_datos = _fecha_datos()
     mes_actual  = fecha_datos.month
     dia_actual  = fecha_datos.day
 
-    # Todas las sucursales logicas que aparecen en los datos
-    sucursales = df26["SUCURSAL_LOGICA"].dropna().unique().tolist()
-    # Ordenar segun orden canonico, el resto al final
-    orden = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
-    sucursales.sort(key=lambda s: orden.get(s, 99))
+    # Union de valores en ambos años (para no perder de vista algo que
+    # tuvo venta en 2025 y cayo a 0 en 2026, o viceversa)
+    valores = set(df26[campo].dropna().unique()) | set(df25[campo].dropna().unique())
 
     resultado = []
-    for suc in sucursales:
-        s26 = df26[df26["SUCURSAL_LOGICA"] == suc]
-        s25 = df25[df25["SUCURSAL_LOGICA"] == suc]
+    for val in valores:
+        s26 = df26[df26[campo] == val]
+        s25 = df25[df25[campo] == val]
 
         v_ano_26 = float(s26["TOTAL"].sum())
         v_ano_25 = float(s25[
@@ -566,7 +574,7 @@ def get_ventas_por_sucursal():
         mg_mes   = round(util_mes / v_mes_26 * 100, 1) if v_mes_26 > 0 else 0.0
 
         resultado.append({
-            "sucursal":       suc,
+            "nombre":         str(val),
             "v_ano_actual":   round(v_ano_26, 0),
             "v_ano_anterior": round(v_ano_25, 0),
             "var_ano":        var_pct(v_ano_26, v_ano_25),
@@ -577,12 +585,45 @@ def get_ventas_por_sucursal():
             "mg_mes":         mg_mes,
         })
 
+    if orden_map:
+        resultado.sort(key=lambda r: orden_map.get(r["nombre"], 99))
+    else:
+        resultado.sort(key=lambda r: -r["v_mes_actual"])
+
+    if top_n:
+        resultado = resultado[:top_n]
+
     return {
-        "sucursales":   resultado,
+        "items":        resultado,
         "ano_actual":   2026,
         "ano_anterior": 2025,
         "mes_nombre":   MESES.get(mes_actual, ""),
     }
+
+
+def get_ventas_por_sucursal():
+    orden = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
+    data = get_ventas_por_campo("SUCURSAL_LOGICA", orden_map=orden)
+    return {
+        "sucursales":   [{**r, "sucursal": r["nombre"]} for r in data["items"]],
+        "ano_actual":   data["ano_actual"],
+        "ano_anterior": data["ano_anterior"],
+        "mes_nombre":   data["mes_nombre"],
+    }
+
+
+def get_ventas_por_vendedor():
+    return get_ventas_por_campo("VENDEDOR_RPT")
+
+
+def get_ventas_por_canal():
+    return get_ventas_por_campo("TIPO_VENTA")
+
+
+def get_ventas_por_familia(agrupar_por="familia"):
+    campo = "MARCA" if agrupar_por == "marca" else "FAMILIA"
+    top_n = 30 if campo == "MARCA" else None
+    return get_ventas_por_campo(campo, top_n=top_n)
 
 
 # ══════════════════════════════════════════════════════
@@ -610,7 +651,8 @@ FERIADOS_CL = {
     date(2026,  5,  1),  # Día del Trabajo
     date(2026,  5, 21),  # Glorias Navales
     date(2026,  6, 29),  # San Pedro y San Pablo
-    date(2026,  7, 16),  # Virgen del Carmen    date(2026,  8, 15),  # Asuncion de la Virgen
+    date(2026,  7, 16),  # Virgen del Carmen
+    date(2026,  8, 15),  # Asuncion de la Virgen
     date(2026,  9, 18),  # Independencia Nacional
     date(2026,  9, 19),  # Glorias del Ejercito
     date(2026, 10, 12),  # Dia de la Raza
