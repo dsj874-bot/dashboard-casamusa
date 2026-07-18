@@ -15,8 +15,9 @@
       --text:      #f1f5f9;
       --muted:     #475569;
       --muted2:    #64748b;
-      --red:       #22a347;
-      --red-light: #86efac;
+      --accent:    #22a347;
+      --red:       #ef4444;
+      --red-light: #fca5a5;
       --green:     #10b981;
       --amber:     #f59e0b;
       --blue:      #3b82f6;
@@ -104,7 +105,7 @@
       color: #fff;
       font-weight: 600;
     }
-    .nav-item.active .nav-icon { color: var(--red); }
+    .nav-item.active .nav-icon { color: var(--accent); }
     .nav-icon {
       font-size: 16px;
       width: 20px;
@@ -222,7 +223,7 @@
       padding: 22px 24px;
       transition: border-color 0.2s;
     }
-    .kpi-card:hover { border-color: var(--red); }
+    .kpi-card:hover { border-color: var(--accent); }
     .kpi-label {
       font-size: 11px;
       font-weight: 600;
@@ -415,10 +416,10 @@
       outline: none;
       cursor: pointer;
     }
-    .filter-select:focus, .filter-input:focus { border-color: var(--red); }
+    .filter-select:focus, .filter-input:focus { border-color: var(--accent); }
     .btn-filter {
       padding: 8px 18px;
-      background: var(--red);
+      background: var(--accent);
       color: #fff;
       border: none;
       border-radius: 8px;
