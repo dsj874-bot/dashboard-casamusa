@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+
+{% block title %}Vta Mes Mg Acum{% endblock %}
+{% block page_title %}Venta Mensual y Margen Acumulado{% endblock %}
+{% block page_subtitle %}Evolucion mensual de ventas y margen por categoria{% endblock %}
+
+{% block extra_head %}
+<style>
+/* ── Layout dos paneles ─────────────────────────── */
+.vma-layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media(max-width:900px){ .vma-layout { grid-template-columns:1fr; } }
+
+/* ── Panel filtros ──────────────────────────────── */
+.filter-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px 14px;
+  position: sticky;
+  top: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fp-label {
+  font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--muted); margin-bottom: 3px;
+}
+.fp-select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+}
+.fp-select:focus { border-color: var(--blue); }
+.fp-divider { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+.btn-apply {
+  width: 100%; padding: 8px;
+  background: var(--blue); color: #fff;
+  border: none; border-radius: 7px;
+  font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: background 0.15s;
+}
+.btn-apply:hover { background: #2563eb; }
+
+/* ── KPI grupos ─────────────────────────────────── */
+.kpi-3col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+@media(max-width:900px){ .kpi-3col { grid-template-columns:1fr 1fr; } }
+.kpi-group {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.kpi-group-ttl {
+  font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--muted); border-bottom: 1px solid var(--border);
+  padding-bottom: 8px; margin-bottom: 10px;
+}
+.kpi-inner { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.kpi-mini-label { font-size: 9px; color: var(--muted); margin-bottom: 4px; }
+.kpi-mini-val   { font-size: 15px; font-weight: 800; color: var(--text); }
+.kpi-mini-var   { font-size: 11px; margin-top: 3px; }
+
+/* ── Tablas ─────────────────────────────────────── */
+.tbl-sm thead th { font-size: 10px; padding: 7px 10px; }
+.tbl-sm tbody td { font-size: 11.5px; padding: 6px 10px; white-space: nowrap; }
+.tbl-sm .col-cat { font-weight: 600; color: var(--text); min-width: 120px; }
+.tbl-sm .num     { text-align: right; }
+.tbl-sm .total-row td { background: rgba(245,158,11,0.08); font-weight: 700; color: #f59e0b; }
+
+/* ── Variacion colores ──────────────────────────── */
+.vpos { color: #22c55e; }
+.vneg { color: #ef4444; }
+.vneu { color: var(--muted); }
+
+/* ── Contenedor principal ───────────────────────── */
+.main-area { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+
+/* ── Seccion titulo ─────────────────────────────── */
+.sec-title {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+}
+.sec-title::after { content:''; flex:1; height:1px; background: var(--border); }
+
+/* ── Grid doble tabla ───────────────────────────── */
+.dual-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: start;
+}
+@media(max-width:1100px){ .dual-grid { grid-template-columns:1fr; } }
+
+/* ── Tabla acumulada fija ───────────────────────── */
+.tbl-acum-wrap { width: 360px; flex-shrink: 0; }
+@media(max-width:1100px){ .tbl-acum-wrap { width: 100%; } }
+
+/* ── Barra margen ───────────────────────────────── */
+.mg-bar-wrap { display: flex; align-items: center; gap: 6px; }
+.mg-bar-bg   { flex:1; background: #1e2a3a; border-radius:3px; height:5px; overflow:hidden; min-width:40px; }
+.mg-bar-fill { height:5px; border-radius:3px; background: #10b981; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="vma-layout">
+
+  <!-- ══ PANEL FILTROS ══ -->
+  <aside class="filter-panel" id="filter-panel">
+    <div>
+      <div class="fp-label">Categoria Parametro</div>
+      <select class="fp-select" id="fp-categoria" onchange="aplicar()">
+        <option value="marca">Marca</option>
+      </select>
+    </div>
+    <hr class="fp-divider">
+    <div>
+      <div class="fp-label">Sucursal</div>
+      <select class="fp-select" id="fp-sucursal">
+        <option value="">Todas</option>
+      </select>
+    </div>
+    <div>
+      <div class="fp-label">Vendedor</div>
+      <select class="fp-select" id="fp-vendedor">
+        <option value="">Todos</option>
+      </select>
+    </div>
+    <div>
+      <div class="fp-label">Familia</div>
+      <select class="fp-select" id="fp-familia">
+        <option value="">Todas</option>
+      </select>
+    </div>
+    <div>
+      <div class="fp-label">Marca</div>
+      <select class="fp-select" id="fp-marca">
+        <option value="">Todas</option>
+      </select>
+    </div>
+    <div>
+      <div class="fp-label">Subfamilia</div>
+      <select class="fp-select" id="fp-subfamilia">
+        <option value="">Todas</option>
+      </select>
+    </div>
+    <div>
+      <div class="fp-label">Tipo Venta</div>
+      <select class="fp-select" id="fp-tipo_venta">
+        <option value="">Todos</option>
+      </select>
+    </div>
+    <div>
+      <div class="fp-label">Procedencia</div>
+      <select class="fp-select" id="fp-procedencia">
+        <option value="">Todas</option>
+      </select>
+    </div>
+    <div>
+      <div class="fp-label">Cond. Pago</div>
+      <select class="fp-select" id="fp-cond_pago">
+        <option value="">Todas</option>
+      </select>
+    </div>
+    <hr class="fp-divider">
+    <button class="btn-apply" onclick="aplicar()">Aplicar</button>
+  </aside>
+
+  <!-- ══ AREA PRINCIPAL ══ -->
+  <div class="main-area">
+
+    <!-- KPIs -->
+    <div class="kpi-3col" id="kpi-area">
+      <div class="kpi-group" style="grid-column:1/-1"><div class="loading">Cargando...</div></div>
+    </div>
+
+    <!-- Tablas dual -->
+    <div class="sec-title" id="sec-title-cat">Venta Mensual</div>
+    <div class="dual-grid">
+
+      <!-- Tabla mensual -->
+      <div class="table-card" style="margin-bottom:0">
+        <div class="table-wrap">
+          <table class="tbl-sm" id="tbl-mensual">
+            <thead><tr><td class="loading" colspan="14">Cargando...</td></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tabla acumulada -->
+      <div class="tbl-acum-wrap">
+        <div class="table-card" style="margin-bottom:0">
+          <div class="table-wrap">
+            <table class="tbl-sm" id="tbl-acum">
+              <thead>
+                <tr>
+                  <th>Categoria</th>
+                  <th class="num">Vta Acum</th>
+                  <th class="num">Mg Acum</th>
+                  <th class="num">% Mg</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-acum">
+                <tr><td colspan="4" class="loading">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /dual-grid -->
+
+  </div><!-- /main-area -->
+</div><!-- /vma-layout -->
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// ── Formato ────────────────────────────────────────────────
+const fmtM   = v => (v == null || v === 0) ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
+const fmtPct = (v, pos=true) => {
+  if(v == null) return '<span class="vneu">—</span>';
+  const cls   = v >= 0 ? (pos ? 'vpos' : 'vneg') : (pos ? 'vneg' : 'vpos');
+  const arrow = v >= 0 ? '▲' : '▼';
+  return `<span class="${cls}">${arrow} ${Math.abs(v).toFixed(1)}%</span>`;
+};
+
+// ── Estado ────────────────────────────────────────────────
+let _filtrosDisp = {};
+
+// ── Carga filtros ─────────────────────────────────────────
+async function cargarFiltros() {
+  const r = await fetch('/api/filtros_vta_acum');
+  const d = await r.json();
+  _filtrosDisp = d;
+
+  // Categorias
+  const selCat = document.getElementById('fp-categoria');
+  selCat.innerHTML = '';
+  for(const [k, label] of Object.entries(d.categorias || {})){
+    const opt = document.createElement('option');
+    opt.value = k; opt.textContent = label;
+    if(k === 'marca') opt.selected = true;
+    selCat.appendChild(opt);
+  }
+
+  // Filtros laterales
+  const mapa = {
+    sucursal:    'fp-sucursal',
+    vendedor:    'fp-vendedor',
+    familia:     'fp-familia',
+    marca:       'fp-marca',
+    subfamilia:  'fp-subfamilia',
+    tipo_venta:  'fp-tipo_venta',
+    procedencia: 'fp-procedencia',
+    cond_pago:   'fp-cond_pago',
+  };
+  for(const [fk, elId] of Object.entries(mapa)){
+    const el = document.getElementById(elId);
+    if(!el) continue;
+    const vals = (d.filtros || {})[fk] || [];
+    el.innerHTML = `<option value="">Todos/Todas</option>`;
+    vals.forEach(v => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = v;
+      el.appendChild(o);
+    });
+  }
+
+  aplicar();
+}
+
+// ── Recoger filtros ───────────────────────────────────────
+function getFiltros() {
+  const g = id => document.getElementById(id)?.value || '';
+  return {
+    categoria:   g('fp-categoria'),
+    sucursal:    g('fp-sucursal'),
+    vendedor:    g('fp-vendedor'),
+    familia:     g('fp-familia'),
+    marca:       g('fp-marca'),
+    subfamilia:  g('fp-subfamilia'),
+    tipo_venta:  g('fp-tipo_venta'),
+    procedencia: g('fp-procedencia'),
+    cond_pago:   g('fp-cond_pago'),
+  };
+}
+
+// ── Aplicar ───────────────────────────────────────────────
+async function aplicar() {
+  document.getElementById('kpi-area').innerHTML =
+    '<div class="kpi-group" style="grid-column:1/-1"><div class="loading">Cargando...</div></div>';
+
+  const r = await fetch('/api/vta_mes_mg', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(getFiltros()),
+  });
+  const d = await r.json();
+  if(d.error){ alert('Error: ' + d.error); return; }
+
+  renderKPIs(d.kpis);
+  renderTablaMensual(d);
+  renderTablaAcum(d);
+
+  const lbl = d.categoria_label || 'Categoria';
+  document.getElementById('sec-title-cat').textContent = 'Venta Mensual por ' + lbl;
+}
+
+// ── KPIs ──────────────────────────────────────────────────
+function renderKPIs(k) {
+  const grupo = (titulo, cols) => `
+    <div class="kpi-group">
+      <div class="kpi-group-ttl">${titulo}</div>
+      <div class="kpi-inner">
+        ${cols.map(c => `
+          <div>
+            <div class="kpi-mini-label">${c.label}</div>
+            <div class="kpi-mini-val">${fmtM(c.val)}</div>
+            ${c.var != null ? `<div class="kpi-mini-var">${fmtPct(c.var)}</div>` : ''}
+          </div>`).join('')}
+      </div>
+    </div>`;
+
+  document.getElementById('kpi-area').innerHTML =
+    grupo(`Vta ${k.ano_actual} / ${k.ano_anterior}`, [
+      {label: `Venta ${k.ano_actual}`,   val: k.v_ano_actual,  var: null},
+      {label: `Venta ${k.ano_anterior}`, val: k.v_ano_anterior,var: null},
+      {label: 'Var Acum',                val: null,             var: k.var_ano},
+    ]) +
+    grupo(`${k.mes_nombre} ${k.ano_actual} / ${k.mes_nombre} ${k.ano_anterior}`, [
+      {label: `${k.mes_nombre} ${k.ano_actual}`,   val: k.v_mes_actual,  var: null},
+      {label: `${k.mes_nombre} ${k.ano_anterior}`, val: k.v_mes_ant_ano, var: null},
+      {label: 'Var vs Año Ant',                    val: null,             var: k.var_mes_ano},
+    ]) +
+    grupo(`${k.mes_nombre} ${k.ano_actual} / ${k.mes_anterior_nombre} ${k.ano_actual}`, [
+      {label: `${k.mes_nombre} ${k.ano_actual}`,       val: k.v_mes_actual,  var: null},
+      {label: `${k.mes_anterior_nombre} ${k.ano_actual}`, val: k.v_mes_ant_mes, var: null},
+      {label: 'Var vs Mes Ant',                         val: null,             var: k.var_mes_mes},
+    ]);
+}
+
+// ── Tabla mensual ─────────────────────────────────────────
+function renderTablaMensual(d) {
+  const meses  = d.meses         || [];
+  const nommes = d.nombres_meses || [];
+  const tbl    = document.getElementById('tbl-mensual');
+
+  // Encabezado
+  let th = '<tr><th>Categoria Parametro</th>';
+  nommes.forEach(nm => { th += `<th class="num">${nm}.</th>`; });
+  th += '</tr>';
+  tbl.querySelector('thead').innerHTML = th;
+
+  // Fila total
+  const totRow = d.total_mensual || {};
+  let html = `<tr class="total-row"><td class="col-cat">Total general</td>`;
+  meses.forEach(m => { html += `<td class="num">${fmtM(totRow['m'+m])}</td>`; });
+  html += '</tr>';
+
+  // Filas detalle
+  (d.filas_mensual || []).forEach(f => {
+    html += `<tr><td class="col-cat">${f.categoria}</td>`;
+    meses.forEach(m => { html += `<td class="num">${fmtM(f['m'+m])}</td>`; });
+    html += '</tr>';
+  });
+
+  tbl.querySelector('tbody').innerHTML = html;
+}
+
+// ── Tabla acumulada ───────────────────────────────────────
+function renderTablaAcum(d) {
+  const ta  = d.total_acum  || {};
+  const MAX_PCT = 80;
+
+  const fila = (f, isTotal) => {
+    const pct    = f.pct_mg || 0;
+    const barW   = Math.min(pct / MAX_PCT * 100, 100).toFixed(1);
+    const cls    = isTotal ? 'total-row' : '';
+    return `<tr class="${cls}">
+      <td class="col-cat">${f.categoria}</td>
+      <td class="num">${fmtM(f.vta_acum)}</td>
+      <td class="num">${fmtM(f.mg_acum)}</td>
+      <td>
+        <div class="mg-bar-wrap">
+          <div class="mg-bar-bg"><div class="mg-bar-fill" style="width:${barW}%"></div></div>
+          <span style="font-size:11px;color:var(--text);min-width:36px">${pct.toFixed(1)}%</span>
+        </div>
+      </td>
+    </tr>`;
+  };
+
+  let html = fila(ta, true);
+  (d.filas_acum || []).forEach(f => { html += fila(f, false); });
+  document.getElementById('tbody-acum').innerHTML = html;
+}
+
+// ── Init ──────────────────────────────────────────────────
+cargarFiltros();
+</script>
+{% endblock %}

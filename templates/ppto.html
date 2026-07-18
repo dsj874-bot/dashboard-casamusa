@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+
+{% block title %}Seguimiento Ppto{% endblock %}
+{% block page_title %}Seguimiento Presupuesto{% endblock %}
+{% block page_subtitle %}Venta acumulada vs presupuesto y año anterior{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  /* ── Tabla compacta ──────────────────────────── */
+  .tbl-ppto thead th { font-size: 10.5px; padding: 8px 12px; }
+  .tbl-ppto tbody td { font-size: 12.5px; padding: 9px 12px; }
+
+  /* ── Variación con color ─────────────────────── */
+  .var-pos { color: #22c55e; }   /* verde = crece */
+  .var-neg { color: #ef4444; }   /* rojo  = cae   */
+  .var-neu { color: #64748b; }
+
+  /* ── Barra progreso ppto ─────────────────────── */
+  .bar-wrap { display:flex; align-items:center; gap:8px; }
+  .bar-bg   { flex:1; background:#1e2a3a; border-radius:4px; height:6px; overflow:hidden; min-width:60px; }
+  .bar-fill { height:6px; border-radius:4px; background:#3b82f6; transition:width 0.4s; }
+  .bar-fill.over { background:#ef4444; }
+
+  /* ── Tabla mensual 2025 ──────────────────────── */
+  .tbl-mensual thead th { font-size: 10px; padding: 6px 10px; }
+  .tbl-mensual tbody td { font-size: 11.5px; padding: 6px 10px; }
+  .tbl-mensual .col-suc { font-weight:600; color:#f1f5f9; white-space:nowrap; }
+  .tbl-mensual .mes-cell { color:#94a3b8; }
+  .tbl-mensual .mes-cell.has-data { color:#f1f5f9; }
+  .tbl-mensual .total-row td { background:rgba(59,130,246,0.08); font-weight:700; color:#f59e0b; }
+
+  /* ── Chart card ──────────────────────────────── */
+  .chart-container { position:relative; height:340px; }
+
+  /* ── KPI groups ──────────────────────────────── */
+  .kpi-group-label {
+    font-size:10px; font-weight:700; text-transform:uppercase;
+    letter-spacing:1px; color:#475569; padding:0 4px 6px;
+    border-bottom:1px solid #1e2a3a; margin-bottom:12px;
+  }
+  .kpi-section { display:flex; flex-direction:column; gap:4px; }
+  .kpi-group-wrap {
+    display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:24px;
+  }
+  @media(max-width:900px){.kpi-group-wrap{grid-template-columns:1fr 1fr;}}
+
+  /* ── Sección título ──────────────────────────── */
+  .section-title {
+    font-size:14px; font-weight:700; color:#f1f5f9;
+    margin-bottom:16px; display:flex; align-items:center; gap:8px;
+  }
+  .section-title::after {
+    content:''; flex:1; height:1px; background:#1e2a3a;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ══════════════════════════════════════════════
+     KPIs
+══════════════════════════════════════════════ -->
+<div class="kpi-group-wrap" id="kpi-area">
+  <div class="loading" style="grid-column:1/-1">Cargando datos…</div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     TABLA COMPARATIVA ACUMULADA
+══════════════════════════════════════════════ -->
+<div class="section-title">Comparativa Venta Acumulada</div>
+<div class="table-card" style="margin-bottom:28px;">
+  <div class="table-wrap">
+    <table class="tbl-ppto">
+      <thead>
+        <tr>
+          <th>Sucursal</th>
+          <th class="text-right">Vta Acum 2026</th>
+          <th class="text-right">Vta Acum 2025</th>
+          <th class="text-right">% Crec.</th>
+          <th class="text-right">Ppto Anual</th>
+          <th class="text-right">Ppto Prorrateado</th>
+          <th>Avance vs Ppto</th>
+          <th class="text-right">Proyección Anual</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-acum">
+        <tr><td colspan="8" class="loading">Cargando…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     GRÁFICO COMPARATIVA POR MES
+══════════════════════════════════════════════ -->
+<div class="section-title">Comparativa por Mes</div>
+<div class="chart-card" style="margin-bottom:28px;">
+  <div class="chart-container">
+    <canvas id="chart-mensual"></canvas>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     TABLA MENSUAL POR SUCURSAL
+══════════════════════════════════════════════ -->
+<div class="section-title">Detalle Mensual por Sucursal</div>
+<div class="table-card" id="tabla-mensual-wrap" style="margin-bottom:28px;">
+  <!-- year tabs -->
+  <div style="display:flex;gap:8px;padding:14px 20px;border-bottom:1px solid #1e2a3a;">
+    <button class="btn-tab active" id="tab-26" onclick="switchTab(26)">2026</button>
+    <button class="btn-tab"        id="tab-25" onclick="switchTab(25)">2025</button>
+  </div>
+  <div class="table-wrap">
+    <table class="tbl-mensual">
+      <thead id="thead-mensual"></thead>
+      <tbody id="tbody-mensual">
+        <tr><td colspan="14" class="loading">Cargando…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+  .btn-tab {
+    padding:6px 16px; border-radius:8px; font-size:12px; font-weight:600;
+    background:transparent; border:1px solid #1e2a3a; color:#64748b; cursor:pointer;
+    transition:all 0.15s;
+  }
+  .btn-tab.active { background:rgba(59,130,246,0.15); border-color:#3b82f6; color:#93c5fd; }
+  .btn-tab:hover:not(.active) { border-color:#475569; color:#f1f5f9; }
+</style>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// ── Formato de números ─────────────────────────────────
+const fmt  = v => v == null ? '—' : new Intl.NumberFormat('es-CL',{style:'currency',currency:'CLP',maximumFractionDigits:0}).format(v);
+const fmtM = v => v == null || v === 0 ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
+const fmtPct = (v, positiveIsGood=true) => {
+  if(v == null) return '<span class="var-neu">—</span>';
+  const cls = v >= 0
+    ? (positiveIsGood ? 'var-pos' : 'var-neg')
+    : (positiveIsGood ? 'var-neg' : 'var-pos');
+  const arrow = v >= 0 ? '▲' : '▼';
+  return `<span class="${cls}">${arrow} ${Math.abs(v).toFixed(1)}%</span>`;
+};
+
+// ── Datos globales ─────────────────────────────────────
+let _data = null;
+let _tabActivo = 26;
+
+// ── Carga inicial ──────────────────────────────────────
+async function cargar() {
+  try {
+    const r = await fetch('/api/ppto', {method:'GET'});
+    _data   = await r.json();
+    if(_data.error) throw new Error(_data.error);
+    renderKPIs(_data.kpis);
+    renderTablaAcum(_data.tabla_acum);
+    renderChart(_data);
+    renderTablaMensual(_data, _tabActivo);
+  } catch(e) {
+    document.getElementById('kpi-area').innerHTML =
+      `<div style="color:#ef4444;grid-column:1/-1">Error: ${e.message}</div>`;
+  }
+}
+
+// ── KPIs ───────────────────────────────────────────────
+function renderKPIs(k) {
+  const card = (label, val, sub, pct, positiveIsGood=true) => `
+    <div class="kpi-card">
+      <div class="kpi-label">${label}</div>
+      <div class="kpi-value" style="font-size:22px">${fmtM(val)}</div>
+      <div class="kpi-change">${fmtPct(pct, positiveIsGood)}&nbsp;<span style="color:#64748b">${sub}</span></div>
+    </div>`;
+
+  document.getElementById('kpi-area').innerHTML = `
+    <div class="chart-card" style="padding:16px 20px;">
+      <div class="kpi-group-label">Acumulado ${k.ano_actual} vs ${k.ano_anterior}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+        ${card('Vta Acum '+k.ano_actual, k.v_ano_actual,  'vs '+k.ano_anterior, k.var_ano)}
+        ${card('Vta Acum '+k.ano_anterior, k.v_ano_anterior, '', null)}
+        ${card('Variación Acum', null,  '', k.var_ano)}
+      </div>
+    </div>
+    <div class="chart-card" style="padding:16px 20px;">
+      <div class="kpi-group-label">${k.mes_nombre} ${k.ano_actual} vs ${k.ano_anterior}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+        ${card('Vta Mes '+k.ano_actual, k.v_mes_actual, 'vs '+k.ano_anterior, k.var_mes_ano)}
+        ${card('Vta Mes '+k.ano_anterior, k.v_mes_ant_ano, '', null)}
+        ${card('Variación Mes', null, '', k.var_mes_ano)}
+      </div>
+    </div>
+    <div class="chart-card" style="padding:16px 20px;">
+      <div class="kpi-group-label">Días hábiles</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+        ${card('Días transcurridos', null, 'de '+k.dh_total+' hábiles', null)}
+        <div class="kpi-card">
+          <div class="kpi-label">Datos al</div>
+          <div class="kpi-value" style="font-size:18px">${k.fecha_datos}</div>
+          <div class="kpi-change" style="color:#64748b">${k.dh_transcurridos} días hábiles transcurridos</div>
+        </div>
+        ${card('Mes Anterior '+k.ano_actual, k.v_mes_ant_mes, 'vs mismo período', k.var_mes_mes)}
+      </div>
+    </div>
+  `;
+}
+
+// ── Tabla acumulada ────────────────────────────────────
+function renderTablaAcum(filas) {
+  const tbody = document.getElementById('tbody-acum');
+  if(!filas || !filas.length){ tbody.innerHTML='<tr><td colspan="8" class="text-center text-muted">Sin datos</td></tr>'; return; }
+
+  // Total general
+  const tot26  = filas.reduce((a,f)=>a+f.vta_acum,0);
+  const tot25  = filas.reduce((a,f)=>a+f.vta_acum_ant,0);
+  const totPpto= filas.reduce((a,f)=>a+f.ppto_anual,0);
+  const totYtd = filas.reduce((a,f)=>a+f.ppto_ytd,0);
+  const totProy= filas.reduce((a,f)=>a+f.proyeccion,0);
+  const varPct = tot25>0 ? ((tot26/tot25)-1)*100 : null;
+  const varPptoV = totYtd>0 ? ((tot26/totYtd)-1)*100 : null;
+  const pctBar = totYtd>0 ? Math.min((tot26/totYtd)*100, 200) : 0;
+  const over   = tot26 > totYtd;
+
+  let html = `<tr class="row-total">
+    <td class="fw-bold">TOTAL EMPRESA</td>
+    <td class="text-right fw-bold">${fmtM(tot26)}</td>
+    <td class="text-right">${fmtM(tot25)}</td>
+    <td class="text-right">${fmtPct(varPct)}</td>
+    <td class="text-right">${fmtM(totPpto)}</td>
+    <td class="text-right">${fmtM(totYtd)}</td>
+    <td>${barraHtml(pctBar, over)}</td>
+    <td class="text-right">${fmtM(totProy)}</td>
+  </tr>`;
+
+  filas.forEach(f => {
+    const pb   = f.ppto_ytd > 0 ? Math.min((f.vta_acum/f.ppto_ytd)*100,200) : 0;
+    const ov   = f.vta_acum > f.ppto_ytd;
+    html += `<tr>
+      <td class="fw-bold">${f.sucursal}</td>
+      <td class="text-right">${fmtM(f.vta_acum)}</td>
+      <td class="text-right">${fmtM(f.vta_acum_ant)}</td>
+      <td class="text-right">${fmtPct(f.pct_crec)}</td>
+      <td class="text-right">${fmtM(f.ppto_anual)}</td>
+      <td class="text-right">${fmtM(f.ppto_ytd)}</td>
+      <td>${barraHtml(pb, ov)}</td>
+      <td class="text-right">${fmtM(f.proyeccion)}</td>
+    </tr>`;
+  });
+
+  tbody.innerHTML = html;
+}
+
+function barraHtml(pct, over) {
+  const w = Math.min(pct, 100);
+  return `<div class="bar-wrap">
+    <div class="bar-bg"><div class="bar-fill${over?' over':''}" style="width:${w}%"></div></div>
+    <span style="font-size:11px;color:${over?'#ef4444':'#94a3b8'};min-width:36px">${pct.toFixed(0)}%</span>
+  </div>`;
+}
+
+// ── Gráfico mensual ────────────────────────────────────
+let _chart = null;
+function renderChart(data) {
+  const meses  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const t26    = data.totales_26.map(v => v);
+  const t25    = data.totales_25.map(v => v);
+  const ppto   = data.ppto_mensual.map(v => v);
+
+  const ctx = document.getElementById('chart-mensual').getContext('2d');
+  if(_chart) _chart.destroy();
+
+  _chart = new Chart(ctx, {
+    data: {
+      labels: meses,
+      datasets: [
+        {
+          type: 'bar',
+          label: '2026',
+          data: t26,
+          backgroundColor: 'rgba(59,130,246,0.6)',
+          borderColor: '#3b82f6',
+          borderWidth: 1,
+          borderRadius: 4,
+          order: 2,
+        },
+        {
+          type: 'bar',
+          label: '2025',
+          data: t25,
+          backgroundColor: 'rgba(100,116,139,0.35)',
+          borderColor: '#64748b',
+          borderWidth: 1,
+          borderRadius: 4,
+          order: 3,
+        },
+        {
+          type: 'line',
+          label: 'Ppto/mes',
+          data: ppto,
+          borderColor: '#f59e0b',
+          backgroundColor: 'rgba(245,158,11,0.1)',
+          borderWidth: 2,
+          pointRadius: 3,
+          tension: 0.2,
+          order: 1,
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: {
+          labels: { color:'#94a3b8', font:{size:12} }
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: $${Math.round(ctx.parsed.y/1e6)}M`
+          }
+        }
+      },
+      scales: {
+        x: { ticks:{color:'#64748b'}, grid:{color:'#1e2a3a'} },
+        y: {
+          ticks:{ color:'#64748b', callback: v=>'$'+Math.round(v/1e6)+'M' },
+          grid:{ color:'#1e2a3a' }
+        }
+      }
+    }
+  });
+}
+
+// ── Tabla mensual por sucursal ─────────────────────────
+function switchTab(year) {
+  _tabActivo = year;
+  document.getElementById('tab-26').classList.toggle('active', year===26);
+  document.getElementById('tab-25').classList.toggle('active', year===25);
+  if(_data) renderTablaMensual(_data, year);
+}
+
+function renderTablaMensual(data, year) {
+  const mNombres = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const fuente   = year===26 ? data.mensual_26 : data.mensual_25;
+  const totales  = year===26 ? data.totales_26  : data.totales_25;
+  const suc      = data.sucursales;
+
+  // Encabezado
+  document.getElementById('thead-mensual').innerHTML = `<tr>
+    <th>Sucursal</th>
+    ${mNombres.map(m=>`<th class="text-right">${m}</th>`).join('')}
+    <th class="text-right">Total</th>
+  </tr>`;
+
+  // Fila total empresa
+  const totalAnual = totales.reduce((a,v)=>a+v,0);
+  let html = `<tr class="total-row">
+    <td class="col-suc">TOTAL</td>
+    ${totales.map((v,i)=>`<td class="text-right ${v>0?'has-data':''} mes-cell">${fmtM(v)}</td>`).join('')}
+    <td class="text-right fw-bold">${fmtM(totalAnual)}</td>
+  </tr>`;
+
+  // Filas por sucursal
+  suc.forEach(s => {
+    const meses = fuente[s] || Array(12).fill(0);
+    const total = meses.reduce((a,v)=>a+v,0);
+    html += `<tr>
+      <td class="col-suc">${s}</td>
+      ${meses.map(v=>`<td class="text-right mes-cell ${v>0?'has-data':''}">${fmtM(v)}</td>`).join('')}
+      <td class="text-right fw-bold">${fmtM(total)}</td>
+    </tr>`;
+  });
+
+  document.getElementById('tbody-mensual').innerHTML = html;
+}
+
+// ── Arrancar ───────────────────────────────────────────
+cargar();
+</script>
+{% endblock %}

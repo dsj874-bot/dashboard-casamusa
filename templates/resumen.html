@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Resumen General{% endblock %}
+{% block page_title %}Resumen General{% endblock %}
+{% block page_subtitle %}Vision global del negocio — año actual vs año anterior{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPIs -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Venta Año Actual</div>
+    <div class="kpi-value" id="kpi-venta-actual" style="color:#f1f5f9">—</div>
+    <div class="kpi-change" id="kpi-var-ano">cargando...</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Venta Año Anterior</div>
+    <div class="kpi-value" id="kpi-venta-anterior" style="color:#475569">—</div>
+    <div class="kpi-change text-muted" id="kpi-periodo-ant">Mismo período</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Venta Mes Actual</div>
+    <div class="kpi-value" id="kpi-mes-actual" style="color:#10b981">—</div>
+    <div class="kpi-change" id="kpi-var-mes">cargando...</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Margen Bruto Mes</div>
+    <div class="kpi-value" id="kpi-utilidad" style="color:#f59e0b">—</div>
+    <div class="kpi-change" id="kpi-mg-pct">cargando...</div>
+  </div>
+</div>
+
+<!-- Grafico mensual -->
+<div class="chart-card">
+  <div class="chart-card-title" id="chart-titulo">Ventas Mensuales — comparativo</div>
+  <div class="chart-card-sub">Venta neta mensual año actual vs año anterior (en millones de pesos)</div>
+  <canvas id="chartMensual" height="100"></canvas>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+Chart.defaults.color       = "#64748b";
+Chart.defaults.borderColor = "#1e2a3a";
+Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
+
+// ── KPIs ─────────────────────────────────────────────
+fetch("/api/resumen")
+  .then(r => r.json())
+  .then(d => {
+    document.getElementById("kpi-venta-actual").textContent   = d.venta_ano_actual;
+    document.getElementById("kpi-venta-anterior").textContent = d.venta_ano_anterior;
+    document.getElementById("kpi-utilidad").textContent       = d.utilidad_mes;
+    document.getElementById("kpi-periodo-ant").textContent    = "Mismo periodo " + d.ano_anterior;
+    document.getElementById("kpi-mg-pct").textContent         = "Margen " + d.mg_pct + "% — " + d.mes_nombre + " " + d.ano_actual;
+
+    const elVarAno = document.getElementById("kpi-var-ano");
+    elVarAno.textContent = (d.var_ano >= 0 ? "▲ " : "▼ ") + Math.abs(d.var_ano) + "% vs " + d.ano_anterior;
+    elVarAno.className   = "kpi-change " + (d.var_ano >= 0 ? "up" : "down");
+
+    const elVarMes = document.getElementById("kpi-var-mes");
+    document.getElementById("kpi-mes-actual").textContent = d.venta_mes_actual;
+    elVarMes.textContent = (d.var_mes >= 0 ? "▲ " : "▼ ") + Math.abs(d.var_mes) + "% vs " + d.mes_nombre + " " + d.ano_anterior;
+    elVarMes.className   = "kpi-change " + (d.var_mes >= 0 ? "up" : "down");
+  })
+  .catch(err => console.error("Error KPIs:", err));
+
+// ── Grafico mensual ───────────────────────────────────
+fetch("/api/ventas_por_mes")
+  .then(r => r.json())
+  .then(d => {
+    document.getElementById("chart-titulo").textContent =
+      "Ventas Mensuales — " + d.ano_actual + " vs " + d.ano_anterior;
+
+    new Chart(document.getElementById("chartMensual"), {
+      type: "bar",
+      data: {
+        labels: d.meses.map(m => m.mes_nombre),
+        datasets: [
+          {
+            label: String(d.ano_actual),
+            data: d.meses.map(m => Math.round(m.actual / 1000000)),
+            backgroundColor: "rgba(34,163,71,0.75)",
+            borderColor: "#22a347",
+            borderWidth: 1,
+            borderRadius: 5,
+          },
+          {
+            label: String(d.ano_anterior),
+            data: d.meses.map(m => Math.round(m.anterior / 1000000)),
+            backgroundColor: "rgba(100,116,139,0.35)",
+            borderColor: "#64748b",
+            borderWidth: 1,
+            borderRadius: 5,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: "top" },
+          tooltip: {
+            callbacks: {
+              label: ctx => " $" + ctx.raw.toLocaleString("es-CL") + " MM"
+            }
+          }
+        },
+        scales: {
+          y: {
+            ticks: { callback: v => "$" + v + " MM" },
+            grid:  { color: "#1e2a3a" }
+          },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+  })
+  .catch(err => console.error("Error grafico:", err));
+</script>
+{% endblock %}

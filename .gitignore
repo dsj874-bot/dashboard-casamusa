@@ -1,0 +1,13 @@
+# Datos (pesados, cambian a diario, no se versionan)
+data/*.xlsx
+data/*.xlsx.done
+data/*.parquet
+data/*.pkl
+
+# Python
+__pycache__/
+*.pyc
+
+# Entornos
+.venv/
+venv/

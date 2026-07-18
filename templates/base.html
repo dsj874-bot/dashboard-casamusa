@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Dashboard{% endblock %} — CasaMusa</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #080c14;
+      --surface:   #0f1623;
+      --surface2:  #141e2e;
+      --border:    #1e2a3a;
+      --text:      #f1f5f9;
+      --muted:     #475569;
+      --muted2:    #64748b;
+      --red:       #22a347;
+      --red-light: #86efac;
+      --green:     #10b981;
+      --amber:     #f59e0b;
+      --blue:      #3b82f6;
+      --sidebar-w: 250px;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* ══════════════════════════════
+       SIDEBAR
+    ══════════════════════════════ */
+    .sidebar {
+      width: var(--sidebar-w);
+      min-height: 100vh;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0; left: 0;
+      z-index: 100;
+    }
+
+    /* Logo */
+    .sidebar-logo {
+      padding: 24px 20px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo-text {
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      color: #fff;
+    }
+    .logo-text span { color: #22a347; }
+    .logo-sub {
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* Navegación */
+    .sidebar-nav {
+      flex: 1;
+      padding: 16px 10px;
+      overflow-y: auto;
+    }
+
+    .nav-section-title {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 12px 10px 6px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      color: var(--muted2);
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.15s;
+      margin-bottom: 2px;
+    }
+    .nav-item:hover {
+      background: var(--surface2);
+      color: var(--text);
+    }
+    .nav-item.active {
+      background: rgba(34,163,71,0.12);
+      color: #fff;
+      font-weight: 600;
+    }
+    .nav-item.active .nav-icon { color: var(--red); }
+    .nav-icon {
+      font-size: 16px;
+      width: 20px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    /* Usuario */
+    .sidebar-user {
+      padding: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .user-info {
+      background: var(--surface2);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+    }
+    .user-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .user-role {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .btn-logout {
+      display: block;
+      width: 100%;
+      padding: 9px;
+      text-align: center;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-decoration: none;
+      transition: all 0.15s;
+      cursor: pointer;
+    }
+    .btn-logout:hover {
+      border-color: #22a347;
+      color: #22a347;
+    }
+
+    /* ══════════════════════════════
+       MAIN CONTENT
+    ══════════════════════════════ */
+    .main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* Topbar */
+    .topbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .topbar-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .topbar-meta {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .fecha-badge {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: var(--muted2);
+    }
+
+    /* Contenido */
+    .content {
+      padding: 28px 32px;
+      flex: 1;
+    }
+
+    /* ══════════════════════════════
+       COMPONENTES REUTILIZABLES
+    ══════════════════════════════ */
+
+    /* Cards KPI */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px 24px;
+      transition: border-color 0.2s;
+    }
+    .kpi-card:hover { border-color: var(--red); }
+    .kpi-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .kpi-value {
+      font-size: 28px;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+    .kpi-change {
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .up   { color: var(--green); }
+    .down { color: var(--red);   }
+
+    /* Chart cards */
+    .chart-grid {
+      display: grid;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .chart-grid-2 { grid-template-columns: 1fr 1fr; }
+    .chart-grid-3 { grid-template-columns: 2fr 1fr; }
+
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px 24px;
+    }
+    .chart-card-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .chart-card-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    /* Tabla */
+    .table-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .table-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .table-header-title { font-size: 14px; font-weight: 700; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 10px 16px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody td {
+      padding: 12px 16px;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .fw-bold { font-weight: 700; }
+    .text-green { color: var(--green); }
+    .text-red   { color: var(--red);   }
+    .text-amber { color: var(--amber); }
+    .text-muted { color: var(--muted); }
+
+    /* Sucursal total row */
+    .row-total td {
+      background: rgba(220,38,38,0.06);
+      font-weight: 700;
+      color: var(--amber);
+      border-top: 1px solid var(--border);
+    }
+
+    /* Filtros */
+    .filters {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 24px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .filter-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+    }
+    .filter-select, .filter-input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 13px;
+      color: var(--text);
+      outline: none;
+      cursor: pointer;
+    }
+    .filter-select:focus, .filter-input:focus { border-color: var(--red); }
+    .btn-filter {
+      padding: 8px 18px;
+      background: var(--red);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      align-self: flex-end;
+    }
+    .btn-filter:hover { background: #1a8239; }
+
+    /* Loading */
+    .loading {
+      text-align: center;
+      padding: 60px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<!-- ══════════ SIDEBAR ══════════ -->
+<nav class="sidebar">
+
+  <div class="sidebar-logo">
+    <img src="/static/img/logo.png" alt="CasaMusa" style="width:100%; max-width:160px; height:auto; display:block; margin-bottom:6px;">
+    <div class="logo-sub">Panel de Gerencia</div>
+  </div>
+
+  <div class="sidebar-nav">
+
+    <div class="nav-section-title">Principal</div>
+    <a href="/resumen" class="nav-item {% if active == 'resumen' %}active{% endif %}">
+      <span class="nav-icon">📊</span> Resumen General
+    </a>
+    <a href="/proyeccion" class="nav-item {% if active == 'proyeccion' %}active{% endif %}">
+      <span class="nav-icon">📈</span> Proyección de Ventas
+    </a>
+    <a href="/metas" class="nav-item {% if active == 'metas' %}active{% endif %}">
+      <span class="nav-icon">🎯</span> Seguimiento Metas
+    </a>
+    <a href="/ppto" class="nav-item {% if active == 'ppto' %}active{% endif %}">
+      <span class="nav-icon">📊</span> Seguimiento Ppto
+    </a>
+
+    <div class="nav-section-title">Análisis</div>
+    <a href="/vta_acum" class="nav-item {% if active == 'vta_acum' %}active{% endif %}">
+      <span class="nav-icon">📈</span> Vta Acumulada
+    </a>
+    <a href="/vta_mes_mg" class="nav-item {% if active == 'vta_mes_mg' %}active{% endif %}">
+      <span class="nav-icon">📊</span> Vta Mes Mg Acum
+    </a>
+    <a href="/vta_mg_mensual" class="nav-item {% if active == 'vta_mg_mensual' %}active{% endif %}">
+      <span class="nav-icon">📉</span> Vta Mg Mensual
+    </a>
+    <a href="/sucursales" class="nav-item {% if active == 'sucursales' %}active{% endif %}">
+      <span class="nav-icon">🏪</span> Por Sucursal
+    </a>
+    <a href="/vendedores" class="nav-item {% if active == 'vendedores' %}active{% endif %}">
+      <span class="nav-icon">👤</span> Por Vendedor
+    </a>
+    <a href="/canal" class="nav-item {% if active == 'canal' %}active{% endif %}">
+      <span class="nav-icon">🛒</span> Por Canal de Venta
+    </a>
+    <a href="/familia" class="nav-item {% if active == 'familia' %}active{% endif %}">
+      <span class="nav-icon">📦</span> Por Familia / Marca
+    </a>
+
+    <div class="nav-section-title">Detalle</div>
+    <a href="/datos" class="nav-item {% if active == 'datos' %}active{% endif %}">
+      <span class="nav-icon">📋</span> Vista de Datos
+    </a>
+
+  </div>
+
+  <div class="sidebar-user">
+    <div class="user-info">
+      <div class="user-name">{{ session_nombre }}</div>
+      <div class="user-role">🔒 Acceso Gerencial</div>
+    </div>
+    <a href="/logout" class="btn-logout">Cerrar sesión</a>
+  </div>
+
+</nav>
+
+<!-- ══════════ MAIN ══════════ -->
+<div class="main">
+
+  <div class="topbar">
+    <div>
+      <div class="topbar-title">{% block page_title %}Dashboard{% endblock %}</div>
+      <div class="topbar-meta">{% block page_subtitle %}{% endblock %}</div>
+    </div>
+    <div class="topbar-right">
+      <div class="fecha-badge" id="fecha-hoy"></div>
+    </div>
+  </div>
+
+  <div class="content">
+    {% block content %}{% endblock %}
+  </div>
+
+</div>
+
+<script>
+  // Fecha actual
+  const fecha = new Date().toLocaleDateString('es-CL', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+  });
+  document.getElementById('fecha-hoy').textContent = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+</script>
+
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>
