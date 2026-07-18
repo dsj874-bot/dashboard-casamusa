@@ -139,6 +139,19 @@ def datos():
 
 
 # ══════════════════════════════════════════════════════
+#  ACTUALIZACION DE DATOS (archivo mensual YYMM_Vtas.xlsx)
+# ══════════════════════════════════════════════════════
+@app.route("/admin/actualizar", methods=["POST"])
+@login_requerido
+def admin_actualizar():
+    try:
+        resultado = data_loader.actualizar_desde_archivo_mensual()
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {str(e)}"}), 500
+
+
+# ══════════════════════════════════════════════════════
 #  API — DATOS REALES
 # ══════════════════════════════════════════════════════
 @app.route("/api/resumen")

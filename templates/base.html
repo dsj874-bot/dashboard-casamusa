@@ -462,6 +462,10 @@
       <div class="topbar-meta">{% block page_subtitle %}{% endblock %}</div>
     </div>
     <div class="topbar-right">
+      <button id="btn-actualizar" class="btn-filter" style="padding:8px 14px;font-size:12px;"
+              title="Busca un archivo YYMM_Vtas.xlsx (ej. 2607_Vtas.xlsx) en la carpeta data/ y agrega los dias nuevos">
+        🔄 Actualizar datos
+      </button>
       <div class="fecha-badge" id="fecha-hoy"></div>
     </div>
   </div>
@@ -478,6 +482,25 @@
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   });
   document.getElementById('fecha-hoy').textContent = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+
+  // Actualizar datos (consolida YYMM_Vtas.xlsx desde data/)
+  document.getElementById('btn-actualizar').addEventListener('click', async function () {
+    const btn = this;
+    const textoOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Actualizando...';
+    try {
+      const r = await fetch('/admin/actualizar', { method: 'POST' });
+      const d = await r.json();
+      alert(d.msg);
+      if (d.ok) location.reload();
+    } catch (e) {
+      alert('Error al actualizar: ' + e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = textoOriginal;
+    }
+  });
 </script>
 
 {% block extra_scripts %}{% endblock %}
