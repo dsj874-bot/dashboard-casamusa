@@ -10,15 +10,8 @@
 
 {% block content %}
 
-<!-- Grafico de barras horizontales (top 15) -->
-<div class="chart-card" style="margin-bottom:20px;">
-  <div class="chart-card-title" id="chart-titulo">Top 15 Vendedores — Venta Mes</div>
-  <div class="chart-card-sub" id="chart-sub">Comparativo mes actual vs mismo mes año anterior</div>
-  <div class="chart-wrap" style="height:420px;"><canvas id="chartVendedores"></canvas></div>
-</div>
-
 <!-- Tabla detalle -->
-<div class="table-card">
+<div class="table-card" style="margin-bottom:20px;">
   <div class="table-header">
     <div class="table-header-title" id="tabla-titulo">Detalle por Vendedor</div>
   </div>
@@ -41,6 +34,13 @@
       </tbody>
     </table>
   </div>
+</div>
+
+<!-- Grafico de barras horizontales (top 15) -->
+<div class="chart-card">
+  <div class="chart-card-title" id="chart-titulo">Top 15 Vendedores — Venta Mes</div>
+  <div class="chart-card-sub" id="chart-sub">Comparativo mes actual vs mismo mes año anterior</div>
+  <div class="chart-wrap" style="height:420px;"><canvas id="chartVendedores"></canvas></div>
 </div>
 
 {% endblock %}
