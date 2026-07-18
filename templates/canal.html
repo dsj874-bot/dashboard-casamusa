@@ -19,11 +19,11 @@
       <thead>
         <tr>
           <th>Canal de Venta</th>
-          <th class="text-right">Venta Mes Actual</th>
-          <th class="text-right">Venta Mes Ant.</th>
+          <th class="text-right" id="th-mes-actual">Venta Mes Actual</th>
+          <th class="text-right" id="th-mes-ant">Venta Mes Ant.</th>
           <th class="text-right">Var. Mes</th>
-          <th class="text-right">Venta Año Actual</th>
-          <th class="text-right">Venta Año Ant.</th>
+          <th class="text-right" id="th-ano-actual">Venta Año Actual</th>
+          <th class="text-right" id="th-ano-ant">Venta Año Ant.</th>
           <th class="text-right">Var. Año</th>
           <th class="text-right">Margen Mes</th>
         </tr>
@@ -56,17 +56,23 @@ const clsPct = v => v >= 0 ? "text-green" : "text-red";
 fetch("/api/ventas_por_canal")
   .then(r => r.json())
   .then(d => {
-    const items = d.items;
-    const mes   = d.mes_nombre;
-    const aAct  = d.ano_actual;
-    const aAnt  = d.ano_anterior;
+    const items  = d.items;
+    const mes    = d.mes_nombre;
+    const mesAnt = d.mes_anterior_nombre;
+    const aAct   = d.ano_actual;
+    const aAnt   = d.ano_anterior;
 
     document.getElementById("chart-titulo").textContent =
       "Venta " + mes + " " + aAct + " por Canal";
     document.getElementById("chart-sub").textContent =
-      "Comparativo " + mes + " " + aAct + " vs " + mes + " " + aAnt;
+      "Comparativo " + mes + " " + aAct + " vs " + mesAnt + " " + aAct;
     document.getElementById("tabla-titulo").textContent =
       "Detalle por Canal — " + mes + " " + aAct;
+
+    document.getElementById("th-mes-actual").textContent = "Venta " + mes + " " + aAct;
+    document.getElementById("th-mes-ant").textContent    = "Venta " + mesAnt + " " + aAct;
+    document.getElementById("th-ano-actual").textContent = "Venta " + aAct;
+    document.getElementById("th-ano-ant").textContent    = "Venta " + aAnt;
 
     new Chart(document.getElementById("chartCanal"), {
       type: "bar",
@@ -82,7 +88,7 @@ fetch("/api/ventas_por_canal")
             borderRadius: 5,
           },
           {
-            label: mes + " " + aAnt,
+            label: mesAnt + " " + aAct,
             data: items.map(s => Math.round(s.v_mes_anterior / 1000000)),
             backgroundColor: "rgba(100,116,139,0.35)",
             borderColor: "#64748b",

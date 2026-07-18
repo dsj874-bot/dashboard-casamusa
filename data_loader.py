@@ -547,8 +547,9 @@ def get_ventas_por_campo(campo, orden_map=None, top_n=None):
     df25 = get_df_2025()
     df26 = get_df_2026()
     fecha_datos = _fecha_datos()
-    mes_actual  = fecha_datos.month
-    dia_actual  = fecha_datos.day
+    mes_actual   = fecha_datos.month
+    dia_actual   = fecha_datos.day
+    mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
 
     # Union de valores en ambos años (para no perder de vista algo que
     # tuvo venta en 2025 y cayo a 0 en 2026, o viceversa)
@@ -565,13 +566,14 @@ def get_ventas_por_campo(campo, orden_map=None, top_n=None):
             ((s25["MES"] == mes_actual) & (s25["DIA"] <= dia_actual))
         ]["TOTAL"].sum())
 
-        mes_26   = s26[s26["MES"] == mes_actual]
-        mes_25   = s25[(s25["MES"] == mes_actual) & (s25["DIA"] <= dia_actual)]
+        mes_26     = s26[s26["MES"] == mes_actual]
+        # Mes calendario anterior (ej. Junio si estamos en Julio), no "mismo mes año pasado"
+        mes_prev   = s26[(s26["MES"] == mes_anterior) & (s26["DIA"] <= dia_actual)]
 
-        v_mes_26 = float(mes_26["TOTAL"].sum())
-        v_mes_25 = float(mes_25["TOTAL"].sum())
-        util_mes = float(mes_26["UTILIDAD_BRUTA"].sum())
-        mg_mes   = round(util_mes / v_mes_26 * 100, 1) if v_mes_26 > 0 else 0.0
+        v_mes_26  = float(mes_26["TOTAL"].sum())
+        v_mes_prev = float(mes_prev["TOTAL"].sum())
+        util_mes  = float(mes_26["UTILIDAD_BRUTA"].sum())
+        mg_mes    = round(util_mes / v_mes_26 * 100, 1) if v_mes_26 > 0 else 0.0
 
         resultado.append({
             "nombre":         str(val),
@@ -579,8 +581,8 @@ def get_ventas_por_campo(campo, orden_map=None, top_n=None):
             "v_ano_anterior": round(v_ano_25, 0),
             "var_ano":        var_pct(v_ano_26, v_ano_25),
             "v_mes_actual":   round(v_mes_26, 0),
-            "v_mes_anterior": round(v_mes_25, 0),
-            "var_mes":        var_pct(v_mes_26, v_mes_25),
+            "v_mes_anterior": round(v_mes_prev, 0),
+            "var_mes":        var_pct(v_mes_26, v_mes_prev),
             "utilidad_mes":   round(util_mes, 0),
             "mg_mes":         mg_mes,
         })
@@ -595,9 +597,10 @@ def get_ventas_por_campo(campo, orden_map=None, top_n=None):
 
     return {
         "items":        resultado,
-        "ano_actual":   2026,
-        "ano_anterior": 2025,
-        "mes_nombre":   MESES.get(mes_actual, ""),
+        "ano_actual":         2026,
+        "ano_anterior":       2025,
+        "mes_nombre":         MESES.get(mes_actual, ""),
+        "mes_anterior_nombre": MESES.get(mes_anterior, ""),
     }
 
 
@@ -606,9 +609,10 @@ def get_ventas_por_sucursal():
     data = get_ventas_por_campo("SUCURSAL_LOGICA", orden_map=orden)
     return {
         "sucursales":   [{**r, "sucursal": r["nombre"]} for r in data["items"]],
-        "ano_actual":   data["ano_actual"],
-        "ano_anterior": data["ano_anterior"],
-        "mes_nombre":   data["mes_nombre"],
+        "ano_actual":         data["ano_actual"],
+        "ano_anterior":       data["ano_anterior"],
+        "mes_nombre":         data["mes_nombre"],
+        "mes_anterior_nombre": data["mes_anterior_nombre"],
     }
 
 
