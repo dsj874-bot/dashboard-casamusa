@@ -34,30 +34,6 @@ NOMBRE_SUCURSAL = {
     "OF": "OF",
 }
 
-# Vendedores de SI-STK → SE (Santiago Empresas)
-VEND_SE = {
-    "ANDRES SEPULVEDA URRUTIA",
-    "MARCELINO TORO MACHUCA",
-    "YANETTE GONZALEZ MARCANO",
-    "CARMEN ORELLANA",
-}
-
-# Vendedores de SI-STK → CMD (Casa Musa Distribucion)
-VEND_CMD = {
-    "CAMILA OLIVOS ROJAS",
-    "FERNANDO MUSA BOZZO",
-    "JAVIER LIZAMA CORNEJO",
-    "JORGE SANTANA ANABALON",
-    "MARCEL GUEDENEY ALLENDE",
-}
-
-# Vendedores de SI-STK → Canal Digital
-VEND_CANAL = {
-    "DANIEL GATICA",
-    "ELENNYS PEREZ GUEDEZ",
-    "MARIANNA SALAS PARRA",
-}
-
 # ══════════════════════════════════════════════════════
 #  VENDEDORES OFICIALES POR SUCURSAL LOGICA
 #  Cualquier otro vendedor que venda en esa sucursal
@@ -124,11 +100,14 @@ VEND_HOME = {
 # Set plano de pares (sucursal_logica|vendedor) para lookup rapido
 _HOME_PAIRS = {f"{s}|{v}" for s, vends in VEND_HOME.items() for v in vends}
 
+# Vendedor -> su sucursal home (para reatribuir SI-STK, ver mas abajo)
+_VENDEDOR_HOME_SUC = {v: s for s, vends in VEND_HOME.items() for v in vends}
+
 _MAPA_SUC_BASE = {
     "MT-STK": "MT", "LC-STK": "LC", "MR-STK": "MR",
     "CH-STK": "CH", "MP-STK": "MP", "OF-STK": "OF",
     "DM-STK": "CANAL DIGITAL", "SE-STK": "CANAL DIGITAL",
-    "SI-STK": "SE",   # SI-STK default → SE; solo SE/CMD/Canal se subdividen por vendedor
+    "SI-STK": "SE",   # SI-STK (bodega compartida) default -> SE
 }
 
 def _aplicar_sucursal_logica(df):
@@ -136,6 +115,14 @@ def _aplicar_sucursal_logica(df):
     Agrega dos columnas al dataframe (vectorizado):
       SUCURSAL_LOGICA : sucursal logica del negocio
       VENDEDOR_RPT    : nombre del vendedor si es home de esa sucursal, "OTROS" si no
+
+    SI-STK es una bodega compartida entre varias sucursales/vendedores.
+    En vez de reasignarla solo a un puñado de vendedores hardcodeados,
+    se busca la sucursal home real de CADA vendedor (VEND_HOME) y se usa
+    esa — asi cualquier vendedor que venda por SI-STK (por ejemplo,
+    alguien que se traslado de sucursal) queda atribuido a si mismo, no
+    a "OTROS" en SE. Si el vendedor no tiene sucursal home conocida, se
+    mantiene el default SE.
     """
     suc  = df["SUCURSAL"].astype(str).str.strip()
     vend = df["VENDEDOR"].astype(str).str.strip()
@@ -144,10 +131,8 @@ def _aplicar_sucursal_logica(df):
     sl = suc.map(_MAPA_SUC_BASE).fillna(suc)
     si = suc == "SI-STK"
 
-    # Subdivir SI-STK por vendedor
-    sl = sl.where(~(si & vend.isin(VEND_SE)),    "SE")
-    sl = sl.where(~(si & vend.isin(VEND_CMD)),   "CMD")
-    sl = sl.where(~(si & vend.isin(VEND_CANAL)), "CANAL DIGITAL")
+    home_de_vend = vend.map(_VENDEDOR_HOME_SUC)
+    sl = sl.where(~si | home_de_vend.isna(), home_de_vend)
 
     # Vendedor para reportes: nombre real si es home, "OTROS" si no
     pair_key = sl + "|" + vend
@@ -674,23 +659,25 @@ FERIADOS_CL = {
 
 
 # ══════════════════════════════════════════════════════
-#  DIAS HABILES (lunes a viernes, excluyendo feriados CL)
+#  DIAS HABILES (lunes a sabado, excluyendo feriados CL)
+#  Las sucursales venden los sabados, asi que cuentan como dia
+#  habil para la proyeccion. Solo domingo y feriados quedan fuera.
 # ══════════════════════════════════════════════════════
 def _dias_habiles_mes(ano, mes):
-    """Total de dias habiles del mes (L-V, sin feriados)."""
+    """Total de dias habiles del mes (L-S, sin feriados)."""
     _, ultimo_dia = calendar.monthrange(ano, mes)
     return sum(
         1 for d in range(1, ultimo_dia + 1)
-        if date(ano, mes, d).weekday() < 5
+        if date(ano, mes, d).weekday() < 6
         and date(ano, mes, d) not in FERIADOS_CL
     )
 
 
 def _dias_habiles_hasta(ano, mes, dia):
-    """Dias habiles desde el dia 1 hasta 'dia' inclusive (L-V, sin feriados)."""
+    """Dias habiles desde el dia 1 hasta 'dia' inclusive (L-S, sin feriados)."""
     return sum(
         1 for d in range(1, dia + 1)
-        if date(ano, mes, d).weekday() < 5
+        if date(ano, mes, d).weekday() < 6
         and date(ano, mes, d) not in FERIADOS_CL
     )
 
