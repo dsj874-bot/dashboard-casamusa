@@ -419,17 +419,19 @@ def get_df_2026():
 
 def _fecha_datos():
     """
-    Retorna la fecha maxima con datos en el archivo 2026 para el mes actual.
-    Es la base real para calcular dias habiles transcurridos y proyeccion.
-    Si el mes actual no tiene datos aun, retorna ayer.
+    Fecha de corte usada en TODAS las comparaciones (dias habiles
+    transcurridos, mismo dia del mes/año anterior). Es la fecha real
+    de hoy — no depende de si ya se cargo el archivo del dia.
+
+    Si no se usara la fecha real, un dia sin archivo nuevo (ej.
+    domingo, sin ventas que reportar) congelaria el corte en el
+    ultimo dia cargado, y la comparacion contra el mismo dia del
+    mes/año anterior tampoco avanzaria — aunque ese periodo si haya
+    tenido venta ese dia. La venta de 2026 del dia de hoy simplemente
+    sera $0 hasta que se cargue el archivo, pero el corte para
+    comparar debe avanzar igual.
     """
-    df26     = get_df_2026()
-    hoy      = datetime.now()
-    df_mes   = df26[df26["MES"] == hoy.month]
-    if len(df_mes) > 0:
-        max_ts = df_mes["FECHA_CONTA"].max()
-        return max_ts.date() if hasattr(max_ts, "date") else hoy.date()
-    return (hoy - __import__("datetime").timedelta(days=1)).date()
+    return datetime.now().date()
 
 
 # ══════════════════════════════════════════════════════
