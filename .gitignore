@@ -8,6 +8,9 @@ data/*.pkl
 __pycache__/
 *.pyc
 
+# Logs
+*.log
+
 # Entornos
 .venv/
 venv/

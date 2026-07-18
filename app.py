@@ -14,14 +14,16 @@ app.secret_key = "casamusa_dashboard_2026_secreto"
 # ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
 #  Para agregar un gerente: agregar una línea aquí
-#  "email": {"password": "clave", "nombre": "Nombre"}
+#  "email": {"password": "clave", "nombre": "Nombre", "admin": True/False}
+#  "admin" controla quien ve/puede usar "Actualizar datos". Por
+#  defecto (sin la clave, o en False) NO tiene el boton.
 # ══════════════════════════════════════════════════════
 GERENTES = {
-    "gerente@casamusa.cl":  {"password": "Gerente2026",  "nombre": "Gerente General"},
-    "ventas@casamusa.cl":   {"password": "Ventas2026",   "nombre": "Gerente de Ventas"},
-    "enrique@casamusa.cl":  {"password": "Enrique2026",  "nombre": "Enrique Musa"},
-    "marcelo@casamusa.cl":      {"password": "Marcelo2026",  "nombre": "Marcelo"},
-    "dsepulveda@casamusa.cl":   {"password": "David2026",    "nombre": "David Sepúlveda"},
+    "gerente@casamusa.cl":    {"password": "Gerente2026", "nombre": "Gerente General"},
+    "ventas@casamusa.cl":     {"password": "Ventas2026",  "nombre": "Gerente de Ventas"},
+    "enrique@casamusa.cl":    {"password": "Enrique2026", "nombre": "Enrique Musa"},
+    "marcelo@casamusa.cl":    {"password": "Marcelo2026", "nombre": "Marcelo"},
+    "dsepulveda@casamusa.cl": {"password": "David2026",   "nombre": "David Sepúlveda", "admin": True},
 }
 
 # ══════════════════════════════════════════════════════
@@ -34,6 +36,28 @@ def login_requerido(f):
             return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorado
+
+
+# ══════════════════════════════════════════════════════
+#  DECORADOR: exige que el usuario sea admin (ej. Actualizar datos)
+# ══════════════════════════════════════════════════════
+def admin_requerido(f):
+    @wraps(f)
+    def decorado(*args, **kwargs):
+        if "usuario" not in session:
+            return redirect(url_for("login"))
+        if not session.get("admin"):
+            return jsonify({"ok": False, "msg": "No tienes permiso para esta accion."}), 403
+        return f(*args, **kwargs)
+    return decorado
+
+
+# ══════════════════════════════════════════════════════
+#  Variables disponibles en todos los templates
+# ══════════════════════════════════════════════════════
+@app.context_processor
+def inject_es_admin():
+    return {"es_admin": session.get("admin", False)}
 
 
 # ══════════════════════════════════════════════════════
@@ -56,6 +80,7 @@ def login():
         if gerente and gerente["password"] == password:
             session["usuario"] = email
             session["nombre"]  = gerente["nombre"]
+            session["admin"]   = gerente.get("admin", False)
             return redirect(url_for("resumen"))
         error = "Correo o contraseña incorrectos."
     return render_template("login.html", error=error)
@@ -167,7 +192,7 @@ def datos():
 #  ACTUALIZACION DE DATOS (archivo mensual YYMM_Vtas.xlsx)
 # ══════════════════════════════════════════════════════
 @app.route("/admin/actualizar", methods=["POST"])
-@login_requerido
+@admin_requerido
 def admin_actualizar():
     try:
         resultado = data_loader.actualizar_desde_archivo_mensual()
