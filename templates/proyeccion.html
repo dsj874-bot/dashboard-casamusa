@@ -243,10 +243,13 @@
                 <th>% Mg</th>
                 <th>Proy. Lineal</th>
                 <th>Proy. Mg</th>
+                <th>NE x Facturar</th>
+                <th>Proy. Lineal + NE</th>
+                <th>Mg con NE</th>
               </tr>
             </thead>
             <tbody id="tabla-body">
-              <tr><td colspan="8" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+              <tr><td colspan="11" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
             </tbody>
           </table>
         </div>
@@ -354,7 +357,7 @@ function renderBadge(k) {
 function renderTabla(filas, k) {
   if (!filas || filas.length === 0) {
     document.getElementById("tabla-body").innerHTML =
-      `<tr><td colspan="8" style="text-align:center;color:#475569;padding:32px;">Sin datos para los filtros seleccionados</td></tr>`;
+      `<tr><td colspan="11" style="text-align:center;color:#475569;padding:32px;">Sin datos para los filtros seleccionados</td></tr>`;
     return;
   }
 
@@ -363,16 +366,19 @@ function renderTabla(filas, k) {
 
   // Agrupar por sucursal y calcular totales
   const porSuc = {};
-  let totDocs = 0, totVta = 0, totMg = 0, totPlin = 0, totPmg = 0;
+  let totDocs = 0, totVta = 0, totMg = 0, totPlin = 0, totPmg = 0, totNE = 0, totPlinNE = 0, totMgNE = 0;
 
   filas.forEach(f => {
     if (!porSuc[f.sucursal]) porSuc[f.sucursal] = [];
     porSuc[f.sucursal].push(f);
-    totDocs += f.nro_docs;
-    totVta  += f.vta_mes;
-    totMg   += f.mg_mes;
-    totPlin += f.proy_lineal;
-    totPmg  += f.proy_mg;
+    totDocs   += f.nro_docs;
+    totVta    += f.vta_mes;
+    totMg     += f.mg_mes;
+    totPlin   += f.proy_lineal;
+    totPmg    += f.proy_mg;
+    totNE     += f.monto_ne;
+    totPlinNE += f.proy_lineal_ne;
+    totMgNE   += f.mg_con_ne;
   });
 
   const totPct = totVta > 0 ? (totMg / totVta * 100).toFixed(1) : "0.0";
@@ -386,15 +392,21 @@ function renderTabla(filas, k) {
     <td>${totPct}%</td>
     <td>${fmtCLP(totPlin)}</td>
     <td>${fmtCLP(totPmg)}</td>
+    <td>${fmtCLP(totNE)}</td>
+    <td>${fmtCLP(totPlinNE)}</td>
+    <td>${fmtCLP(totMgNE)}</td>
   </tr>`;
 
   // Luego detalle por sucursal
   Object.entries(porSuc).forEach(([suc, vendedores]) => {
-    const sDocs = vendedores.reduce((a, v) => a + v.nro_docs,    0);
-    const sVta  = vendedores.reduce((a, v) => a + v.vta_mes,     0);
-    const sMg   = vendedores.reduce((a, v) => a + v.mg_mes,      0);
-    const sPlin = vendedores.reduce((a, v) => a + v.proy_lineal, 0);
-    const sPmg  = vendedores.reduce((a, v) => a + v.proy_mg,     0);
+    const sDocs   = vendedores.reduce((a, v) => a + v.nro_docs,       0);
+    const sVta    = vendedores.reduce((a, v) => a + v.vta_mes,        0);
+    const sMg     = vendedores.reduce((a, v) => a + v.mg_mes,         0);
+    const sPlin   = vendedores.reduce((a, v) => a + v.proy_lineal,    0);
+    const sPmg    = vendedores.reduce((a, v) => a + v.proy_mg,        0);
+    const sNE     = vendedores.reduce((a, v) => a + v.monto_ne,       0);
+    const sPlinNE = vendedores.reduce((a, v) => a + v.proy_lineal_ne, 0);
+    const sMgNE   = vendedores.reduce((a, v) => a + v.mg_con_ne,      0);
     const sPct  = sVta > 0 ? (sMg / sVta * 100).toFixed(1) : "0.0";
 
     // Fila sucursal
@@ -406,6 +418,9 @@ function renderTabla(filas, k) {
       <td>${sPct}%</td>
       <td class="proy-val">${fmtCLP(sPlin)}</td>
       <td class="proy-val">${fmtCLP(sPmg)}</td>
+      <td>${fmtCLP(sNE)}</td>
+      <td class="proy-val">${fmtCLP(sPlinNE)}</td>
+      <td class="proy-val">${fmtCLP(sMgNE)}</td>
     </tr>`;
 
     // Filas vendedor
@@ -419,6 +434,9 @@ function renderTabla(filas, k) {
         <td class="${v.pct_mg >= 20 ? 'text-green' : v.pct_mg >= 10 ? 'text-amber' : 'down'}">${v.pct_mg.toFixed(1)}%</td>
         <td class="proy-val">${fmtCLP(v.proy_lineal)}</td>
         <td class="proy-val" style="color:var(--muted2)">${fmtCLP(v.proy_mg)}</td>
+        <td>${v.monto_ne ? fmtCLP(v.monto_ne) : '—'}</td>
+        <td class="proy-val">${fmtCLP(v.proy_lineal_ne)}</td>
+        <td class="proy-val" style="color:var(--muted2)">${fmtCLP(v.mg_con_ne)}</td>
       </tr>`;
     });
   });
@@ -458,7 +476,7 @@ function getFiltros() {
 
 function aplicarFiltros() {
   document.getElementById("tabla-body").innerHTML =
-    `<tr><td colspan="8" style="text-align:center;color:#475569;padding:24px;">Filtrando...</td></tr>`;
+    `<tr><td colspan="11" style="text-align:center;color:#475569;padding:24px;">Filtrando...</td></tr>`;
   cargarProyeccion(getFiltros()).then(d => {
     // Mantener KPIs globales, solo actualizar tabla
     renderTabla(d.filas, d.kpis);

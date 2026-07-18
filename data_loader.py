@@ -13,6 +13,8 @@ BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
 VENTAS_2025    = os.path.join(BASE_DIR, "data", "Ventas_2025.xlsx")
 VENTAS_2026    = os.path.join(BASE_DIR, "data", "Ventas_2026.xlsx")
 DATA_DIR        = os.path.join(BASE_DIR, "data")
+NE_X_FACTURAR  = os.path.join(DATA_DIR, "NE_x_Facturar.xlsx")
+MG_NE_PCT      = 0.20  # margen estimado sobre Negocios Ganados aun no facturados
 # CACHE_2026_PATH se define despues de detectar pyarrow
 
 # ══════════════════════════════════════════════════════
@@ -322,6 +324,33 @@ def _leer_archivo(ano):
 
 
 
+
+
+def _leer_ne_x_facturar():
+    """
+    Lee data/NE_x_Facturar.xlsx -> dict {(sucursal_logica, vendedor): monto_ne}.
+    Archivo lo actualiza el gerente comercial ~1 vez por semana. Si no
+    existe o no se puede leer, retorna diccionario vacio (monto_ne = 0
+    para todos, no rompe la proyeccion).
+    """
+    if not os.path.exists(NE_X_FACTURAR):
+        return {}
+    try:
+        df = pd.read_excel(NE_X_FACTURAR, sheet_name="NE x Facturar")
+    except Exception as e:
+        print(f"  No se pudo leer NE_x_Facturar.xlsx: {e}")
+        return {}
+
+    montos = {}
+    for _, row in df.iterrows():
+        suc  = str(row.get("Sucursal", "")).strip()
+        vend = str(row.get("Vendedor", "")).strip()
+        if not suc or not vend or suc == "nan" or vend == "nan":
+            continue
+        monto = row.get("Monto NE", 0)
+        monto = float(monto) if pd.notna(monto) else 0.0
+        montos[(suc, vend)] = montos.get((suc, vend), 0.0) + monto
+    return montos
 
 
 def actualizar_desde_archivo_mensual():
@@ -716,6 +745,8 @@ def get_proyeccion(filtros=None):
     merged = agg_mes.merge(agg_ant, on=["SUCURSAL_LOGICA","VENDEDOR_RPT"], how="outer")
     merged = merged.fillna(0)
 
+    ne_montos = _leer_ne_x_facturar()
+
     filas = []
     for _, row in merged.iterrows():
         suc     = row["SUCURSAL_LOGICA"]
@@ -727,6 +758,7 @@ def get_proyeccion(filtros=None):
         pct_mg  = round(mg / vta * 100, 1) if vta > 0 else 0.0
         proy_l  = round(vta * factor_mes, 0)
         proy_mg = round(mg  * factor_mes, 0)
+        monto_ne = ne_montos.get((suc, vend), 0.0)
         filas.append({
             "sucursal":  suc,
             "vendedor":  vend,
@@ -738,6 +770,9 @@ def get_proyeccion(filtros=None):
             "var":       var_pct(vta, vta_ant),
             "proy_lineal": proy_l,
             "proy_mg":   proy_mg,
+            "monto_ne":       round(monto_ne, 0),
+            "proy_lineal_ne": round(proy_l + monto_ne, 0),
+            "mg_con_ne":      round(proy_mg + monto_ne * MG_NE_PCT, 0),
             "is_otros":  vend == "OTROS",
         })
 
