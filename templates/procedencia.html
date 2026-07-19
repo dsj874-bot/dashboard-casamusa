@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}Por Procedencia{% endblock %}
+{% block page_title %}Ventas por Procedencia{% endblock %}
+{% block page_subtitle %}Importado vs Nacional — comparativo mes actual vs año anterior{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<div class="table-card" style="margin-bottom:20px;">
+  <div class="table-header">
+    <div class="table-header-title" id="tabla-titulo">Detalle por Procedencia</div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Procedencia</th>
+          <th class="text-right" id="th-mes-actual">Venta Mes Actual</th>
+          <th class="text-right" id="th-mes-ant">Venta Mes Ant.</th>
+          <th class="text-right">Var. Mes</th>
+          <th class="text-right" id="th-ano-actual">Venta Año Actual</th>
+          <th class="text-right" id="th-ano-ant">Venta Año Ant.</th>
+          <th class="text-right">Var. Año</th>
+          <th class="text-right">Margen Mes</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-body">
+        <tr><td colspan="8" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="chart-card">
+  <div class="chart-card-title" id="chart-titulo">Venta Mes por Procedencia</div>
+  <div class="chart-card-sub" id="chart-sub">Comparativo mes actual vs mismo mes año anterior</div>
+  <canvas id="chartProcedencia" height="90"></canvas>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+Chart.defaults.color       = "#64748b";
+Chart.defaults.borderColor = "#1e2a3a";
+Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
+
+const fmtMM  = v => "$" + Math.round(v).toLocaleString("es-CL");
+const fmtPct = v => (v >= 0 ? "▲ " : "▼ ") + Math.abs(v).toFixed(1) + "%";
+const clsPct = v => v >= 0 ? "text-green" : "text-red";
+
+fetch("/api/ventas_por_procedencia")
+  .then(r => r.json())
+  .then(d => {
+    const items  = d.items;
+    const mes    = d.mes_nombre;
+    const mesAnt = d.mes_anterior_nombre;
+    const aAct   = d.ano_actual;
+    const aAnt   = d.ano_anterior;
+
+    document.getElementById("chart-titulo").textContent =
+      "Venta " + mes + " " + aAct + " por Procedencia";
+    document.getElementById("chart-sub").textContent =
+      "Comparativo " + mes + " " + aAct + " vs " + mesAnt + " " + aAct;
+    document.getElementById("tabla-titulo").textContent =
+      "Detalle por Procedencia — " + mes + " " + aAct;
+
+    document.getElementById("th-mes-actual").textContent = "Venta " + mes + " " + aAct;
+    document.getElementById("th-mes-ant").textContent    = "Venta " + mesAnt + " " + aAct;
+    document.getElementById("th-ano-actual").textContent = "Venta " + aAct;
+    document.getElementById("th-ano-ant").textContent    = "Venta " + aAnt;
+
+    new Chart(document.getElementById("chartProcedencia"), {
+      type: "bar",
+      data: {
+        labels: items.map(s => s.nombre),
+        datasets: [
+          {
+            label: mes + " " + aAct,
+            data: items.map(s => Math.round(s.v_mes_actual / 1000000)),
+            backgroundColor: "rgba(34,163,71,0.75)",
+            borderColor: "#22a347",
+            borderWidth: 1,
+            borderRadius: 5,
+          },
+          {
+            label: mesAnt + " " + aAct,
+            data: items.map(s => Math.round(s.v_mes_anterior / 1000000)),
+            backgroundColor: "rgba(100,116,139,0.35)",
+            borderColor: "#64748b",
+            borderWidth: 1,
+            borderRadius: 5,
+          }
+        ]
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        plugins: {
+          legend: { position: "top" },
+          tooltip: { callbacks: { label: ctx => " $" + ctx.raw.toLocaleString("es-CL") + " MM" } }
+        },
+        scales: {
+          x: { ticks: { callback: v => "$" + v + " MM" }, grid: { color: "#1e2a3a" } },
+          y: { grid: { display: false } }
+        }
+      }
+    });
+
+    const rows = items.map(s => `
+      <tr>
+        <td class="fw-bold">${s.nombre}</td>
+        <td class="text-right fw-bold">${fmtMM(s.v_mes_actual)}</td>
+        <td class="text-right text-muted">${fmtMM(s.v_mes_anterior)}</td>
+        <td class="text-right ${clsPct(s.var_mes)}">${fmtPct(s.var_mes)}</td>
+        <td class="text-right fw-bold">${fmtMM(s.v_ano_actual)}</td>
+        <td class="text-right text-muted">${fmtMM(s.v_ano_anterior)}</td>
+        <td class="text-right ${clsPct(s.var_ano)}">${fmtPct(s.var_ano)}</td>
+        <td class="text-right text-amber">${s.mg_mes.toFixed(1)}%</td>
+      </tr>
+    `).join("");
+
+    const t = d.total;
+    const filaTotal = `
+      <tr class="row-total">
+        <td>TOTAL GENERAL</td>
+        <td class="text-right">${fmtMM(t.v_mes_actual)}</td>
+        <td class="text-right">${fmtMM(t.v_mes_anterior)}</td>
+        <td class="text-right ${clsPct(t.var_mes)}">${fmtPct(t.var_mes)}</td>
+        <td class="text-right">${fmtMM(t.v_ano_actual)}</td>
+        <td class="text-right">${fmtMM(t.v_ano_anterior)}</td>
+        <td class="text-right ${clsPct(t.var_ano)}">${fmtPct(t.var_ano)}</td>
+        <td class="text-right text-amber">${t.mg_mes.toFixed(1)}%</td>
+      </tr>
+    `;
+
+    document.getElementById("tabla-body").innerHTML = filaTotal + rows;
+  })
+  .catch(err => console.error("Error procedencia:", err));
+</script>
+{% endblock %}

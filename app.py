@@ -179,6 +179,23 @@ def api_ventas_por_familia():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/procedencia")
+@login_requerido
+def procedencia():
+    return render_template("procedencia.html",
+                           active="procedencia",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/ventas_por_procedencia")
+@login_requerido
+def api_ventas_por_procedencia():
+    try:
+        return jsonify(data_loader.get_ventas_por_procedencia())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/datos")
 @login_requerido
 def datos():
