@@ -419,17 +419,10 @@ def get_df_2026():
 
 def _hoy():
     """
-    Fecha de corte usada en TODAS las comparaciones (dias habiles
-    transcurridos, mismo dia del mes/año anterior). Es la fecha real
-    de hoy — no depende de si ya se cargo el archivo del dia.
-
-    Si no se usara la fecha real, un dia sin archivo nuevo (ej.
-    domingo, sin ventas que reportar) congelaria el corte en el
-    ultimo dia cargado, y la comparacion contra el mismo dia del
-    mes/año anterior tampoco avanzaria — aunque ese periodo si haya
-    tenido venta ese dia. La venta de 2026 del dia de hoy simplemente
-    sera $0 hasta que se cargue el archivo, pero el corte para
-    comparar debe avanzar igual.
+    Fecha real del sistema. Uso interno de _fecha_datos() (para saber
+    en que mes buscar el ultimo dato cargado) — NO usar directamente
+    para calcular comparaciones ni cortes de dias, eso es trabajo de
+    _fecha_datos().
     """
     return datetime.now().date()
 
@@ -437,10 +430,16 @@ def _hoy():
 def _fecha_datos():
     """
     Fecha MAXIMA con datos realmente cargados en 2026 para el mes
-    actual. Se usa SOLO para mostrar "Datos al" en pantalla (no para
-    calcular comparaciones — ver _hoy() para eso), asi el badge nunca
-    afirma tener datos de un dia que todavia no se ha cargado.
-    Si el mes actual no tiene datos aun, retorna el dia anterior a hoy.
+    actual. Es el UNICO corte usado tanto para mostrar "Datos al" en
+    pantalla como para calcular todas las comparaciones (dias habiles
+    transcurridos, mismo dia del mes/año anterior) — asi el año/mes
+    anterior siempre se compara con exactamente los mismos dias que
+    el año/mes actual tiene cargados, nunca de mas.
+
+    Avanza solo cuando se consolida un archivo nuevo (manual o via la
+    tarea programada de las 19:00) — no depende de la fecha real del
+    sistema. Si el mes actual no tiene datos aun, retorna el dia
+    anterior a hoy.
     """
     df26   = get_df_2026()
     hoy    = _hoy()
@@ -472,9 +471,9 @@ def var_pct(actual, anterior):
 def get_resumen():
     df25 = get_df_2025()
     df26 = get_df_2026()
-    hoy = _hoy()
-    mes_actual  = hoy.month
-    dia_actual  = hoy.day
+    fecha_datos = _fecha_datos()
+    mes_actual  = fecha_datos.month
+    dia_actual  = fecha_datos.day
 
     # Venta año acumulada — mismo periodo exacto (hasta dia_actual del mes_actual)
     venta_ano_26 = float(df26["TOTAL"].sum())
@@ -550,9 +549,9 @@ def get_ventas_por_campo(campo, orden_map=None, top_n=None):
     """
     df25 = get_df_2025()
     df26 = get_df_2026()
-    hoy = _hoy()
-    mes_actual   = hoy.month
-    dia_actual   = hoy.day
+    fecha_datos = _fecha_datos()
+    mes_actual   = fecha_datos.month
+    dia_actual   = fecha_datos.day
     mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
 
     # Union de valores en ambos años (para no perder de vista algo que
@@ -763,10 +762,9 @@ def _aplicar_filtros_comunes(df26, df25, filtros, col_tv="TIPO_VENTA"):
 def get_proyeccion(filtros=None):
     df25_raw = get_df_2025()
     df26_raw = get_df_2026()
-    hoy = _hoy()
     fecha_datos = _fecha_datos()
-    mes_actual  = hoy.month
-    dia_actual  = hoy.day
+    mes_actual  = fecha_datos.month
+    dia_actual  = fecha_datos.day
 
     df26, df25 = _aplicar_filtros_comunes(df26_raw, df25_raw, filtros)
 
@@ -786,7 +784,7 @@ def get_proyeccion(filtros=None):
 
     # Proyeccion lineal: vta_acum_ytd * (365 / dia_del_ano)
     inicio_ano = date(2026, 1, 1)
-    doy = (hoy - inicio_ano).days + 1
+    doy = (fecha_datos - inicio_ano).days + 1
     proyeccion_anual = round(v_ano_26 * 365 / doy, 0) if doy > 0 else 0
 
     kpis = {
@@ -891,10 +889,9 @@ def _get_metas_df():
 def get_seguimiento_metas(filtros=None):
     df25_raw = get_df_2025()
     df26_raw = get_df_2026()
-    hoy = _hoy()
     fecha_datos = _fecha_datos()
-    mes_actual  = hoy.month
-    dia_actual  = hoy.day
+    mes_actual  = fecha_datos.month
+    dia_actual  = fecha_datos.day
 
     df26, df25 = _aplicar_filtros_comunes(df26_raw, df25_raw, filtros)
 
@@ -991,13 +988,12 @@ def _get_ppto_df():
 def get_seguimiento_ppto():
     df25 = get_df_2025()
     df26 = get_df_2026()
-    hoy = _hoy()
     fecha_datos = _fecha_datos()
-    mes_actual  = hoy.month
-    dia_actual  = hoy.day
+    mes_actual  = fecha_datos.month
+    dia_actual  = fecha_datos.day
 
     inicio_ano   = date(2026, 1, 1)
-    doy          = (hoy - inicio_ano).days + 1
+    doy          = (fecha_datos - inicio_ano).days + 1
     factor_anual = doy / 365.0
 
     mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
@@ -1159,15 +1155,14 @@ def get_vta_acum(filtros=None):
     f           = filtros or {}
     df26_raw    = get_df_2026()
     df25_raw    = get_df_2025()
-    hoy = _hoy()
     fecha_datos = _fecha_datos()
-    mes_actual  = hoy.month
-    dia_actual  = hoy.day
+    mes_actual  = fecha_datos.month
+    dia_actual  = fecha_datos.day
     mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
 
     # Meses transcurridos (para promedio y proyección)
     inicio_ano    = date(2026, 1, 1)
-    doy           = (hoy - inicio_ano).days + 1
+    doy           = (fecha_datos - inicio_ano).days + 1
     meses_elapsed = doy * 12 / 365.0  # fracción de meses
 
     # Columna de agrupación
@@ -1284,14 +1279,13 @@ def get_vta_mes_mg_acum(filtros=None):
     f           = filtros or {}
     df26_raw    = get_df_2026()
     df25_raw    = get_df_2025()
-    hoy = _hoy()
     fecha_datos = _fecha_datos()
-    mes_actual  = hoy.month
-    dia_actual  = hoy.day
+    mes_actual  = fecha_datos.month
+    dia_actual  = fecha_datos.day
     mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
 
     inicio_ano    = date(2026, 1, 1)
-    doy           = (hoy - inicio_ano).days + 1
+    doy           = (fecha_datos - inicio_ano).days + 1
     meses_elapsed = doy * 12 / 365.0
 
     # Columna de agrupacion
@@ -1421,14 +1415,13 @@ def get_vta_mg_mensual(filtros=None):
     f           = filtros or {}
     df26_raw    = get_df_2026()
     df25_raw    = get_df_2025()
-    hoy = _hoy()
     fecha_datos = _fecha_datos()
-    mes_actual  = hoy.month
-    dia_actual  = hoy.day
+    mes_actual  = fecha_datos.month
+    dia_actual  = fecha_datos.day
     mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
 
     inicio_ano    = date(2026, 1, 1)
-    doy           = (hoy - inicio_ano).days + 1
+    doy           = (fecha_datos - inicio_ano).days + 1
 
     # Columna de agrupacion
     categoria = f.get("categoria", "marca")
