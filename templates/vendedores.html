@@ -128,25 +128,17 @@ fetch("/api/ventas_por_vendedor")
       </tr>
     `).join("");
 
-    const totMesAct = items.reduce((a, s) => a + s.v_mes_actual,   0);
-    const totMesAnt = items.reduce((a, s) => a + s.v_mes_anterior, 0);
-    const totAnoAct = items.reduce((a, s) => a + s.v_ano_actual,   0);
-    const totAnoAnt = items.reduce((a, s) => a + s.v_ano_anterior, 0);
-    const totUtil   = items.reduce((a, s) => a + s.utilidad_mes,   0);
-    const totMgMes  = totMesAct > 0 ? (totUtil / totMesAct * 100).toFixed(1) : "0.0";
-    const varMesTot = totMesAnt > 0 ? ((totMesAct - totMesAnt) / totMesAnt * 100) : 0;
-    const varAnoTot = totAnoAnt > 0 ? ((totAnoAct - totAnoAnt) / totAnoAnt * 100) : 0;
-
+    const t = d.total;
     const filaTotal = `
       <tr class="row-total">
         <td>TOTAL GENERAL</td>
-        <td class="text-right">${fmtMM(totMesAct)}</td>
-        <td class="text-right">${fmtMM(totMesAnt)}</td>
-        <td class="text-right ${clsPct(varMesTot)}">${fmtPct(varMesTot)}</td>
-        <td class="text-right">${fmtMM(totAnoAct)}</td>
-        <td class="text-right">${fmtMM(totAnoAnt)}</td>
-        <td class="text-right ${clsPct(varAnoTot)}">${fmtPct(varAnoTot)}</td>
-        <td class="text-right text-amber">${totMgMes}%</td>
+        <td class="text-right">${fmtMM(t.v_mes_actual)}</td>
+        <td class="text-right">${fmtMM(t.v_mes_anterior)}</td>
+        <td class="text-right ${clsPct(t.var_mes)}">${fmtPct(t.var_mes)}</td>
+        <td class="text-right">${fmtMM(t.v_ano_actual)}</td>
+        <td class="text-right">${fmtMM(t.v_ano_anterior)}</td>
+        <td class="text-right ${clsPct(t.var_ano)}">${fmtPct(t.var_ano)}</td>
+        <td class="text-right text-amber">${t.mg_mes.toFixed(1)}%</td>
       </tr>
     `;
 

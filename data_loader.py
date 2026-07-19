@@ -579,11 +579,32 @@ def get_ventas_por_campo(campo, orden_map=None, top_n=None):
     else:
         resultado.sort(key=lambda r: -r["v_mes_actual"])
 
+    # Total real (sobre TODOS los valores, antes de truncar a top_n) —
+    # asi el total mostrado no queda corto cuando la tabla se limita
+    # a un top N (ej. Marca).
+    t_mes_actual   = sum(r["v_mes_actual"]   for r in resultado)
+    t_mes_anterior = sum(r["v_mes_anterior"] for r in resultado)
+    t_ano_actual   = sum(r["v_ano_actual"]   for r in resultado)
+    t_ano_anterior = sum(r["v_ano_anterior"] for r in resultado)
+    t_utilidad_mes = sum(r["utilidad_mes"]   for r in resultado)
+    total = {
+        "nombre":         "TOTAL GENERAL",
+        "v_mes_actual":   t_mes_actual,
+        "v_mes_anterior": t_mes_anterior,
+        "var_mes":        var_pct(t_mes_actual, t_mes_anterior),
+        "v_ano_actual":   t_ano_actual,
+        "v_ano_anterior": t_ano_anterior,
+        "var_ano":        var_pct(t_ano_actual, t_ano_anterior),
+        "utilidad_mes":   t_utilidad_mes,
+        "mg_mes":         round(t_utilidad_mes / t_mes_actual * 100, 1) if t_mes_actual > 0 else 0.0,
+    }
+
     if top_n:
         resultado = resultado[:top_n]
 
     return {
         "items":        resultado,
+        "total":        total,
         "ano_actual":         2026,
         "ano_anterior":       2025,
         "mes_nombre":         MESES.get(mes_actual, ""),
@@ -596,6 +617,7 @@ def get_ventas_por_sucursal():
     data = get_ventas_por_campo("SUCURSAL_LOGICA", orden_map=orden)
     return {
         "sucursales":   [{**r, "sucursal": r["nombre"]} for r in data["items"]],
+        "total":        data["total"],
         "ano_actual":         data["ano_actual"],
         "ano_anterior":       data["ano_anterior"],
         "mes_nombre":         data["mes_nombre"],
