@@ -13,6 +13,11 @@
     gap: 20px;
     align-items: start;
   }
+  /* Sin min-width:0, un item de grid no se achica bajo el ancho de su
+     contenido (aunque tenga overflow-x:auto adentro) — la tabla ancha
+     empujaba TODA la pagina a scrollear horizontal en vez de solo la
+     tabla. */
+  .proy-contenido { min-width: 0; }
 
   /* Panel filtros */
   .filtros-panel {
@@ -226,7 +231,7 @@
     </div>
 
     <!-- Tabla -->
-    <div>
+    <div class="proy-contenido">
       <div class="table-card">
         <div class="table-header">
           <div class="table-header-title" id="tabla-titulo">Proyección por Sucursal y Vendedor</div>
