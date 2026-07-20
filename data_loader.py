@@ -609,29 +609,43 @@ def get_ventas_por_campo(campo, orden_map=None, top_n=None):
     dia_actual   = fecha_datos.day
     mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
 
-    # Union de valores en ambos años (para no perder de vista algo que
-    # tuvo venta en 2025 y cayo a 0 en 2026, o viceversa)
-    valores = set(df26[campo].dropna().unique()) | set(df25[campo].dropna().unique())
+    # Agregaciones vectorizadas (groupby) en vez de un loop en Python por
+    # cada valor distinto — con columnas de alta cardinalidad (CLIENTE,
+    # DESCRIPCION: miles de valores) un loop con filtro por valor es
+    # demasiado lento (cientos de escaneos completos del dataframe).
+    df26v = df26[df26[campo].notna()]
+    df25v = df25[df25[campo].notna()]
+
+    g_ano_26 = df26v.groupby(campo)["TOTAL"].sum()
+
+    df25_ytd = df25v[
+        (df25v["MES"] < mes_actual) |
+        ((df25v["MES"] == mes_actual) & (df25v["DIA"] <= dia_actual))
+    ]
+    g_ano_25 = df25_ytd.groupby(campo)["TOTAL"].sum()
+
+    df26_mes = df26v[df26v["MES"] == mes_actual]
+    g_mes_26  = df26_mes.groupby(campo)["TOTAL"].sum()
+    g_util_26 = df26_mes.groupby(campo)["UTILIDAD_BRUTA"].sum()
+
+    # Mes calendario anterior (ej. Junio si estamos en Julio), no "mismo mes año pasado"
+    df26_prev = df26v[(df26v["MES"] == mes_anterior) & (df26v["DIA"] <= dia_actual)]
+    g_mes_prev = df26_prev.groupby(campo)["TOTAL"].sum()
+
+    # Union de valores sobre el universo COMPLETO de ambos años (no solo
+    # los que caen dentro de las ventanas YTD/mes) — alguien que solo
+    # vendio en 2025 fuera del rango de comparacion (ej. se fue a mitad
+    # de año) igual debe aparecer en la lista, aunque sea con $0.
+    valores = set(df26v[campo].unique()) | set(df25v[campo].unique())
 
     resultado = []
     for val in valores:
-        s26 = df26[df26[campo] == val]
-        s25 = df25[df25[campo] == val]
-
-        v_ano_26 = float(s26["TOTAL"].sum())
-        v_ano_25 = float(s25[
-            (s25["MES"] < mes_actual) |
-            ((s25["MES"] == mes_actual) & (s25["DIA"] <= dia_actual))
-        ]["TOTAL"].sum())
-
-        mes_26     = s26[s26["MES"] == mes_actual]
-        # Mes calendario anterior (ej. Junio si estamos en Julio), no "mismo mes año pasado"
-        mes_prev   = s26[(s26["MES"] == mes_anterior) & (s26["DIA"] <= dia_actual)]
-
-        v_mes_26  = float(mes_26["TOTAL"].sum())
-        v_mes_prev = float(mes_prev["TOTAL"].sum())
-        util_mes  = float(mes_26["UTILIDAD_BRUTA"].sum())
-        mg_mes    = round(util_mes / v_mes_26 * 100, 1) if v_mes_26 > 0 else 0.0
+        v_ano_26   = float(g_ano_26.get(val, 0.0))
+        v_ano_25   = float(g_ano_25.get(val, 0.0))
+        v_mes_26   = float(g_mes_26.get(val, 0.0))
+        util_mes   = float(g_util_26.get(val, 0.0))
+        v_mes_prev = float(g_mes_prev.get(val, 0.0))
+        mg_mes     = round(util_mes / v_mes_26 * 100, 1) if v_mes_26 > 0 else 0.0
 
         resultado.append({
             "nombre":         str(val),
@@ -712,6 +726,16 @@ def get_ventas_por_canal():
 
 def get_ventas_por_procedencia():
     return get_ventas_por_campo("PROCEDENCIA")
+
+
+def get_ventas_por_cliente():
+    # ~6000 clientes distintos — top 15 por venta, igual que Marca.
+    return get_ventas_por_campo("NOMBRE_CLIENTE", top_n=15)
+
+
+def get_ventas_por_producto():
+    # ~4200 productos distintos — top 15 por venta.
+    return get_ventas_por_campo("DESCRIPCION", top_n=15)
 
 
 def get_ventas_por_familia(agrupar_por="familia"):

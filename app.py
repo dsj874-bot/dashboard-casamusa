@@ -197,6 +197,40 @@ def api_ventas_por_procedencia():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/clientes")
+@login_requerido
+def clientes():
+    return render_template("clientes.html",
+                           active="clientes",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/ventas_por_cliente")
+@login_requerido
+def api_ventas_por_cliente():
+    try:
+        return jsonify(data_loader.get_ventas_por_cliente())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/productos")
+@login_requerido
+def productos():
+    return render_template("productos.html",
+                           active="productos",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/ventas_por_producto")
+@login_requerido
+def api_ventas_por_producto():
+    try:
+        return jsonify(data_loader.get_ventas_por_producto())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/datos")
 @login_requerido
 def datos():
