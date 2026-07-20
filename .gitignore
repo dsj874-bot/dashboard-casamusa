@@ -3,6 +3,7 @@ data/*.xlsx
 data/*.xlsx.done
 data/*.parquet
 data/*.pkl
+data/fecha_confirmada.txt
 
 # Python
 __pycache__/
