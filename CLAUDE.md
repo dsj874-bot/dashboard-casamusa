@@ -82,8 +82,9 @@ Flujo real (no automático desde SAP, alguien copia el archivo a mano):
 3. Dos formas de disparar la consolidación:
    - Botón "🔄 Actualizar datos" en el topbar → POST `/admin/actualizar`
      (**solo visible/permitido para usuarios con `admin: True` en
-     GERENTES** — hoy solo dsepulveda@casamusa.cl). SOLO consolida
-     archivos — no confirma días sin ventas, ver más abajo. Es el
+     GERENTES** — hoy solo el usuario "Administrador", ver sección
+     Autenticación). SOLO consolida archivos — no confirma días sin
+     ventas, ver más abajo. Es el
      respaldo manual: si un día hábil no se cargó el archivo antes de
      las 19:00, se carga más tarde (aunque sea de noche) y se aprieta
      el botón para forzarlo.
@@ -173,11 +174,29 @@ donde `--red` estaba puesto en verde por error y todas las variaciones
 negativas se veían verdes. No revivir esa confusión.
 
 ## Autenticación
-Usuarios hardcodeados en `app.py` (dict `GERENTES`). Sin DB.
+Usuarios hardcodeados en `app.py` (dict `GERENTES`). Sin DB. Emails
+como *keys* del dict deben ir en minúscula (`/login` hace
+`.strip().lower()` antes de buscar, pero el usuario puede escribir el
+correo con cualquier capitalización al iniciar sesión).
 `"admin": True` en la entrada de un gerente le da acceso al botón
 "Actualizar datos" (oculto en el HTML Y rechazado con 403 en el
 servidor si no es admin). Por defecto los gerentes nuevos NO son admin.
 Session Flask con secret_key.
+
+Usuarios actuales (actualizado 2026-07-20):
+| Correo | Nombre | Admin |
+|---|---|---|
+| dsepulveda@casamusa.cl | Administrador | ✅ Sí (único) |
+| emusa@casamusa.cl | G. General | No |
+| fmusa@casamusa.cl | Importaciones | No |
+| malvarado@casamusa.cl | Finanzas | No |
+| jsantana@casamusa.cl | Comercial | No |
+| naguilera@casamusa.cl | ECI | No |
+
+Las claves siguen el patrón `Rol2026` (ej. `Admin2026`, `ECI2026`).
+Los usuarios previos (gerente@, ventas@, enrique@, marcelo@, y el
+antiguo "David Sepúlveda") fueron eliminados — dsepulveda@casamusa.cl
+se reutilizó para el nuevo rol "Administrador".
 
 ## Páginas activas
 | Ruta | Template | Función datos |
@@ -197,7 +216,40 @@ Session Flask con secret_key.
 
 ## Páginas en construcción (pendiente)
 - /datos — Vista de Datos (explorador de transacciones crudas, con
-  filtros + búsqueda; diseño aún no definido con el usuario)
+  filtros + búsqueda; diseño aún no definido con el usuario). La ruta
+  y `en_construccion.html` siguen existiendo, pero el link del menú
+  se sacó de `base.html` (2026-07-20) porque no tenía nada construido
+  y ocupaba espacio. Si se retoma, agregar de nuevo el `<a>` en el
+  sidebar de base.html.
+
+## Filtros de Proyección / Seguimiento Metas
+Ambas paginas comparten `/api/filtros_proyeccion`
+(`get_filtros_proyeccion()`) y `_aplicar_filtros_comunes()` en
+data_loader.py. Si se agrega un filtro nuevo a una, hay que
+agregarlo a ambos lugares (la lista de opciones Y el mapeo
+clave→columna en `_aplicar_filtros_comunes`) o quedará en el
+dropdown pero sin efecto real.
+
+## Barra lateral colapsable
+`base.html` tiene un botón (`#sidebar-toggle`, borde de la barra,
+`calc(var(--sidebar-w) - 12px)`) que colapsa el menú a solo íconos
+(64px, clase `body.sidebar-collapsed`, ver CSS ahí mismo). Estado en
+`localStorage.sidebarCollapsed`, restaurado con un script al inicio
+de `<body>` para evitar parpadeo. **No agregar `transition` a la
+propiedad `left` de ese botón** — interfiere con el recálculo de
+`calc(var(--sidebar-w) - ...)` cuando cambia la variable (bug ya
+encontrado y corregido una vez).
+
+## Contenedores flex/grid con tablas anchas (`min-width: 0`)
+Un item de flex o grid NO se achica bajo el ancho de su contenido por
+defecto, aunque tenga un hijo con `overflow-x: auto` — hace falta
+`min-width: 0` explícito en el item. `.main` y `.content` en
+base.html ya lo tienen (protege a cualquier página). Si una página
+nueva usa su propio grid de 2 columnas (filtros + tabla, como
+proyeccion.html/metas.html vía `.proy-layout`), el item que envuelve
+la tabla también necesita su propio `min-width: 0` (ver clase
+`.proy-contenido`) — si no, una tabla ancha empuja TODA la página a
+scrollear horizontal en vez de quedar contenida en su propio wrapper.
 
 ## Tabs BIWISER pendientes de replicar
 Los reportes siguen la estructura del sistema BIWISER interno:
