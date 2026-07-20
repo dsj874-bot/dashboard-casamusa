@@ -82,11 +82,27 @@ Flujo real (no automático desde SAP, alguien copia el archivo a mano):
 3. Dos formas de disparar la consolidación:
    - Botón "🔄 Actualizar datos" en el topbar → POST `/admin/actualizar`
      (**solo visible/permitido para usuarios con `admin: True` en
-     GERENTES** — hoy solo dsepulveda@casamusa.cl).
+     GERENTES** — hoy solo dsepulveda@casamusa.cl). SOLO consolida
+     archivos — no confirma días sin ventas, ver más abajo. Es el
+     respaldo manual: si un día hábil no se cargó el archivo antes de
+     las 19:00, se carga más tarde (aunque sea de noche) y se aprieta
+     el botón para forzarlo.
    - Tarea Programada de Windows `CasaMusa_ActualizarVentas`, corre todos
      los días a las 19:00 vía `actualizar_diario.py` (no necesita que
-     Flask esté corriendo). Si no hay archivo nuevo, no hace nada — no es
-     error, queda registrado en `actualizar_diario.log`.
+     Flask esté corriendo).
+
+## Si no hay archivo a las 19:00 (`actualizar_diario.py`)
+- **Domingo o feriado**: se confirma automáticamente ese día como
+  "sin ventas, dato final" (`confirmar_dia_sin_ventas()`, escribe
+  `data/fecha_confirmada.txt`, gitignored). Es seguro avanzar el corte
+  porque el $0 es real (tienda cerrada), no un dato pendiente.
+- **Día hábil normal**: NO se hace nada automáticamente. Podría haber
+  venta real aún sin cargar — avanzar el corte mostraría un $0 falso.
+  Queda esperando a que alguien cargue el archivo y use el botón
+  manual (aunque sea más tarde ese mismo día, o al día siguiente).
+- `_fecha_datos()` (el único corte usado en toda la app, ver más abajo)
+  toma el MÁXIMO entre la fecha real de datos cargados y la fecha
+  confirmada — así que esto no requiere tocar nada más.
 
 ## `_fecha_datos()` — el único corte de fechas (no usar `_hoy()` directo)
 - `_fecha_datos()`: fecha MÁXIMA con datos realmente cargados de 2026
