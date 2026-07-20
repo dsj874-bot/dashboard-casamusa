@@ -149,13 +149,26 @@ SAP maneja sucursales físicas. La función `_aplicar_sucursal_logica()`:
 
 ## Reporte genérico por campo
 `get_ventas_por_campo(campo, orden_map=None, top_n=None)` es la función
-base detrás de Sucursal/Vendedor/Canal/Familia/Marca/Procedencia — agrupa
-venta mes/año actual vs anterior por cualquier columna categórica.
-Devuelve `items` (posiblemente truncado a `top_n`, ej. Marca top 30) Y
-`total` (SIEMPRE calculado sobre el set completo, antes de truncar) — el
-frontend debe usar `d.total` para la fila TOTAL GENERAL, nunca sumar
-`items` a mano (si hay truncado, la suma de `items` no es el total real,
-puede incluso ser mayor si hay categorías negativas fuera del top N).
+base detrás de Sucursal/Vendedor/Canal/Familia/Marca/Procedencia/
+Cliente/Producto — agrupa venta mes/año actual vs anterior por
+cualquier columna categórica. Devuelve `items` (posiblemente truncado
+a `top_n`, ej. Marca/Cliente/Producto top 15-30) Y `total` (SIEMPRE
+calculado sobre el set completo, antes de truncar) — el frontend debe
+usar `d.total` para la fila TOTAL GENERAL, nunca sumar `items` a mano
+(si hay truncado, la suma de `items` no es el total real, puede
+incluso ser mayor si hay categorías negativas fuera del top N).
+
+**Implementación (importante, no volver a un loop por valor):** usa
+`groupby()` vectorizado de pandas (una pasada por métrica), no un
+loop en Python filtrando el dataframe completo por cada valor
+distinto. Con columnas de baja cardinalidad (sucursal, canal) un loop
+era tolerable, pero con CLIENTE (~6000 valores) o DESCRIPCION (~4200)
+un loop se cuelga (>30s). El universo de `valores` a listar debe
+salir de `df26v[campo].unique() | df25v[campo].unique()` (dataset
+completo, sin filtrar por ventana YTD/mes) — si se arma esa unión
+solo a partir de los índices de las series agregadas (YTD-filtradas),
+alguien que vendió solo fuera de esa ventana desaparece de la lista
+en vez de mostrarse en $0 (bug real que apareció al optimizar esto).
 
 ## NE x Facturar (Negocios Ganados por facturar)
 - `data/NE_x_Facturar.xlsx`: 1 fila por vendedor home (más "OTROS" por
@@ -213,6 +226,8 @@ se reutilizó para el nuevo rol "Administrador".
 | /vta_acum | vta_acum.html | get_vta_acum(filtros) |
 | /vta_mes_mg | vta_mes_mg.html | get_vta_mes_mg_acum(filtros) |
 | /vta_mg_mensual | vta_mg_mensual.html | get_vta_mg_mensual(filtros) |
+| /clientes | clientes.html | get_ventas_por_cliente() (top 15) |
+| /productos | productos.html | get_ventas_por_producto() (top 15) |
 
 ## Páginas en construcción (pendiente)
 - /datos — Vista de Datos (explorador de transacciones crudas, con
