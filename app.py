@@ -19,11 +19,12 @@ app.secret_key = "casamusa_dashboard_2026_secreto"
 #  defecto (sin la clave, o en False) NO tiene el boton.
 # ══════════════════════════════════════════════════════
 GERENTES = {
-    "gerente@casamusa.cl":    {"password": "Gerente2026", "nombre": "Gerente General"},
-    "ventas@casamusa.cl":     {"password": "Ventas2026",  "nombre": "Gerente de Ventas"},
-    "enrique@casamusa.cl":    {"password": "Enrique2026", "nombre": "Enrique Musa"},
-    "marcelo@casamusa.cl":    {"password": "Marcelo2026", "nombre": "Marcelo"},
-    "dsepulveda@casamusa.cl": {"password": "David2026",   "nombre": "David Sepúlveda", "admin": True},
+    "dsepulveda@casamusa.cl": {"password": "Admin2026",         "nombre": "Administrador", "admin": True},
+    "emusa@casamusa.cl":      {"password": "GGeneral2026",      "nombre": "G. General"},
+    "fmusa@casamusa.cl":      {"password": "Importaciones2026", "nombre": "Importaciones"},
+    "malvarado@casamusa.cl":  {"password": "Finanzas2026",      "nombre": "Finanzas"},
+    "jsantana@casamusa.cl":   {"password": "Comercial2026",     "nombre": "Comercial"},
+    "naguilera@casamusa.cl":  {"password": "ECI2026",           "nombre": "ECI"},
 }
 
 # ══════════════════════════════════════════════════════
