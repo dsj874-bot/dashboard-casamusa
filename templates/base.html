@@ -154,6 +154,54 @@
       color: #22a347;
     }
 
+    /* Boton colapsar (siempre en el borde de la barra, ambos estados) */
+    .sidebar-toggle-btn {
+      position: fixed;
+      top: 64px;
+      left: calc(var(--sidebar-w) - 12px);
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 200;
+      font-size: 13px;
+      line-height: 1;
+      transition: background 0.15s, color 0.15s;
+    }
+    .sidebar-toggle-btn:hover {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    /* Modo colapsado (solo iconos) */
+    body.sidebar-collapsed { --sidebar-w: 64px; }
+    body.sidebar-collapsed .logo-sub,
+    body.sidebar-collapsed .nav-section-title,
+    body.sidebar-collapsed .nav-label,
+    body.sidebar-collapsed .user-info {
+      display: none;
+    }
+    body.sidebar-collapsed .sidebar-logo {
+      display: flex;
+      justify-content: center;
+      padding: 10px 4px;
+    }
+    body.sidebar-collapsed .sidebar-logo img { max-width: 32px; margin-bottom: 0; }
+    body.sidebar-collapsed .nav-item {
+      justify-content: center;
+      padding: 8px 0;
+      gap: 0;
+    }
+    body.sidebar-collapsed .sidebar-user { padding: 8px; }
+    body.sidebar-collapsed .btn-logout { padding: 7px; }
+
     /* ══════════════════════════════
        MAIN CONTENT
     ══════════════════════════════ */
@@ -444,9 +492,17 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body>
+<script>
+  // Restaurar estado colapsado/expandido antes de pintar, para evitar parpadeo
+  if (localStorage.getItem('sidebarCollapsed') === '1') {
+    document.body.classList.add('sidebar-collapsed');
+  }
+</script>
 
 <!-- ══════════ SIDEBAR ══════════ -->
 <nav class="sidebar">
+
+  <button id="sidebar-toggle" class="sidebar-toggle-btn" title="Colapsar menú">‹</button>
 
   <div class="sidebar-logo">
     <img src="/static/img/logo.png" alt="CasaMusa" style="width:100%; max-width:130px; height:auto; display:block; margin-bottom:4px;">
@@ -457,47 +513,42 @@
 
     <div class="nav-section-title">Principal</div>
     <a href="/resumen" class="nav-item {% if active == 'resumen' %}active{% endif %}">
-      <span class="nav-icon">📊</span> Resumen General
+      <span class="nav-icon">📊</span><span class="nav-label"> Resumen General</span>
     </a>
     <a href="/proyeccion" class="nav-item {% if active == 'proyeccion' %}active{% endif %}">
-      <span class="nav-icon">📈</span> Proyección de Ventas
+      <span class="nav-icon">📈</span><span class="nav-label"> Proyección de Ventas</span>
     </a>
     <a href="/metas" class="nav-item {% if active == 'metas' %}active{% endif %}">
-      <span class="nav-icon">🎯</span> Seguimiento Metas
+      <span class="nav-icon">🎯</span><span class="nav-label"> Seguimiento Metas</span>
     </a>
     <a href="/ppto" class="nav-item {% if active == 'ppto' %}active{% endif %}">
-      <span class="nav-icon">📊</span> Seguimiento Ppto
+      <span class="nav-icon">📊</span><span class="nav-label"> Seguimiento Ppto</span>
     </a>
 
     <div class="nav-section-title">Análisis</div>
     <a href="/vta_acum" class="nav-item {% if active == 'vta_acum' %}active{% endif %}">
-      <span class="nav-icon">📈</span> Vta Acumulada
+      <span class="nav-icon">📈</span><span class="nav-label"> Vta Acumulada</span>
     </a>
     <a href="/vta_mes_mg" class="nav-item {% if active == 'vta_mes_mg' %}active{% endif %}">
-      <span class="nav-icon">📊</span> Vta Mes Mg Acum
+      <span class="nav-icon">📊</span><span class="nav-label"> Vta Mes Mg Acum</span>
     </a>
     <a href="/vta_mg_mensual" class="nav-item {% if active == 'vta_mg_mensual' %}active{% endif %}">
-      <span class="nav-icon">📉</span> Vta Mg Mensual
+      <span class="nav-icon">📉</span><span class="nav-label"> Vta Mg Mensual</span>
     </a>
     <a href="/sucursales" class="nav-item {% if active == 'sucursales' %}active{% endif %}">
-      <span class="nav-icon">🏪</span> Por Sucursal
+      <span class="nav-icon">🏪</span><span class="nav-label"> Por Sucursal</span>
     </a>
     <a href="/vendedores" class="nav-item {% if active == 'vendedores' %}active{% endif %}">
-      <span class="nav-icon">👤</span> Por Vendedor
+      <span class="nav-icon">👤</span><span class="nav-label"> Por Vendedor</span>
     </a>
     <a href="/canal" class="nav-item {% if active == 'canal' %}active{% endif %}">
-      <span class="nav-icon">🛒</span> Por Canal de Venta
+      <span class="nav-icon">🛒</span><span class="nav-label"> Por Canal de Venta</span>
     </a>
     <a href="/familia" class="nav-item {% if active == 'familia' %}active{% endif %}">
-      <span class="nav-icon">📦</span> Por Familia / Marca
+      <span class="nav-icon">📦</span><span class="nav-label"> Por Familia / Marca</span>
     </a>
     <a href="/procedencia" class="nav-item {% if active == 'procedencia' %}active{% endif %}">
-      <span class="nav-icon">🌎</span> Por Procedencia
-    </a>
-
-    <div class="nav-section-title">Detalle</div>
-    <a href="/datos" class="nav-item {% if active == 'datos' %}active{% endif %}">
-      <span class="nav-icon">📋</span> Vista de Datos
+      <span class="nav-icon">🌎</span><span class="nav-label"> Por Procedencia</span>
     </a>
 
   </div>
@@ -507,7 +558,7 @@
       <div class="user-name">{{ session_nombre }}</div>
       <div class="user-role">🔒 Acceso Gerencial</div>
     </div>
-    <a href="/logout" class="btn-logout">Cerrar sesión</a>
+    <a href="/logout" class="btn-logout" title="Cerrar sesión">⏻<span class="nav-label"> Cerrar sesión</span></a>
   </div>
 
 </nav>
@@ -565,6 +616,20 @@
       }
     });
   }
+
+  // Colapsar/expandir barra lateral (icono-only), estado guardado en el navegador
+  const btnToggleSidebar = document.getElementById('sidebar-toggle');
+  function aplicarEstadoSidebar(colapsado) {
+    document.body.classList.toggle('sidebar-collapsed', colapsado);
+    btnToggleSidebar.textContent = colapsado ? '›' : '‹';
+    btnToggleSidebar.title = colapsado ? 'Expandir menú' : 'Colapsar menú';
+  }
+  aplicarEstadoSidebar(document.body.classList.contains('sidebar-collapsed'));
+  btnToggleSidebar.addEventListener('click', function () {
+    const nuevoEstado = !document.body.classList.contains('sidebar-collapsed');
+    localStorage.setItem('sidebarCollapsed', nuevoEstado ? '1' : '0');
+    aplicarEstadoSidebar(nuevoEstado);
+  });
 </script>
 
 {% block extra_scripts %}{% endblock %}
