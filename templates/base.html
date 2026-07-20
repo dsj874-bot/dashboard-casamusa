@@ -37,7 +37,7 @@
     ══════════════════════════════ */
     .sidebar {
       width: var(--sidebar-w);
-      min-height: 100vh;
+      height: 100vh;
       background: var(--surface);
       border-right: 1px solid var(--border);
       display: flex;
@@ -49,6 +49,7 @@
 
     /* Logo */
     .sidebar-logo {
+      flex-shrink: 0;
       padding: 10px 20px 8px;
       border-bottom: 1px solid var(--border);
     }
@@ -69,7 +70,7 @@
 
     /* Navegación */
     .sidebar-nav {
-      flex: 1;
+      flex: 0 1 auto;
       min-height: 0;
       padding: 4px 8px;
       overflow-y: auto;
@@ -116,6 +117,7 @@
 
     /* Usuario */
     .sidebar-user {
+      flex-shrink: 0;
       padding: 8px 12px;
       border-top: 1px solid var(--border);
     }
