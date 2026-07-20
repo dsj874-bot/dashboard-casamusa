@@ -736,25 +736,42 @@ def get_filtros_proyeccion():
         df26["SUCURSAL_LOGICA"].dropna().unique().tolist(),
         key=lambda s: orden.get(s, 99)
     )
-    return {"sucursales": sucursales}
+    vendedores = sorted(v for v in df26["VENDEDOR_RPT"].dropna().unique().tolist() if v != "OTROS")
+    return {
+        "sucursales":   sucursales,
+        "vendedores":   vendedores,
+        "tipo_venta":   sorted(df26["TIPO_VENTA"].dropna().unique().tolist()),
+        "familias":     sorted(df26["FAMILIA"].dropna().unique().tolist()),
+        "marcas":       sorted(df26["MARCA"].dropna().unique().tolist()),
+        "subfamilias":  sorted(df26["SUBFAMILIA"].dropna().unique().tolist()),
+        "procedencias": sorted(df26["PROCEDENCIA"].dropna().unique().tolist()),
+    }
 
 
 # ══════════════════════════════════════════════════════
 #  PROYECCION DE VENTAS
 # ══════════════════════════════════════════════════════
 def _aplicar_filtros_comunes(df26, df25, filtros, col_tv="TIPO_VENTA"):
-    """Aplica filtros de sucursal y tipo de venta a ambos dataframes."""
+    """Aplica los filtros del panel (sucursal, vendedor, tipo de venta,
+    familia, marca, subfamilia, procedencia) a ambos dataframes. Si un
+    filtro no viene en el dict (ej. pantallas que no usan todos), se
+    ignora — no rompe a quien llame con menos filtros."""
     f = filtros or {}
-    suc = f.get("sucursal", "todas")
-    tv  = f.get("tipo_venta", "todas")
 
-    if suc and suc != "todas":
-        df26 = df26[df26["SUCURSAL_LOGICA"] == suc]
-        df25 = df25[df25["SUCURSAL_LOGICA"] == suc]
-
-    if tv and tv != "todas" and col_tv in df26.columns:
-        df26 = df26[df26[col_tv] == tv]
-        df25 = df25[df25[col_tv] == tv]
+    mapa = [
+        ("sucursal",    "SUCURSAL_LOGICA"),
+        ("vendedor",    "VENDEDOR_RPT"),
+        ("tipo_venta",  col_tv),
+        ("familia",     "FAMILIA"),
+        ("marca",       "MARCA"),
+        ("subfamilia",  "SUBFAMILIA"),
+        ("procedencia", "PROCEDENCIA"),
+    ]
+    for clave, columna in mapa:
+        valor = f.get(clave, "todas")
+        if valor and valor != "todas" and columna in df26.columns:
+            df26 = df26[df26[columna] == valor]
+            df25 = df25[df25[columna] == valor]
 
     return df26, df25
 
