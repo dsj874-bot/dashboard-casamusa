@@ -88,20 +88,26 @@ Flujo real (no automático desde SAP, alguien copia el archivo a mano):
      Flask esté corriendo). Si no hay archivo nuevo, no hace nada — no es
      error, queda registrado en `actualizar_diario.log`.
 
-## `_hoy()` vs `_fecha_datos()` — no confundir
-- `_hoy()`: fecha real de hoy (`datetime.now().date()`). Se usa para
-  TODOS los cortes de comparación (días hábiles transcurridos, mismo día
-  del mes/año anterior, día del año para proyección anual). Avanza
-  siempre, tenga o no archivo cargado — si no fuera así, un domingo sin
-  archivo nuevo congelaría también la comparación contra el mismo día
-  del mes/año anterior.
+## `_fecha_datos()` — el único corte de fechas (no usar `_hoy()` directo)
 - `_fecha_datos()`: fecha MÁXIMA con datos realmente cargados de 2026
-  para el mes actual. Se usa SOLO para el campo `fecha_datos` que se
-  muestra en pantalla como "Datos al DD/MM/AAAA" — nunca debe afirmar
-  tener datos de un día que aún no se cargó.
-- Si se agrega una función nueva con corte por día, usar `_hoy()` para
-  calcular, y si se necesita mostrar "Datos al" en esa pantalla, llamar
-  `_fecha_datos()` aparte.
+  para el mes actual. Es el ÚNICO corte usado tanto para mostrar
+  "Datos al DD/MM/AAAA" en pantalla como para calcular TODAS las
+  comparaciones (días hábiles transcurridos, mismo día del mes/año
+  anterior, día del año para proyección anual).
+- Por qué un solo corte y no la fecha real de hoy: si el año/mes
+  anterior se comparara hasta "hoy" pero el año/mes actual solo tiene
+  datos cargados hasta ayer, se compararían periodos de distinta
+  longitud (ej. 19 días de 2025 contra 18 días reales de 2026),
+  inflando artificialmente el periodo anterior. Usando siempre
+  `_fecha_datos()`, año/mes actual y año/mes anterior quedan
+  comparados con exactamente los mismos días.
+- Avanza sola cuando se consolida un archivo nuevo (manual o vía la
+  tarea de las 19:00) — no hace falta lógica adicional para que las
+  comparaciones "se pongan al día", se recalculan solas en la
+  siguiente carga de cada página.
+- `_hoy()` (fecha real del sistema) es SOLO un helper interno de
+  `_fecha_datos()` — no llamarlo directo para calcular cortes o
+  comparaciones en ninguna función nueva.
 
 ## Sucursales lógicas (SUCURSAL_LOGICA) y vendedores
 SAP maneja sucursales físicas. La función `_aplicar_sucursal_logica()`:
