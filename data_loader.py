@@ -551,9 +551,12 @@ def var_pct(actual, anterior):
 # ══════════════════════════════════════════════════════
 #  KPIs RESUMEN GENERAL
 # ══════════════════════════════════════════════════════
-def get_resumen():
+def get_resumen(filtro_sucursal=None):
     df25 = get_df_2025()
     df26 = get_df_2026()
+    if filtro_sucursal:
+        df25 = df25[df25["SUCURSAL_LOGICA"] == filtro_sucursal]
+        df26 = df26[df26["SUCURSAL_LOGICA"] == filtro_sucursal]
     fecha_datos = _fecha_datos()
     mes_actual  = fecha_datos.month
     dia_actual  = fecha_datos.day
@@ -598,9 +601,12 @@ def get_resumen():
 # ══════════════════════════════════════════════════════
 #  VENTAS POR MES — comparativo
 # ══════════════════════════════════════════════════════
-def get_ventas_por_mes():
+def get_ventas_por_mes(filtro_sucursal=None):
     df25 = get_df_2025()
     df26 = get_df_2026()
+    if filtro_sucursal:
+        df25 = df25[df25["SUCURSAL_LOGICA"] == filtro_sucursal]
+        df26 = df26[df26["SUCURSAL_LOGICA"] == filtro_sucursal]
 
     meses = []
     for mes in range(1, 13):
@@ -619,7 +625,7 @@ def get_ventas_por_mes():
 # ══════════════════════════════════════════════════════
 #  VENTAS POR SUCURSAL
 # ══════════════════════════════════════════════════════
-def get_ventas_por_campo(campo, orden_map=None, top_n=None):
+def get_ventas_por_campo(campo, orden_map=None, top_n=None, filtro_sucursal=None):
     """
     Agrupa venta mes/año actual vs año anterior por cualquier columna
     categorica del dataset (SUCURSAL_LOGICA, VENDEDOR_RPT, TIPO_VENTA,
@@ -629,9 +635,15 @@ def get_ventas_por_campo(campo, orden_map=None, top_n=None):
                Si es None, se ordena por venta del mes actual (desc).
     top_n:     si se pasa, limita el resultado a los N con mayor venta
                del mes actual (util para MARCA, que tiene ~50 valores).
+    filtro_sucursal: si se pasa (ej. "MT"), acota TODO el calculo a esa
+               sucursal (SUCURSAL_LOGICA) — usado para el rol Jefe de
+               Sucursal, que no debe poder ver otras sucursales.
     """
     df25 = get_df_2025()
     df26 = get_df_2026()
+    if filtro_sucursal:
+        df25 = df25[df25["SUCURSAL_LOGICA"] == filtro_sucursal]
+        df26 = df26[df26["SUCURSAL_LOGICA"] == filtro_sucursal]
     fecha_datos = _fecha_datos()
     mes_actual   = fecha_datos.month
     dia_actual   = fecha_datos.day
@@ -725,9 +737,9 @@ def get_ventas_por_campo(campo, orden_map=None, top_n=None):
     }
 
 
-def get_ventas_por_sucursal():
+def get_ventas_por_sucursal(filtro_sucursal=None):
     orden = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
-    data = get_ventas_por_campo("SUCURSAL_LOGICA", orden_map=orden)
+    data = get_ventas_por_campo("SUCURSAL_LOGICA", orden_map=orden, filtro_sucursal=filtro_sucursal)
     return {
         "sucursales":   [{**r, "sucursal": r["nombre"]} for r in data["items"]],
         "total":        data["total"],
@@ -738,30 +750,33 @@ def get_ventas_por_sucursal():
     }
 
 
-def get_ventas_por_vendedor():
+def get_ventas_por_vendedor(filtro_sucursal=None):
     # Se agrupa por VENDEDOR (nombre real de SAP), no por VENDEDOR_RPT.
     # VENDEDOR_RPT ata la venta a la sucursal "home" del vendedor y manda
     # el resto a "OTROS" (correcto para el reporte de sucursales, pero
     # incorrecto aqui: un vendedor que cambio de sucursal o vende bajo
     # otro codigo de bodega (ej. SI-STK) debe ver el 100% de su venta,
     # sin importar donde quedo registrada.
-    return get_ventas_por_campo("VENDEDOR")
+    # Excepcion: si viene filtro_sucursal (rol Jefe de Sucursal), se acota
+    # a lo vendido en esa sucursal — asi el total cuadra con Resumen/
+    # Proyeccion de esa sucursal en vez del total nacional del vendedor.
+    return get_ventas_por_campo("VENDEDOR", filtro_sucursal=filtro_sucursal)
 
 
-def get_ventas_por_canal():
-    return get_ventas_por_campo("TIPO_VENTA")
+def get_ventas_por_canal(filtro_sucursal=None):
+    return get_ventas_por_campo("TIPO_VENTA", filtro_sucursal=filtro_sucursal)
 
 
-def get_ventas_por_procedencia():
-    return get_ventas_por_campo("PROCEDENCIA")
+def get_ventas_por_procedencia(filtro_sucursal=None):
+    return get_ventas_por_campo("PROCEDENCIA", filtro_sucursal=filtro_sucursal)
 
 
-def get_ventas_por_cliente():
+def get_ventas_por_cliente(filtro_sucursal=None):
     # ~6000 clientes distintos — top 15 por venta, igual que Marca.
-    return get_ventas_por_campo("NOMBRE_CLIENTE", top_n=15)
+    return get_ventas_por_campo("NOMBRE_CLIENTE", top_n=15, filtro_sucursal=filtro_sucursal)
 
 
-def get_ventas_por_producto():
+def get_ventas_por_producto(filtro_sucursal=None):
     # ~4300 productos distintos — top 15 por venta.
     # Se agrupa por CODIGO_CM+DESCRIPCION, no solo por DESCRIPCION: hay
     # ~115 descripciones que corresponden a 2 SKUs distintos (mismo texto,
@@ -769,7 +784,7 @@ def get_ventas_por_producto():
     # (ej. "100000" = CODIGO GENERICO, usado para ajustes de precio,
     # campañas, etc. — no es un producto real). Agrupar solo por texto
     # mezclaria esos casos.
-    data = get_ventas_por_campo("PRODUCTO_KEY", top_n=15)
+    data = get_ventas_por_campo("PRODUCTO_KEY", top_n=15, filtro_sucursal=filtro_sucursal)
     for r in data["items"]:
         codigo, _, descripcion = r["nombre"].partition("||")
         r["codigo"] = codigo
@@ -777,10 +792,10 @@ def get_ventas_por_producto():
     return data
 
 
-def get_ventas_por_familia(agrupar_por="familia"):
+def get_ventas_por_familia(agrupar_por="familia", filtro_sucursal=None):
     campo = "MARCA" if agrupar_por == "marca" else "FAMILIA"
     top_n = 30 if campo == "MARCA" else None
-    return get_ventas_por_campo(campo, top_n=top_n)
+    return get_ventas_por_campo(campo, top_n=top_n, filtro_sucursal=filtro_sucursal)
 
 
 # ══════════════════════════════════════════════════════
@@ -847,8 +862,10 @@ def _dias_habiles_hasta(ano, mes, dia):
 # ══════════════════════════════════════════════════════
 #  FILTROS PARA PROYECCION
 # ══════════════════════════════════════════════════════
-def get_filtros_proyeccion():
+def get_filtros_proyeccion(filtro_sucursal=None):
     df26 = get_df_2026()
+    if filtro_sucursal:
+        df26 = df26[df26["SUCURSAL_LOGICA"] == filtro_sucursal]
     orden = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
     sucursales = sorted(
         df26["SUCURSAL_LOGICA"].dropna().unique().tolist(),
@@ -1120,9 +1137,12 @@ def _get_ppto_df():
     return df
 
 
-def get_seguimiento_ppto():
+def get_seguimiento_ppto(filtro_sucursal=None):
     df25 = get_df_2025()
     df26 = get_df_2026()
+    if filtro_sucursal:
+        df25 = df25[df25["SUCURSAL_LOGICA"] == filtro_sucursal]
+        df26 = df26[df26["SUCURSAL_LOGICA"] == filtro_sucursal]
     fecha_datos = _fecha_datos()
     mes_actual  = fecha_datos.month
     dia_actual  = fecha_datos.day
@@ -1248,9 +1268,11 @@ FILTROS_VTA = {
 }
 
 
-def get_filtros_vta_acum():
+def get_filtros_vta_acum(filtro_sucursal=None):
     """Devuelve dimensiones disponibles y valores para filtros laterales."""
     df = get_df_2026()
+    if filtro_sucursal:
+        df = df[df["SUCURSAL_LOGICA"] == filtro_sucursal]
 
     # Verificar qué columnas existen realmente
     cats_ok = {

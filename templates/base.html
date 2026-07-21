@@ -566,7 +566,11 @@
   <div class="sidebar-user">
     <div class="user-info">
       <div class="user-name">{{ session_nombre }}</div>
+      {% if sucursal_sesion %}
+      <div class="user-role">🏪 Sucursal {{ sucursal_sesion }}</div>
+      {% else %}
       <div class="user-role">🔒 Acceso Gerencial</div>
+      {% endif %}
     </div>
     <a href="/logout" class="btn-logout" title="Cerrar sesión">⏻<span class="nav-label"> Cerrar sesión</span></a>
   </div>

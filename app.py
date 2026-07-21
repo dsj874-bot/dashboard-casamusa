@@ -14,9 +14,14 @@ app.secret_key = "casamusa_dashboard_2026_secreto"
 # ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
 #  Para agregar un gerente: agregar una línea aquí
-#  "email": {"password": "clave", "nombre": "Nombre", "admin": True/False}
+#  "email": {"password": "clave", "nombre": "Nombre", "admin": True/False,
+#            "sucursal": "MT"}
 #  "admin" controla quien ve/puede usar "Actualizar datos". Por
 #  defecto (sin la clave, o en False) NO tiene el boton.
+#  "sucursal" (opcional) hace de este usuario un "Jefe de Sucursal": ve
+#  todo el dashboard, pero acotado SOLO a esa sucursal (SUCURSAL_LOGICA) —
+#  el filtro se fuerza en el servidor en cada endpoint, no solo en la
+#  interfaz, para que no se pueda ver otra sucursal cambiando el filtro.
 # ══════════════════════════════════════════════════════
 GERENTES = {
     "dsepulveda@casamusa.cl": {"password": "Admin2026",         "nombre": "Administrador", "admin": True},
@@ -25,6 +30,7 @@ GERENTES = {
     "malvarado@casamusa.cl":  {"password": "Finanzas2026",      "nombre": "Finanzas"},
     "jsantana@casamusa.cl":   {"password": "Comercial2026",     "nombre": "Comercial"},
     "naguilera@casamusa.cl":  {"password": "ECI2026",           "nombre": "ECI", "admin": True},
+    "gcarrasco@casamusa.cl":  {"password": "MT2026",            "nombre": "MT", "sucursal": "MT"},
 }
 
 # ══════════════════════════════════════════════════════
@@ -58,7 +64,13 @@ def admin_requerido(f):
 # ══════════════════════════════════════════════════════
 @app.context_processor
 def inject_es_admin():
-    return {"es_admin": session.get("admin", False)}
+    return {"es_admin": session.get("admin", False), "sucursal_sesion": session.get("sucursal")}
+
+
+def _sucursal_forzada():
+    """Sucursal a la que esta atado el usuario logueado (Jefe de Sucursal),
+    o None si ve todo el dashboard sin restriccion."""
+    return session.get("sucursal")
 
 
 # ══════════════════════════════════════════════════════
@@ -79,9 +91,10 @@ def login():
         password = request.form.get("password", "")
         gerente  = GERENTES.get(email)
         if gerente and gerente["password"] == password:
-            session["usuario"] = email
-            session["nombre"]  = gerente["nombre"]
-            session["admin"]   = gerente.get("admin", False)
+            session["usuario"]  = email
+            session["nombre"]   = gerente["nombre"]
+            session["admin"]    = gerente.get("admin", False)
+            session["sucursal"] = gerente.get("sucursal")
             return redirect(url_for("resumen"))
         error = "Correo o contraseña incorrectos."
     return render_template("login.html", error=error)
@@ -140,7 +153,7 @@ def vendedores():
 @login_requerido
 def api_ventas_por_vendedor():
     try:
-        return jsonify(data_loader.get_ventas_por_vendedor())
+        return jsonify(data_loader.get_ventas_por_vendedor(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -157,7 +170,7 @@ def canal():
 @login_requerido
 def api_ventas_por_canal():
     try:
-        return jsonify(data_loader.get_ventas_por_canal())
+        return jsonify(data_loader.get_ventas_por_canal(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -175,7 +188,7 @@ def familia():
 def api_ventas_por_familia():
     try:
         agrupar_por = request.args.get("agrupar_por", "familia")
-        return jsonify(data_loader.get_ventas_por_familia(agrupar_por))
+        return jsonify(data_loader.get_ventas_por_familia(agrupar_por, filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -192,7 +205,7 @@ def procedencia():
 @login_requerido
 def api_ventas_por_procedencia():
     try:
-        return jsonify(data_loader.get_ventas_por_procedencia())
+        return jsonify(data_loader.get_ventas_por_procedencia(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -209,7 +222,7 @@ def clientes():
 @login_requerido
 def api_ventas_por_cliente():
     try:
-        return jsonify(data_loader.get_ventas_por_cliente())
+        return jsonify(data_loader.get_ventas_por_cliente(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -226,7 +239,7 @@ def productos():
 @login_requerido
 def api_ventas_por_producto():
     try:
-        return jsonify(data_loader.get_ventas_por_producto())
+        return jsonify(data_loader.get_ventas_por_producto(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -260,7 +273,7 @@ def admin_actualizar():
 @login_requerido
 def api_resumen():
     try:
-        return jsonify(data_loader.get_resumen())
+        return jsonify(data_loader.get_resumen(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -269,7 +282,7 @@ def api_resumen():
 @login_requerido
 def api_ventas_por_mes():
     try:
-        return jsonify(data_loader.get_ventas_por_mes())
+        return jsonify(data_loader.get_ventas_por_mes(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -278,7 +291,7 @@ def api_ventas_por_mes():
 @login_requerido
 def api_ventas_por_sucursal():
     try:
-        return jsonify(data_loader.get_ventas_por_sucursal())
+        return jsonify(data_loader.get_ventas_por_sucursal(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -287,7 +300,7 @@ def api_ventas_por_sucursal():
 @login_requerido
 def api_filtros_proyeccion():
     try:
-        return jsonify(data_loader.get_filtros_proyeccion())
+        return jsonify(data_loader.get_filtros_proyeccion(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -297,6 +310,8 @@ def api_filtros_proyeccion():
 def api_proyeccion():
     try:
         filtros = request.get_json(silent=True) or {}
+        if _sucursal_forzada():
+            filtros["sucursal"] = _sucursal_forzada()
         return jsonify(data_loader.get_proyeccion(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -307,6 +322,8 @@ def api_proyeccion():
 def api_metas():
     try:
         filtros = request.get_json(silent=True) or {}
+        if _sucursal_forzada():
+            filtros["sucursal"] = _sucursal_forzada()
         return jsonify(data_loader.get_seguimiento_metas(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -324,7 +341,7 @@ def ppto():
 @login_requerido
 def api_ppto():
     try:
-        return jsonify(data_loader.get_seguimiento_ppto())
+        return jsonify(data_loader.get_seguimiento_ppto(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -342,7 +359,7 @@ def vta_acum():
 @login_requerido
 def api_filtros_vta_acum():
     try:
-        return jsonify(data_loader.get_filtros_vta_acum())
+        return jsonify(data_loader.get_filtros_vta_acum(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -352,6 +369,8 @@ def api_filtros_vta_acum():
 def api_vta_acum():
     try:
         filtros = request.get_json(silent=True) or {}
+        if _sucursal_forzada():
+            filtros["sucursal"] = _sucursal_forzada()
         return jsonify(data_loader.get_vta_acum(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -370,6 +389,8 @@ def vta_mes_mg():
 def api_vta_mes_mg():
     try:
         filtros = request.get_json(silent=True) or {}
+        if _sucursal_forzada():
+            filtros["sucursal"] = _sucursal_forzada()
         return jsonify(data_loader.get_vta_mes_mg_acum(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -388,6 +409,8 @@ def vta_mg_mensual():
 def api_vta_mg_mensual():
     try:
         filtros = request.get_json(silent=True) or {}
+        if _sucursal_forzada():
+            filtros["sucursal"] = _sucursal_forzada()
         return jsonify(data_loader.get_vta_mg_mensual(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
