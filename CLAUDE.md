@@ -66,7 +66,14 @@ Notas:
 - data_loader crea automáticamente Ventas_20XX.parquet (pyarrow instalado)
   al primer arranque. Sin pyarrow caería a .pkl.
 - Siguientes arranques leen desde parquet (subsegundo).
-- Si Ventas_2026.xlsx cambia (mod_time), reconstruye cache solo.
+- `_leer_archivo()` recarga si cambia el mtime del **.xlsx original O
+  del archivo de cache en disco** (arreglado 2026-07-21). La
+  consolidación diaria solo toca el cache, nunca el .xlsx — si solo se
+  vigilara el .xlsx, un Flask de larga duración (corriendo todo el día)
+  nunca notaría un cambio hecho por `actualizar_diario.py`, que corre
+  como **proceso separado** (la invalidación de cache en memoria que
+  hace `actualizar_desde_archivo_mensual()` solo sirve dentro del mismo
+  proceso que la llama). No revertir ese chequeo doble a "solo el xlsx".
 - NUNCA crear el cache desde Linux/sandbox — genera incompatibilidad con
   Windows.
 
