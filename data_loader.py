@@ -155,8 +155,8 @@ MESES = {
 #  2026: se recarga solo si el archivo fue modificado
 # ══════════════════════════════════════════════════════
 _cache = {
-    2025: {"df": None, "mod_time": None},
-    2026: {"df": None, "mod_time": None},
+    2025: {"df": None, "mod_time": None, "mod_cache": None},
+    2026: {"df": None, "mod_time": None, "mod_cache": None},
 }
 
 
@@ -270,18 +270,37 @@ def _consolidar_mes_2026(filepath):
 
 
 def _leer_archivo(ano):
+    """
+    Lee (con cache en memoria + disco) el dataframe de ventas del año.
+
+    IMPORTANTE: la consolidacion diaria (actualizar_desde_archivo_mensual,
+    llamada por el boton "Actualizar datos" o por actualizar_diario.py a
+    las 19:00) escribe SOLO en el cache de disco (parquet/pkl) — nunca
+    toca el .xlsx original. Si Flask queda corriendo como proceso de
+    larga duracion (caso normal, todo el dia), su cache EN MEMORIA no se
+    entera de un cambio que otro proceso (actualizar_diario.py, un script
+    aparte) le hizo al archivo de cache en disco, a menos que tambien se
+    vigile el mtime de ESE archivo — no solo el del xlsx original.
+    """
     xlsx    = VENTAS_2025 if ano == 2025 else VENTAS_2026
     cache_f = xlsx.replace(".xlsx", _cache_ext())
 
     if not os.path.exists(xlsx):
         raise FileNotFoundError(f"No se encontro {xlsx}")
 
-    mod_xlsx = os.path.getmtime(xlsx)
+    mod_xlsx  = os.path.getmtime(xlsx)
+    mod_cache = os.path.getmtime(cache_f) if os.path.exists(cache_f) else None
 
-    if _cache[ano]["df"] is None or _cache[ano]["mod_time"] != mod_xlsx:
+    necesita_recargar = (
+        _cache[ano]["df"] is None
+        or _cache[ano]["mod_time"] != mod_xlsx
+        or _cache[ano].get("mod_cache") != mod_cache
+    )
+
+    if necesita_recargar:
         df = None
         # Intentar cache en disco si es mas nuevo que el xlsx
-        if os.path.exists(cache_f) and os.path.getmtime(cache_f) >= mod_xlsx:
+        if mod_cache is not None and mod_cache >= mod_xlsx:
             try:
                 print(f"  Cargando Ventas_{ano} desde cache rapido...")
                 df = _cache_read(cache_f)
@@ -298,12 +317,14 @@ def _leer_archivo(ano):
             df = _normalizar_df(df)
             try:
                 _cache_write(df, cache_f)
+                mod_cache = os.path.getmtime(cache_f)
                 print(f"  Cache guardado — proximas cargas seran instantaneas.")
             except Exception as e:
                 print(f"  No se pudo guardar cache: {e}")
         df = _aplicar_sucursal_logica(df)
-        _cache[ano]["df"]       = df
-        _cache[ano]["mod_time"] = mod_xlsx
+        _cache[ano]["df"]        = df
+        _cache[ano]["mod_time"]  = mod_xlsx
+        _cache[ano]["mod_cache"] = mod_cache
 
     return _cache[ano]["df"]
 
