@@ -1082,6 +1082,9 @@ def get_seguimiento_metas(filtros=None):
     # Metas del mes actual
     metas_df = _get_metas_df()
     metas_mes = metas_df[(metas_df["ANO"] == 2026) & (metas_df["MES"] == mes_actual)]
+    filtro_sucursal = (filtros or {}).get("sucursal")
+    if filtro_sucursal and filtro_sucursal not in ("todas", "todos", ""):
+        metas_mes = metas_mes[metas_mes["SUCURSAL"].astype(str).str.strip() == filtro_sucursal]
     meta_dic = {
         (str(r["SUCURSAL"]).strip(), str(r["VENDEDOR"]).strip()): float(r["META"])
         for _, r in metas_mes.iterrows()
@@ -1220,7 +1223,7 @@ def get_seguimiento_ppto(filtro_sucursal=None):
     mensual_26 = {s: meses_suc(df26, s) for s in sucursales}
     totales_25 = [round(float(df25[df25["MES"] == m]["TOTAL"].sum()), 0) for m in range(1, 13)]
     totales_26 = [round(float(df26[df26["MES"] == m]["TOTAL"].sum()), 0) for m in range(1, 13)]
-    ppto_anual_total = sum(ppto_dic.values())
+    ppto_anual_total = ppto_dic.get(filtro_sucursal, 0.0) if filtro_sucursal else sum(ppto_dic.values())
     ppto_mensual     = [round(ppto_anual_total / 12, 0)] * 12
 
     return {
