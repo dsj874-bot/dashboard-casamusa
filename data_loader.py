@@ -195,6 +195,8 @@ def _normalizar_df(df):
         df = df.rename(columns={"TIPO VENTA": "TIPO_VENTA"})
     if "CODIGO_PROVEEDOR" in df.columns:
         df["CODIGO_PROVEEDOR"] = df["CODIGO_PROVEEDOR"].astype(str)
+    if "CODIGO_CM" in df.columns and "DESCRIPCION" in df.columns:
+        df["PRODUCTO_KEY"] = df["CODIGO_CM"].astype(str) + "||" + df["DESCRIPCION"].astype(str)
     return df
 
 
@@ -321,6 +323,11 @@ def _leer_archivo(ano):
                 print(f"  Cache guardado — proximas cargas seran instantaneas.")
             except Exception as e:
                 print(f"  No se pudo guardar cache: {e}")
+        # Auto-reparable: caches en disco guardados antes de agregar esta
+        # columna no la tienen. Se calcula aqui (no solo en _normalizar_df)
+        # para que tambien quede presente al leer un cache viejo.
+        if "PRODUCTO_KEY" not in df.columns and "CODIGO_CM" in df.columns and "DESCRIPCION" in df.columns:
+            df["PRODUCTO_KEY"] = df["CODIGO_CM"].astype(str) + "||" + df["DESCRIPCION"].astype(str)
         df = _aplicar_sucursal_logica(df)
         _cache[ano]["df"]        = df
         _cache[ano]["mod_time"]  = mod_xlsx
@@ -755,8 +762,19 @@ def get_ventas_por_cliente():
 
 
 def get_ventas_por_producto():
-    # ~4200 productos distintos — top 15 por venta.
-    return get_ventas_por_campo("DESCRIPCION", top_n=15)
+    # ~4300 productos distintos — top 15 por venta.
+    # Se agrupa por CODIGO_CM+DESCRIPCION, no solo por DESCRIPCION: hay
+    # ~115 descripciones que corresponden a 2 SKUs distintos (mismo texto,
+    # codigo distinto) y ~56 codigos que acumulan varias descripciones
+    # (ej. "100000" = CODIGO GENERICO, usado para ajustes de precio,
+    # campañas, etc. — no es un producto real). Agrupar solo por texto
+    # mezclaria esos casos.
+    data = get_ventas_por_campo("PRODUCTO_KEY", top_n=15)
+    for r in data["items"]:
+        codigo, _, descripcion = r["nombre"].partition("||")
+        r["codigo"] = codigo
+        r["nombre"] = descripcion
+    return data
 
 
 def get_ventas_por_familia(agrupar_por="familia"):

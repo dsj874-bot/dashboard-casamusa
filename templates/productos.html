@@ -18,6 +18,7 @@
     <table>
       <thead>
         <tr>
+          <th>SKU</th>
           <th>Producto</th>
           <th class="text-right" id="th-mes-actual">Venta Mes Actual</th>
           <th class="text-right" id="th-mes-ant">Venta Mes Ant.</th>
@@ -29,7 +30,7 @@
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td colspan="8" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+        <tr><td colspan="9" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -113,6 +114,7 @@ fetch("/api/ventas_por_producto")
 
     const rows = items.map(s => `
       <tr>
+        <td class="text-muted">${s.codigo}</td>
         <td class="fw-bold" style="max-width:320px;white-space:normal;">${s.nombre}</td>
         <td class="text-right fw-bold">${fmtMM(s.v_mes_actual)}</td>
         <td class="text-right text-muted">${fmtMM(s.v_mes_anterior)}</td>
@@ -127,6 +129,7 @@ fetch("/api/ventas_por_producto")
     const t = d.total;
     const filaTotal = `
       <tr class="row-total">
+        <td></td>
         <td>TOTAL GENERAL (todos los productos)</td>
         <td class="text-right">${fmtMM(t.v_mes_actual)}</td>
         <td class="text-right">${fmtMM(t.v_mes_anterior)}</td>
