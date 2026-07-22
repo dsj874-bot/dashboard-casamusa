@@ -32,6 +32,7 @@ GERENTES = {
     "naguilera@casamusa.cl":  {"password": "ECI2026",           "nombre": "ECI", "admin": True},
     "gcarrasco@casamusa.cl":  {"password": "MT2026",            "nombre": "MT", "sucursal": "MT"},
     "sarjona@casamusa.cl":    {"password": "LC2026",            "nombre": "LC", "sucursal": "LC"},
+    "evalera@casamusa.cl":    {"password": "MR2026",            "nombre": "MR", "sucursal": "MR"},
 }
 
 # ══════════════════════════════════════════════════════
