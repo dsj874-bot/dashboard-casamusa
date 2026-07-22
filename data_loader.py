@@ -103,6 +103,22 @@ _HOME_PAIRS = {f"{s}|{v}" for s, vends in VEND_HOME.items() for v in vends}
 # Vendedor -> su sucursal home (para reatribuir SI-STK, ver mas abajo)
 _VENDEDOR_HOME_SUC = {v: s for s, vends in VEND_HOME.items() for v in vends}
 
+# ══════════════════════════════════════════════════════
+#  TRASPASOS DE SUCURSAL
+#  VEND_HOME es la foto ACTUAL de cada vendedor. Un vendedor que se
+#  traspaso de sucursal (ej. antes vendia por la bodega compartida
+#  SI-STK sin sucursal propia, y despues empezo a vender por el codigo
+#  propio de su nueva sucursal) no debe quedar reatribuido hacia atras
+#  en el tiempo. Se declara aqui la fecha desde la cual aplica su home
+#  actual — antes de esa fecha, sus ventas por SI-STK caen al default
+#  (ver _MAPA_SUC_BASE) como si no tuviera home conocido.
+# ══════════════════════════════════════════════════════
+VEND_HOME_DESDE = {
+    # Vendia 100% por SI-STK hasta mayo 2026; desde junio 2026 vende
+    # por MT-STK (codigo propio de MT) — antes de eso no era de MT.
+    "GISELLA NORAMBUENA LILLO": date(2026, 6, 1),
+}
+
 _MAPA_SUC_BASE = {
     "MT-STK": "MT", "LC-STK": "LC", "MR-STK": "MR",
     "CH-STK": "CH", "MP-STK": "MP", "OF-STK": "OF",
@@ -132,6 +148,13 @@ def _aplicar_sucursal_logica(df):
     si = suc == "SI-STK"
 
     home_de_vend = vend.map(_VENDEDOR_HOME_SUC)
+
+    # Traspasos: antes de la fecha de vigencia, tratar como si no
+    # tuviera home conocido (cae al default de SI-STK).
+    desde_traspaso = pd.to_datetime(vend.map(VEND_HOME_DESDE))
+    antes_del_traspaso = desde_traspaso.notna() & (df["FECHA_CONTA"] < desde_traspaso)
+    home_de_vend = home_de_vend.mask(antes_del_traspaso)
+
     sl = sl.where(~si | home_de_vend.isna(), home_de_vend)
 
     # Vendedor para reportes: nombre real si es home, "OTROS" si no
