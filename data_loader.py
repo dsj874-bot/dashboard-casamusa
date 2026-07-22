@@ -220,6 +220,21 @@ def _normalizar_df(df):
         df["CODIGO_PROVEEDOR"] = df["CODIGO_PROVEEDOR"].astype(str)
     if "CODIGO_CM" in df.columns and "DESCRIPCION" in df.columns:
         df["PRODUCTO_KEY"] = df["CODIGO_CM"].astype(str) + "||" + df["DESCRIPCION"].astype(str)
+
+    # Corrige filas donde SAP no calculo TOTAL pese a traer CANTIDAD y
+    # PRECIO_UNITARIO cargados (quedan en 0, no negativos — no se
+    # calcularon). Formula validada 100% contra las filas sanas del
+    # dataset. Afecta ~0.5-1% de las filas, ~$4-6M por año en ventas
+    # que no se contaban.
+    mal_total = (df["CANTIDAD"] > 0) & (df["TOTAL"] == 0) & (df["PRECIO_UNITARIO"] > 0)
+    if mal_total.any():
+        nuevo_total = (df.loc[mal_total, "CANTIDAD"] * df.loc[mal_total, "PRECIO_UNITARIO"]).round()
+        df.loc[mal_total, "TOTAL"] = nuevo_total.astype(df["TOTAL"].dtype)
+        df.loc[mal_total, "UTILIDAD_BRUTA"] = df.loc[mal_total, "TOTAL"] - df.loc[mal_total, "COSTO_TOTAL"]
+        df.loc[mal_total, "MG_BRUTO"] = (
+            df.loc[mal_total, "UTILIDAD_BRUTA"] / df.loc[mal_total, "TOTAL"] * 100
+        )
+
     return df
 
 
