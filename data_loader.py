@@ -586,6 +586,15 @@ def var_pct(actual, anterior):
     return round((float(actual) - float(anterior)) / float(anterior) * 100, 1)
 
 
+def _col_coincide(serie, valor):
+    """Compara una columna contra un valor de filtro que puede ser un
+    string (una sola sucursal, ej. "MT") o una lista (varias sucursales
+    combinadas bajo un mismo perfil, ej. "Express" = ["CH","MP"])."""
+    if isinstance(valor, (list, tuple, set)):
+        return serie.isin(valor)
+    return serie == valor
+
+
 # ══════════════════════════════════════════════════════
 #  KPIs RESUMEN GENERAL
 # ══════════════════════════════════════════════════════
@@ -593,8 +602,8 @@ def get_resumen(filtro_sucursal=None):
     df25 = get_df_2025()
     df26 = get_df_2026()
     if filtro_sucursal:
-        df25 = df25[df25["SUCURSAL_LOGICA"] == filtro_sucursal]
-        df26 = df26[df26["SUCURSAL_LOGICA"] == filtro_sucursal]
+        df25 = df25[_col_coincide(df25["SUCURSAL_LOGICA"], filtro_sucursal)]
+        df26 = df26[_col_coincide(df26["SUCURSAL_LOGICA"], filtro_sucursal)]
     fecha_datos = _fecha_datos()
     mes_actual  = fecha_datos.month
     dia_actual  = fecha_datos.day
@@ -643,8 +652,8 @@ def get_ventas_por_mes(filtro_sucursal=None):
     df25 = get_df_2025()
     df26 = get_df_2026()
     if filtro_sucursal:
-        df25 = df25[df25["SUCURSAL_LOGICA"] == filtro_sucursal]
-        df26 = df26[df26["SUCURSAL_LOGICA"] == filtro_sucursal]
+        df25 = df25[_col_coincide(df25["SUCURSAL_LOGICA"], filtro_sucursal)]
+        df26 = df26[_col_coincide(df26["SUCURSAL_LOGICA"], filtro_sucursal)]
 
     meses = []
     for mes in range(1, 13):
@@ -680,8 +689,8 @@ def get_ventas_por_campo(campo, orden_map=None, top_n=None, filtro_sucursal=None
     df25 = get_df_2025()
     df26 = get_df_2026()
     if filtro_sucursal:
-        df25 = df25[df25["SUCURSAL_LOGICA"] == filtro_sucursal]
-        df26 = df26[df26["SUCURSAL_LOGICA"] == filtro_sucursal]
+        df25 = df25[_col_coincide(df25["SUCURSAL_LOGICA"], filtro_sucursal)]
+        df26 = df26[_col_coincide(df26["SUCURSAL_LOGICA"], filtro_sucursal)]
     fecha_datos = _fecha_datos()
     mes_actual   = fecha_datos.month
     dia_actual   = fecha_datos.day
@@ -903,7 +912,7 @@ def _dias_habiles_hasta(ano, mes, dia):
 def get_filtros_proyeccion(filtro_sucursal=None):
     df26 = get_df_2026()
     if filtro_sucursal:
-        df26 = df26[df26["SUCURSAL_LOGICA"] == filtro_sucursal]
+        df26 = df26[_col_coincide(df26["SUCURSAL_LOGICA"], filtro_sucursal)]
     orden = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
     sucursales = sorted(
         df26["SUCURSAL_LOGICA"].dropna().unique().tolist(),
@@ -943,8 +952,8 @@ def _aplicar_filtros_comunes(df26, df25, filtros, col_tv="TIPO_VENTA"):
     for clave, columna in mapa:
         valor = f.get(clave, "todas")
         if valor and valor != "todas" and columna in df26.columns:
-            df26 = df26[df26[columna] == valor]
-            df25 = df25[df25[columna] == valor]
+            df26 = df26[_col_coincide(df26[columna], valor)]
+            df25 = df25[_col_coincide(df25[columna], valor)]
 
     return df26, df25
 
@@ -1122,7 +1131,7 @@ def get_seguimiento_metas(filtros=None):
     metas_mes = metas_df[(metas_df["ANO"] == 2026) & (metas_df["MES"] == mes_actual)]
     filtro_sucursal = (filtros or {}).get("sucursal")
     if filtro_sucursal and filtro_sucursal not in ("todas", "todos", ""):
-        metas_mes = metas_mes[metas_mes["SUCURSAL"].astype(str).str.strip() == filtro_sucursal]
+        metas_mes = metas_mes[_col_coincide(metas_mes["SUCURSAL"].astype(str).str.strip(), filtro_sucursal)]
     meta_dic = {
         (str(r["SUCURSAL"]).strip(), str(r["VENDEDOR"]).strip()): float(r["META"])
         for _, r in metas_mes.iterrows()
@@ -1182,8 +1191,8 @@ def get_seguimiento_ppto(filtro_sucursal=None):
     df25 = get_df_2025()
     df26 = get_df_2026()
     if filtro_sucursal:
-        df25 = df25[df25["SUCURSAL_LOGICA"] == filtro_sucursal]
-        df26 = df26[df26["SUCURSAL_LOGICA"] == filtro_sucursal]
+        df25 = df25[_col_coincide(df25["SUCURSAL_LOGICA"], filtro_sucursal)]
+        df26 = df26[_col_coincide(df26["SUCURSAL_LOGICA"], filtro_sucursal)]
     fecha_datos = _fecha_datos()
     mes_actual  = fecha_datos.month
     dia_actual  = fecha_datos.day
@@ -1261,7 +1270,11 @@ def get_seguimiento_ppto(filtro_sucursal=None):
     mensual_26 = {s: meses_suc(df26, s) for s in sucursales}
     totales_25 = [round(float(df25[df25["MES"] == m]["TOTAL"].sum()), 0) for m in range(1, 13)]
     totales_26 = [round(float(df26[df26["MES"] == m]["TOTAL"].sum()), 0) for m in range(1, 13)]
-    ppto_anual_total = ppto_dic.get(filtro_sucursal, 0.0) if filtro_sucursal else sum(ppto_dic.values())
+    if filtro_sucursal:
+        claves_ppto = filtro_sucursal if isinstance(filtro_sucursal, (list, tuple, set)) else [filtro_sucursal]
+        ppto_anual_total = sum(ppto_dic.get(s, 0.0) for s in claves_ppto)
+    else:
+        ppto_anual_total = sum(ppto_dic.values())
     ppto_mensual     = [round(ppto_anual_total / 12, 0)] * 12
 
     return {
@@ -1313,7 +1326,7 @@ def get_filtros_vta_acum(filtro_sucursal=None):
     """Devuelve dimensiones disponibles y valores para filtros laterales."""
     df = get_df_2026()
     if filtro_sucursal:
-        df = df[df["SUCURSAL_LOGICA"] == filtro_sucursal]
+        df = df[_col_coincide(df["SUCURSAL_LOGICA"], filtro_sucursal)]
 
     # Verificar qué columnas existen realmente
     cats_ok = {
@@ -1376,8 +1389,13 @@ def get_vta_acum(filtros=None):
         val = f.get(fk)
         if val and val not in ("todas", "todos", ""):
             if col in df26.columns:
-                df26 = df26[df26[col].astype(str) == str(val)]
-                df25 = df25[df25[col].astype(str) == str(val)]
+                if isinstance(val, (list, tuple, set)):
+                    valores_str = [str(v) for v in val]
+                    df26 = df26[df26[col].astype(str).isin(valores_str)]
+                    df25 = df25[df25[col].astype(str).isin(valores_str)]
+                else:
+                    df26 = df26[df26[col].astype(str) == str(val)]
+                    df25 = df25[df25[col].astype(str) == str(val)]
 
     # Subconjuntos por período
     df25_ytd = df25[
@@ -1499,8 +1517,13 @@ def get_vta_mes_mg_acum(filtros=None):
         val = f.get(fk)
         if val and val not in ("todas", "todos", ""):
             if col in df26.columns:
-                df26 = df26[df26[col].astype(str) == str(val)]
-                df25 = df25[df25[col].astype(str) == str(val)]
+                if isinstance(val, (list, tuple, set)):
+                    valores_str = [str(v) for v in val]
+                    df26 = df26[df26[col].astype(str).isin(valores_str)]
+                    df25 = df25[df25[col].astype(str).isin(valores_str)]
+                else:
+                    df26 = df26[df26[col].astype(str) == str(val)]
+                    df25 = df25[df25[col].astype(str) == str(val)]
 
     # 2025 YTD (mismo periodo)
     df25_ytd = df25[
@@ -1634,8 +1657,13 @@ def get_vta_mg_mensual(filtros=None):
         val = f.get(fk)
         if val and val not in ("todas", "todos", ""):
             if col in df26.columns:
-                df26 = df26[df26[col].astype(str) == str(val)]
-                df25 = df25[df25[col].astype(str) == str(val)]
+                if isinstance(val, (list, tuple, set)):
+                    valores_str = [str(v) for v in val]
+                    df26 = df26[df26[col].astype(str).isin(valores_str)]
+                    df25 = df25[df25[col].astype(str).isin(valores_str)]
+                else:
+                    df26 = df26[df26[col].astype(str) == str(val)]
+                    df25 = df25[df25[col].astype(str) == str(val)]
 
     # 2025 YTD
     df25_ytd = df25[

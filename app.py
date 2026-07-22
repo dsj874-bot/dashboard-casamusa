@@ -22,6 +22,8 @@ app.secret_key = "casamusa_dashboard_2026_secreto"
 #  todo el dashboard, pero acotado SOLO a esa sucursal (SUCURSAL_LOGICA) —
 #  el filtro se fuerza en el servidor en cada endpoint, no solo en la
 #  interfaz, para que no se pueda ver otra sucursal cambiando el filtro.
+#  "sucursal" tambien puede ser una LISTA (ej. ["CH","MP"]) para perfiles
+#  que combinan varias sucursales bajo un mismo nombre (ej. "Express").
 # ══════════════════════════════════════════════════════
 GERENTES = {
     "dsepulveda@casamusa.cl": {"password": "Admin2026",         "nombre": "Administrador", "admin": True},
@@ -33,6 +35,7 @@ GERENTES = {
     "gcarrasco@casamusa.cl":  {"password": "MT2026",            "nombre": "MT", "sucursal": "MT"},
     "sarjona@casamusa.cl":    {"password": "LC2026",            "nombre": "LC", "sucursal": "LC"},
     "evalera@casamusa.cl":    {"password": "MR2026",            "nombre": "MR", "sucursal": "MR"},
+    "jvillegas@casamusa.cl":  {"password": "Express2026",       "nombre": "Express", "sucursal": ["CH", "MP"]},
 }
 
 # ══════════════════════════════════════════════════════
@@ -66,7 +69,11 @@ def admin_requerido(f):
 # ══════════════════════════════════════════════════════
 @app.context_processor
 def inject_es_admin():
-    return {"es_admin": session.get("admin", False), "sucursal_sesion": session.get("sucursal")}
+    suc = session.get("sucursal")
+    # Si son varias sucursales combinadas (ej. Express = ["CH","MP"]),
+    # el badge muestra el nombre del perfil, no la lista cruda.
+    suc_label = session.get("nombre") if isinstance(suc, list) else suc
+    return {"es_admin": session.get("admin", False), "sucursal_sesion": suc_label}
 
 
 def _sucursal_forzada():
