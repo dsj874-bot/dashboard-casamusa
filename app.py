@@ -122,6 +122,7 @@ AREAS = [
     {"slug": "logistica",     "nombre": "Logística",     "icono": "🚚", "url": "/logistica",     "activo": False},
     {"slug": "bodega",        "nombre": "Bodega",        "icono": "🏭", "url": "/bodega",        "activo": False},
     {"slug": "forecast",      "nombre": "Forecast",      "icono": "🔮", "url": "/forecast",      "activo": False},
+    {"slug": "tareas",        "nombre": "Tareas Pendientes de Gerencia", "icono": "📋", "url": "/tareas", "activo": False},
 ]
 
 
@@ -170,6 +171,12 @@ def bodega():
 @login_requerido
 def forecast():
     return _area_en_construccion("forecast")
+
+
+@app.route("/tareas")
+@login_requerido
+def tareas():
+    return _area_en_construccion("tareas")
 
 
 @app.route("/logout")
