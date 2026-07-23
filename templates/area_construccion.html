@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CasaMusa — {{ area_nombre }}</title>
+  <style>
+    :root {
+      --bg:        #080c14;
+      --surface:   #0f1623;
+      --border:    #1e2a3a;
+      --text:      #f1f5f9;
+      --muted:     #475569;
+      --muted2:    #64748b;
+      --accent:    #22a347;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--border);
+    }
+    .topbar-brand { display: flex; align-items: center; gap: 12px; }
+    .topbar-brand img { height: 40px; width: auto; }
+    .topbar-brand .sub { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+    .volver {
+      color: var(--muted2);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 12px;
+      font-size: 13px;
+      transition: all .15s;
+    }
+    .volver:hover { border-color: var(--accent); color: var(--text); }
+
+    .centro {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px dashed var(--border);
+      border-radius: 16px;
+      padding: 64px 56px;
+      text-align: center;
+      max-width: 420px;
+    }
+    .card-icon { font-size: 48px; margin-bottom: 16px; }
+    .card-titulo { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .card-sub { font-size: 13px; color: var(--muted2); line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="topbar-brand">
+      <img src="/static/img/logo.png" alt="CasaMusa">
+      <div class="sub">Panel de Gerencia</div>
+    </div>
+    <a href="/inicio" class="volver">🏠 Todas las áreas</a>
+  </div>
+
+  <div class="centro">
+    <div class="card">
+      <div class="card-icon">{{ area_icono }}</div>
+      <div class="card-titulo">{{ area_nombre }}</div>
+      <div class="card-sub">Esta área está en construcción. Muy pronto vas a poder ver aquí los reportes de {{ area_nombre }}.</div>
+    </div>
+  </div>
+
+</body>
+</html>

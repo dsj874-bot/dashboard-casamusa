@@ -88,7 +88,7 @@ def _sucursal_forzada():
 @app.route("/", methods=["GET"])
 def index():
     if "usuario" in session:
-        return redirect(url_for("resumen"))
+        return redirect(url_for("inicio"))
     return redirect(url_for("login"))
 
 
@@ -104,9 +104,72 @@ def login():
             session["nombre"]   = gerente["nombre"]
             session["admin"]    = gerente.get("admin", False)
             session["sucursal"] = gerente.get("sucursal")
-            return redirect(url_for("resumen"))
+            return redirect(url_for("inicio"))
         error = "Correo o contraseña incorrectos."
     return render_template("login.html", error=error)
+
+
+# ══════════════════════════════════════════════════════
+#  AREAS — landing de todos los reportes de Casa Musa
+#  Para agregar una nueva area con contenido real: crear sus rutas
+#  propias y cambiar "activo" a True aqui.
+# ══════════════════════════════════════════════════════
+AREAS = [
+    {"slug": "comercial",     "nombre": "Comercial",     "icono": "🛒", "url": "/resumen",       "activo": True},
+    {"slug": "adquisiciones", "nombre": "Adquisiciones", "icono": "📦", "url": "/adquisiciones", "activo": False},
+    {"slug": "finanzas",      "nombre": "Finanzas",      "icono": "💰", "url": "/finanzas",      "activo": False},
+    {"slug": "inventario",    "nombre": "Inventario",    "icono": "🗄️", "url": "/inventario",    "activo": False},
+    {"slug": "logistica",     "nombre": "Logística",     "icono": "🚚", "url": "/logistica",     "activo": False},
+    {"slug": "bodega",        "nombre": "Bodega",        "icono": "🏭", "url": "/bodega",        "activo": False},
+    {"slug": "forecast",      "nombre": "Forecast",      "icono": "🔮", "url": "/forecast",      "activo": False},
+]
+
+
+@app.route("/inicio")
+@login_requerido
+def inicio():
+    return render_template("inicio.html", areas=AREAS, session_nombre=session.get("nombre"))
+
+
+def _area_en_construccion(slug):
+    area = next(a for a in AREAS if a["slug"] == slug)
+    return render_template("area_construccion.html", area_nombre=area["nombre"], area_icono=area["icono"])
+
+
+@app.route("/adquisiciones")
+@login_requerido
+def adquisiciones():
+    return _area_en_construccion("adquisiciones")
+
+
+@app.route("/finanzas")
+@login_requerido
+def finanzas():
+    return _area_en_construccion("finanzas")
+
+
+@app.route("/inventario")
+@login_requerido
+def inventario():
+    return _area_en_construccion("inventario")
+
+
+@app.route("/logistica")
+@login_requerido
+def logistica():
+    return _area_en_construccion("logistica")
+
+
+@app.route("/bodega")
+@login_requerido
+def bodega():
+    return _area_en_construccion("bodega")
+
+
+@app.route("/forecast")
+@login_requerido
+def forecast():
+    return _area_en_construccion("forecast")
 
 
 @app.route("/logout")
