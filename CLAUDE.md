@@ -100,14 +100,24 @@ Flujo real (no automático desde SAP, alguien copia el archivo a mano):
      Flask esté corriendo).
 
 ## Si no hay archivo a las 19:00 (`actualizar_diario.py`)
-- **Domingo o feriado**: se confirma automáticamente ese día como
-  "sin ventas, dato final" (`confirmar_dia_sin_ventas()`, escribe
-  `data/fecha_confirmada.txt`, gitignored). Es seguro avanzar el corte
-  porque el $0 es real (tienda cerrada), no un dato pendiente.
-- **Día hábil normal**: NO se hace nada automáticamente. Podría haber
-  venta real aún sin cargar — avanzar el corte mostraría un $0 falso.
-  Queda esperando a que alguien cargue el archivo y use el botón
-  manual (aunque sea más tarde ese mismo día, o al día siguiente).
+- Decisión explícita (2026-07-24): se confirma automáticamente el día
+  como "sin ventas, dato final" (`confirmar_dia_sin_ventas()`, escribe
+  `data/fecha_confirmada.txt`, gitignored) SIN IMPORTAR si es hábil,
+  domingo o feriado — antes solo corría domingo/feriado, pero un día
+  hábil sin archivo dejaba el corte congelado, y eso también recortaba
+  de menos las comparaciones de año/mes anterior (2025 y el mes
+  calendario pasado, que ya están completos) cada vez que el mes en
+  curso se atrasaba. Ahora avanza igual; si el día sí tuvo venta real,
+  subir el archivo después corrige el número real (la fecha confirmada
+  es solo el tope de corte, no fija ningún valor).
+- **Ojo con la hora**: el día de HOY solo se da por cerrado desde las
+  19:00 en adelante (hora en que corre la tarea programada) —
+  `confirmar_dia_sin_ventas()` tiene una guardia explícita
+  (`datetime.now().hour >= 19`) que confirma el día ANTERIOR si se
+  ejecuta antes de esa hora (ej. a mano, de día). Si se llama fuera de
+  ese resguardo (por error, de mañana) puede confirmar prematuramente
+  el día de hoy como cerrado — ya pasó una vez, hay que corregir a
+  mano el `.txt` si sucede.
 - `_fecha_datos()` (el único corte usado en toda la app, ver más abajo)
   toma el MÁXIMO entre la fecha real de datos cargados y la fecha
   confirmada — así que esto no requiere tocar nada más.
