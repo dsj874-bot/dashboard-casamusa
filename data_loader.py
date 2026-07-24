@@ -503,13 +503,11 @@ def _fecha_datos():
     el año/mes actual tiene cargados, nunca de mas.
 
     Avanza cuando se consolida un archivo nuevo (manual o via la tarea
-    de las 19:00), Y TAMBIEN cuando un domingo/feriado sin archivo
-    queda confirmado como "sin ventas, dato final" (ver
-    confirmar_dia_sin_ventas()) — un domingo cerrado es un $0 real,
-    no un dato pendiente, asi que es seguro avanzar el corte ahi. Un
-    dia habil sin archivo NO avanza solo: podria tener venta real
-    aun sin cargar, y el usuario tiene el boton "Actualizar datos"
-    para forzarlo cuando cargue el archivo (aunque sea mas tarde).
+    de las 19:00), Y TAMBIEN cuando la tarea de las 19:00 no encuentra
+    archivo y confirma el dia como "sin ventas, dato final" (ver
+    confirmar_dia_sin_ventas()) — CUALQUIER dia, habil o no. Si ese dia
+    si tuvo venta real, subir el archivo despues corrige el numero
+    (la fecha confirmada es solo el tope de corte, no fija el valor).
     Si el mes actual no tiene datos aun, retorna el dia anterior a hoy.
     """
     df26   = get_df_2026()
@@ -547,28 +545,35 @@ def confirmar_dia_sin_ventas():
     Llamada SOLO desde actualizar_diario.py (tarea de las 19:00), y
     SOLO como respaldo cuando no hay archivo nuevo que consolidar.
 
-    Si hoy es domingo o feriado, confirma la fecha de hoy como "dato
-    final, sin ventas" para que _fecha_datos() avance el corte de
-    comparaciones aunque no haya archivo — es seguro porque un
-    domingo/feriado cerrado es un $0 real, no un dato pendiente.
+    Confirma un dia como "dato final, sin ventas" para que _fecha_datos()
+    avance el corte de comparaciones aunque no haya archivo — sin
+    importar si es habil, domingo o feriado.
 
-    Si hoy es dia habil, NO hace nada — ahi si podria haber venta real
-    sin cargar todavia, y avanzar el corte mostraria un $0 falso. Para
-    ese caso el gerente carga el archivo cuando pueda (aunque sea mas
-    tarde) y fuerza la consolidacion con el boton "Actualizar datos".
+    Decision explicita (2026-07-24): antes esto solo corria domingo/
+    feriado, y un dia habil sin archivo dejaba el corte congelado para
+    no mostrar un $0 falso mientras hubiera venta real sin cargar. Se
+    cambio porque el corte congelado tambien recortaba de menos las
+    comparaciones de año/mes anterior (2025 e Junio ya cerrados, con
+    datos completos desde hace tiempo) cada vez que julio se atrasaba.
+    Ahora CUALQUIER dia sin archivo avanza el corte igual — si ese dia
+    si tuvo venta real, subir el archivo despues corrige el numero real
+    (la fecha confirmada es solo un tope de corte, no un valor fijo).
+
+    OJO fecha a confirmar: el dia de HOY solo se da por cerrado a partir
+    de las 19:00 (hora en que corre la tarea programada) — si esto se
+    ejecuta antes de esa hora (ej. a mano, de dia), hoy todavia puede
+    tener venta sin cargar, asi que se confirma el dia ANTERIOR, no hoy.
     """
     hoy = _hoy()
-    es_no_habil = hoy.weekday() == 6 or hoy in FERIADOS_CL
-    if not es_no_habil:
-        return {"ok": False, "msg": "Hoy es dia habil — no se confirma automaticamente, usa el boton Actualizar datos cuando cargues el archivo."}
+    dia_a_confirmar = hoy if datetime.now().hour >= 19 else hoy - timedelta(days=1)
 
     actual = _leer_fecha_confirmada()
-    if actual and actual >= hoy:
+    if actual and actual >= dia_a_confirmar:
         return {"ok": True, "msg": f"Ya estaba confirmado hasta {actual}."}
 
     with open(FECHA_CONFIRMADA_PATH, "w", encoding="utf-8") as f:
-        f.write(hoy.strftime("%Y-%m-%d"))
-    return {"ok": True, "msg": f"Confirmado {hoy} como dia sin ventas (domingo/feriado)."}
+        f.write(dia_a_confirmar.strftime("%Y-%m-%d"))
+    return {"ok": True, "msg": f"Confirmado {dia_a_confirmar} como dato final (sin archivo nuevo)."}
 
 
 # ══════════════════════════════════════════════════════

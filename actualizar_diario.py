@@ -6,13 +6,10 @@ Pensado para ejecutarse como Tarea Programada de Windows (no requiere
 que iniciar.bat este abierto), todos los dias a las 19:00.
 
 Si hay archivo nuevo, lo consolida (igual que el boton "Actualizar
-datos"). Si NO hay archivo:
-- Domingo o feriado: confirma el dia como "sin ventas, dato final"
-  (es un $0 real, no un dato pendiente) para que las comparaciones
-  año/mes anterior avancen igual.
-- Dia habil normal: no hace nada — puede haber venta real sin cargar
-  todavia. El gerente carga el archivo cuando pueda (aunque sea mas
-  tarde) y fuerza la consolidacion con el boton "Actualizar datos".
+datos"). Si NO hay archivo (habil o no), confirma el dia como "sin
+ventas, dato final" para que el corte de comparaciones avance igual
+-- si ese dia si tuvo venta real, subir el archivo despues corrige el
+numero real (la fecha confirmada solo fija el tope de corte).
 """
 import os
 import sys
