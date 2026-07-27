@@ -1,9 +1,10 @@
 # Datos (pesados, cambian a diario, no se versionan)
-data/*.xlsx
-data/*.xlsx.done
-data/*.parquet
-data/*.pkl
-data/fecha_confirmada.txt
+# data/ tiene una subcarpeta por area (comercial, inventario, ...)
+data/**/*.xlsx
+data/**/*.xlsx.done
+data/**/*.parquet
+data/**/*.pkl
+data/**/fecha_confirmada.txt
 
 # Python
 __pycache__/

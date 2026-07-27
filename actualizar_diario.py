@@ -1,6 +1,6 @@
 """
-Consolida el archivo mensual de ventas (data/AAMM_Vtas.xlsx) sin
-necesidad de que la app Flask este corriendo.
+Consolida el archivo mensual de ventas (data/comercial/AAMM_Vtas.xlsx)
+sin necesidad de que la app Flask este corriendo.
 
 Pensado para ejecutarse como Tarea Programada de Windows (no requiere
 que iniciar.bat este abierto), todos los dias a las 19:00.
@@ -27,18 +27,21 @@ EXCLUIR_EXT = (".log", ".procesando", ".done")
 
 
 def _respaldar_datos():
-    """Copia los archivos de data/ (Excel/parquet/metas/presupuesto) a
-    OneDrive -- para no perderlo todo si el PC falla, se pierde o lo
-    roban. Corre todos los dias junto con la consolidacion, sin
-    importar si esta encontro archivo o no."""
+    """Copia TODA la carpeta data/ (una subcarpeta por area: comercial,
+    inventario, adquisiciones, finanzas, ...) a OneDrive, preservando
+    la misma estructura -- para no perder nada de ninguna area si el
+    PC falla, se pierde o lo roban. Corre todos los dias junto con la
+    consolidacion, sin importar si esta encontro archivo o no."""
     origen = os.path.join(BASE_DIR, "data")
     try:
-        os.makedirs(BACKUP_DIR, exist_ok=True)
         copiados = 0
-        for nombre in os.listdir(origen):
-            ruta = os.path.join(origen, nombre)
-            if os.path.isfile(ruta) and not nombre.endswith(EXCLUIR_EXT):
-                shutil.copy2(ruta, os.path.join(BACKUP_DIR, nombre))
+        for carpeta, _, archivos in os.walk(origen):
+            destino_carpeta = os.path.join(BACKUP_DIR, os.path.relpath(carpeta, origen))
+            os.makedirs(destino_carpeta, exist_ok=True)
+            for nombre in archivos:
+                if nombre.endswith(EXCLUIR_EXT):
+                    continue
+                shutil.copy2(os.path.join(carpeta, nombre), os.path.join(destino_carpeta, nombre))
                 copiados += 1
         return {"ok": True, "msg": f"Respaldo OK: {copiados} archivos copiados a OneDrive."}
     except Exception as e:

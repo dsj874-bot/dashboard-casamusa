@@ -16,7 +16,7 @@ from openpyxl.utils import get_column_letter
 from data_loader import VEND_HOME, ORDEN_SUCURSALES
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DESTINO  = os.path.join(BASE_DIR, "data", "NE_x_Facturar.xlsx")
+DESTINO  = os.path.join(BASE_DIR, "data", "comercial", "NE_x_Facturar.xlsx")
 
 
 def montos_existentes():

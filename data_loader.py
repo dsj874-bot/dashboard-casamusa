@@ -10,10 +10,14 @@ import calendar
 #  CONFIGURACION
 # ══════════════════════════════════════════════════════
 BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
-VENTAS_2025    = os.path.join(BASE_DIR, "data", "Ventas_2025.xlsx")
-VENTAS_2026    = os.path.join(BASE_DIR, "data", "Ventas_2026.xlsx")
-DATA_DIR        = os.path.join(BASE_DIR, "data")
-NE_X_FACTURAR  = os.path.join(DATA_DIR, "NE_x_Facturar.xlsx")
+DATA_DIR       = os.path.join(BASE_DIR, "data")
+# data/ tiene una subcarpeta por area (comercial, inventario,
+# adquisiciones, finanzas, ...) -- cada una la carga una persona
+# distinta. Comercial es la unica con contenido real por ahora.
+DATA_DIR_COMERCIAL = os.path.join(DATA_DIR, "comercial")
+VENTAS_2025    = os.path.join(DATA_DIR_COMERCIAL, "Ventas_2025.xlsx")
+VENTAS_2026    = os.path.join(DATA_DIR_COMERCIAL, "Ventas_2026.xlsx")
+NE_X_FACTURAR  = os.path.join(DATA_DIR_COMERCIAL, "NE_x_Facturar.xlsx")
 MG_NE_PCT      = 0.20  # margen estimado sobre Negocios Ganados aun no facturados
 # CACHE_2026_PATH se define despues de detectar pyarrow
 
@@ -205,7 +209,7 @@ def _cache_read(path):
         return pd.read_pickle(path)
 
 def _get_cache_2026_path():
-    return os.path.join(DATA_DIR, "Ventas_2026" + _cache_ext())
+    return os.path.join(DATA_DIR_COMERCIAL, "Ventas_2026" + _cache_ext())
 
 
 def _normalizar_df(df):
@@ -243,7 +247,7 @@ def _detectar_archivo_mensual():
     Busca archivos YYMM_Vta*.xlsx en la carpeta data/.
     Ignora archivos .procesando y .done.
     """
-    todos = glob.glob(os.path.join(DATA_DIR, "[0-9][0-9][0-9][0-9]_Vta*.xlsx"))
+    todos = glob.glob(os.path.join(DATA_DIR_COMERCIAL, "[0-9][0-9][0-9][0-9]_Vta*.xlsx"))
     validos = [f for f in todos
                if not f.endswith(".procesando") and not f.endswith(".done")]
     return sorted(validos)[0] if validos else None
@@ -525,7 +529,7 @@ def _fecha_datos():
     return fecha_real
 
 
-FECHA_CONFIRMADA_PATH = os.path.join(DATA_DIR, "fecha_confirmada.txt")
+FECHA_CONFIRMADA_PATH = os.path.join(DATA_DIR_COMERCIAL, "fecha_confirmada.txt")
 
 
 def _leer_fecha_confirmada():
@@ -1082,7 +1086,7 @@ def get_proyeccion(filtros=None):
 # ══════════════════════════════════════════════════════
 def _get_metas_df():
     """Lee metas.xlsx (metas mensuales por sucursal y vendedor)."""
-    ruta = os.path.join(BASE_DIR, "data", "metas.xlsx")
+    ruta = os.path.join(DATA_DIR_COMERCIAL, "metas.xlsx")
     if not os.path.exists(ruta):
         return pd.DataFrame(columns=["ANO","MES","SUCURSAL","VENDEDOR","META"])
     df = pd.read_excel(ruta)
@@ -1184,7 +1188,7 @@ def get_seguimiento_metas(filtros=None):
 # ══════════════════════════════════════════════════════
 def _get_ppto_df():
     """Lee presupuesto.xlsx (presupuesto anual por sucursal)."""
-    ruta = os.path.join(BASE_DIR, "data", "presupuesto.xlsx")
+    ruta = os.path.join(DATA_DIR_COMERCIAL, "presupuesto.xlsx")
     if not os.path.exists(ruta):
         return pd.DataFrame(columns=["SUCURSAL","PRESUPUESTO_ANUAL"])
     df = pd.read_excel(ruta)
