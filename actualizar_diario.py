@@ -13,6 +13,7 @@ numero real (la fecha confirmada solo fija el tope de corte).
 """
 import os
 import sys
+import shutil
 from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -20,7 +21,28 @@ sys.path.insert(0, BASE_DIR)
 
 import data_loader
 
-LOG_PATH = os.path.join(BASE_DIR, "actualizar_diario.log")
+LOG_PATH    = os.path.join(BASE_DIR, "actualizar_diario.log")
+BACKUP_DIR  = r"C:\Users\Marcelo\OneDrive\CasaMusa_Dashboard_Backup"
+EXCLUIR_EXT = (".log", ".procesando", ".done")
+
+
+def _respaldar_datos():
+    """Copia los archivos de data/ (Excel/parquet/metas/presupuesto) a
+    OneDrive -- para no perderlo todo si el PC falla, se pierde o lo
+    roban. Corre todos los dias junto con la consolidacion, sin
+    importar si esta encontro archivo o no."""
+    origen = os.path.join(BASE_DIR, "data")
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        copiados = 0
+        for nombre in os.listdir(origen):
+            ruta = os.path.join(origen, nombre)
+            if os.path.isfile(ruta) and not nombre.endswith(EXCLUIR_EXT):
+                shutil.copy2(ruta, os.path.join(BACKUP_DIR, nombre))
+                copiados += 1
+        return {"ok": True, "msg": f"Respaldo OK: {copiados} archivos copiados a OneDrive."}
+    except Exception as e:
+        return {"ok": False, "msg": f"Respaldo fallo: {e}"}
 
 
 def main():
@@ -30,6 +52,9 @@ def main():
     if not resultado.get("ok"):
         confirmacion = data_loader.confirmar_dia_sin_ventas()
         lineas.append(f"{datetime.now():%Y-%m-%d %H:%M:%S} - {confirmacion.get('msg')}")
+
+    respaldo = _respaldar_datos()
+    lineas.append(f"{datetime.now():%Y-%m-%d %H:%M:%S} - {respaldo.get('msg')}")
 
     texto = "\n".join(lineas) + "\n"
     with open(LOG_PATH, "a", encoding="utf-8") as f:
