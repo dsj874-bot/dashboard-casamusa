@@ -97,7 +97,16 @@ Flujo real (no automático desde SAP, alguien copia el archivo a mano):
      el botón para forzarlo.
    - Tarea Programada de Windows `CasaMusa_ActualizarVentas`, corre todos
      los días a las 19:00 vía `actualizar_diario.py` (no necesita que
-     Flask esté corriendo).
+     Flask esté corriendo). `LogonType: S4U` (no requiere sesión
+     interactiva activa — antes era `Interactive` y fallaba en
+     silencio si `StartWhenAvailable` intentaba recuperar una
+     ejecución perdida antes de que hubiera sesión lista, código de
+     error `0xC000013A`, sin log). `actualizar_diario.bat` usa la ruta
+     absoluta de `python.exe` (Python solo está en el PATH de usuario,
+     no en el del sistema — con `S4U` el PATH puede no cargar igual).
+     Si el corte de fecha se queda pegado varios días, revisar primero
+     `Get-ScheduledTaskInfo -TaskName CasaMusa_ActualizarVentas` y
+     `actualizar_diario.log`.
 
 ## Si no hay archivo a las 19:00 (`actualizar_diario.py`)
 - Decisión explícita (2026-07-24): se confirma automáticamente el día
