@@ -6,8 +6,12 @@
 - Sin base de datos — lee Excel exports de SAP B1
 - Dependencias no estándar: `python-calamine` (lectura rápida de xlsx),
   `pyarrow` (cache en parquet), `pillow` (edición de imágenes, ej. logo)
-- Git inicializado (repo local, sin remoto). Identidad configurada solo
-  en este repo: David Sepúlveda / dsepulveda@casamusa.cl
+- Git con remoto en GitHub (privado): `dsj874-bot/dashboard-casamusa`
+  (configurado 2026-07-27, respaldo del código). Identidad configurada
+  solo en este repo: David Sepúlveda / dsepulveda@casamusa.cl
+- Respaldo diario de `data/` (Excel/parquet) a OneDrive
+  (`C:\Users\Marcelo\OneDrive\CasaMusa_Dashboard_Backup`), corre junto
+  con `actualizar_diario.py` a las 19:00 — ver `_respaldar_datos()`.
 
 ## Estructura
 ```
