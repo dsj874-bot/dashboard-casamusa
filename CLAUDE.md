@@ -21,17 +21,25 @@ Dashboard/
 ├── iniciar.bat                # Abre Flask en Windows (instala deps)
 ├── actualizar_diario.py/.bat # Consolida sin necesitar Flask corriendo
 │                              # (usado por Tarea Programada Windows, 19:00)
-├── generar_plantilla_ne.py   # Regenera data/NE_x_Facturar.xlsx
+├── generar_plantilla_ne.py   # Regenera data/comercial/NE_x_Facturar.xlsx
 ├── actualizar_diario.log     # Log de cada corrida automática (gitignored)
-├── data/
-│   ├── Ventas_2026.xlsx      # Export SAP B1 2026 (gitignored)
-│   ├── Ventas_2025.xlsx      # Export SAP B1 2025 (gitignored)
-│   ├── *.parquet             # Cache rápido, se regenera solo (gitignored)
-│   ├── presupuesto.xlsx      # Presupuesto anual por sucursal
-│   ├── metas.xlsx            # Metas mensuales por vendedor
-│   ├── NE_x_Facturar.xlsx    # Negocios Ganados x Facturar (semanal, gitignored)
-│   └── AAMM_Vtas.xlsx        # Archivo mensual a consolidar (temporal, se
-│                              # borra solo tras "Actualizar datos")
+├── data/                      # Una subcarpeta por area — cada una la
+│   │                          # carga una persona distinta. Solo
+│   │                          # comercial/ tiene contenido real hoy.
+│   ├── comercial/
+│   │   ├── Ventas_2026.xlsx      # Export SAP B1 2026 (gitignored)
+│   │   ├── Ventas_2025.xlsx      # Export SAP B1 2025 (gitignored)
+│   │   ├── *.parquet             # Cache rápido, se regenera solo (gitignored)
+│   │   ├── presupuesto.xlsx      # Presupuesto anual por sucursal
+│   │   ├── metas.xlsx            # Metas mensuales por vendedor
+│   │   ├── NE_x_Facturar.xlsx    # Negocios Ganados x Facturar (semanal, gitignored)
+│   │   └── AAMM_Vtas.xlsx        # Archivo mensual a consolidar (temporal, se
+│   │                              # borra solo tras "Actualizar datos")
+│   ├── inventario/            # Inventario.xlsx (nombre fijo, foto del
+│   │                          # stock a la fecha — se reemplaza entero
+│   │                          # cada vez, no se acumula como Ventas)
+│   ├── adquisiciones/         # vacía, sin contenido aun
+│   └── finanzas/              # vacía, sin contenido aun
 ├── static/img/logo.png       # Fondo transparente (no tocar con fondo solido)
 └── templates/
     ├── base.html             # Layout + sidebar + nav + boton admin
@@ -115,7 +123,7 @@ Flujo real (no automático desde SAP, alguien copia el archivo a mano):
 ## Si no hay archivo a las 19:00 (`actualizar_diario.py`)
 - Decisión explícita (2026-07-24): se confirma automáticamente el día
   como "sin ventas, dato final" (`confirmar_dia_sin_ventas()`, escribe
-  `data/fecha_confirmada.txt`, gitignored) SIN IMPORTAR si es hábil,
+  `data/comercial/fecha_confirmada.txt`, gitignored) SIN IMPORTAR si es hábil,
   domingo o feriado — antes solo corría domingo/feriado, pero un día
   hábil sin archivo dejaba el corte congelado, y eso también recortaba
   de menos las comparaciones de año/mes anterior (2025 y el mes
@@ -201,7 +209,7 @@ alguien que vendió solo fuera de esa ventana desaparece de la lista
 en vez de mostrarse en $0 (bug real que apareció al optimizar esto).
 
 ## NE x Facturar (Negocios Ganados por facturar)
-- `data/NE_x_Facturar.xlsx`: 1 fila por vendedor home (más "OTROS" por
+- `data/comercial/NE_x_Facturar.xlsx`: 1 fila por vendedor home (más "OTROS" por
   sucursal), columnas Sucursal/Vendedor bloqueadas, solo Monto NE
   editable. Lo actualiza el gerente comercial ~1 vez por semana.
 - `generar_plantilla_ne.py`: regenera la plantilla si cambia el equipo
