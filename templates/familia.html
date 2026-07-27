@@ -38,14 +38,14 @@
     <table>
       <thead>
         <tr>
-          <th id="th-nombre">Familia</th>
-          <th class="text-right" id="th-mes-actual">Venta Mes Actual</th>
-          <th class="text-right" id="th-mes-ant">Venta Mes Ant.</th>
-          <th class="text-right">Var. Mes</th>
-          <th class="text-right" id="th-ano-actual">Venta Año Actual</th>
-          <th class="text-right" id="th-ano-ant">Venta Año Ant.</th>
-          <th class="text-right">Var. Año</th>
-          <th class="text-right">Margen Mes</th>
+          <th data-key="nombre" id="th-nombre">Familia</th>
+          <th class="text-right" data-key="v_mes_actual" id="th-mes-actual">Venta Mes Actual</th>
+          <th class="text-right" data-key="v_mes_anterior" id="th-mes-ant">Venta Mes Ant.</th>
+          <th class="text-right" data-key="var_mes">Var. Mes</th>
+          <th class="text-right" data-key="v_ano_actual" id="th-ano-actual">Venta Año Actual</th>
+          <th class="text-right" data-key="v_ano_anterior" id="th-ano-ant">Venta Año Ant.</th>
+          <th class="text-right" data-key="var_ano">Var. Año</th>
+          <th class="text-right" data-key="mg_mes">Margen Mes</th>
         </tr>
       </thead>
       <tbody id="tabla-body">
@@ -76,6 +76,28 @@ const clsPct = v => v >= 0 ? "text-green" : "text-red";
 let chartFamilia = null;
 let grupoActual  = "familia";
 
+// ── Ordenamiento de tabla por columna (TOTAL GENERAL siempre fijo) ──
+let _items = [], _total = {};
+let _sortKey = null, _sortDir = "desc";
+
+function ordenarPor(key) {
+  _sortDir = (_sortKey === key) ? (_sortDir === "desc" ? "asc" : "desc") : "desc";
+  _sortKey = key;
+  renderTabla();
+}
+
+document.querySelectorAll("thead th[data-key]").forEach(th => {
+  th.style.cursor = "pointer";
+  th.addEventListener("click", () => ordenarPor(th.dataset.key));
+});
+
+function actualizarFlechas() {
+  document.querySelectorAll("thead th[data-key]").forEach(th => {
+    const activo = th.dataset.key === _sortKey;
+    th.textContent = th.dataset.label + (activo ? (_sortDir === "desc" ? " ▼" : " ▲") : "");
+  });
+}
+
 function cargarGrupo(grupo) {
   return fetch("/api/ventas_por_familia?agrupar_por=" + grupo).then(r => r.json());
 }
@@ -101,6 +123,10 @@ function renderGrupo(d, grupo) {
   document.getElementById("th-mes-ant").textContent    = "Venta " + mesAnt + " " + aAct;
   document.getElementById("th-ano-actual").textContent = "Venta " + aAct;
   document.getElementById("th-ano-ant").textContent    = "Venta " + aAnt;
+
+  document.querySelectorAll("thead th[data-key]").forEach(th => {
+    th.dataset.label = th.textContent;
+  });
 
   if (chartFamilia) chartFamilia.destroy();
   chartFamilia = new Chart(document.getElementById("chartFamilia"), {
@@ -141,7 +167,24 @@ function renderGrupo(d, grupo) {
     }
   });
 
-  const rows = items.map(s => `
+  _items = items;
+  _total = d.total;
+  renderTabla();
+}
+
+function renderTabla() {
+  let ordenados = _items;
+  if (_sortKey) {
+    ordenados = [..._items].sort((a, b) => {
+      let va = a[_sortKey], vb = b[_sortKey];
+      if (typeof va === "string") { va = va.toLowerCase(); vb = (vb || "").toLowerCase(); }
+      if (va < vb) return _sortDir === "asc" ? -1 : 1;
+      if (va > vb) return _sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+  }
+
+  const rows = ordenados.map(s => `
     <tr>
       <td class="fw-bold">${s.nombre}</td>
       <td class="text-right fw-bold">${fmtMM(s.v_mes_actual)}</td>
@@ -154,7 +197,7 @@ function renderGrupo(d, grupo) {
     </tr>
   `).join("");
 
-  const t = d.total;
+  const t = _total;
   const filaTotal = `
     <tr class="row-total">
       <td>TOTAL GENERAL</td>
@@ -169,6 +212,7 @@ function renderGrupo(d, grupo) {
   `;
 
   document.getElementById("tabla-body").innerHTML = filaTotal + rows;
+  actualizarFlechas();
 }
 
 function cambiarGrupo(grupo) {

@@ -18,15 +18,15 @@
     <table>
       <thead>
         <tr>
-          <th>SKU</th>
-          <th>Producto</th>
-          <th class="text-right" id="th-mes-actual">Venta Mes Actual</th>
-          <th class="text-right" id="th-mes-ant">Venta Mes Ant.</th>
-          <th class="text-right">Var. Mes</th>
-          <th class="text-right" id="th-ano-actual">Venta Año Actual</th>
-          <th class="text-right" id="th-ano-ant">Venta Año Ant.</th>
-          <th class="text-right">Var. Año</th>
-          <th class="text-right">Margen Mes</th>
+          <th data-key="codigo">SKU</th>
+          <th data-key="nombre">Producto</th>
+          <th class="text-right" data-key="v_mes_actual" id="th-mes-actual">Venta Mes Actual</th>
+          <th class="text-right" data-key="v_mes_anterior" id="th-mes-ant">Venta Mes Ant.</th>
+          <th class="text-right" data-key="var_mes">Var. Mes</th>
+          <th class="text-right" data-key="v_ano_actual" id="th-ano-actual">Venta Año Actual</th>
+          <th class="text-right" data-key="v_ano_anterior" id="th-ano-ant">Venta Año Ant.</th>
+          <th class="text-right" data-key="var_ano">Var. Año</th>
+          <th class="text-right" data-key="mg_mes">Margen Mes</th>
         </tr>
       </thead>
       <tbody id="tabla-body">
@@ -55,6 +55,28 @@ const fmtPct = v => (v >= 0 ? "▲ " : "▼ ") + Math.abs(v).toFixed(1) + "%";
 const clsPct = v => v >= 0 ? "text-green" : "text-red";
 const truncar = (s, n) => s.length > n ? s.slice(0, n) + "…" : s;
 
+// ── Ordenamiento de tabla por columna (TOTAL GENERAL siempre fijo) ──
+let _items = [], _total = {};
+let _sortKey = null, _sortDir = "desc";
+
+function ordenarPor(key) {
+  _sortDir = (_sortKey === key) ? (_sortDir === "desc" ? "asc" : "desc") : "desc";
+  _sortKey = key;
+  renderTabla();
+}
+
+document.querySelectorAll("thead th[data-key]").forEach(th => {
+  th.style.cursor = "pointer";
+  th.addEventListener("click", () => ordenarPor(th.dataset.key));
+});
+
+function actualizarFlechas() {
+  document.querySelectorAll("thead th[data-key]").forEach(th => {
+    const activo = th.dataset.key === _sortKey;
+    th.textContent = th.dataset.label + (activo ? (_sortDir === "desc" ? " ▼" : " ▲") : "");
+  });
+}
+
 fetch("/api/ventas_por_producto")
   .then(r => r.json())
   .then(d => {
@@ -73,6 +95,10 @@ fetch("/api/ventas_por_producto")
     document.getElementById("th-mes-ant").textContent    = "Venta " + mesAnt + " " + aAct;
     document.getElementById("th-ano-actual").textContent = "Venta " + aAct;
     document.getElementById("th-ano-ant").textContent    = "Venta " + aAnt;
+
+    document.querySelectorAll("thead th[data-key]").forEach(th => {
+      th.dataset.label = th.textContent;
+    });
 
     new Chart(document.getElementById("chartProductos"), {
       type: "bar",
@@ -112,37 +138,55 @@ fetch("/api/ventas_por_producto")
       }
     });
 
-    const rows = items.map(s => `
-      <tr>
-        <td class="text-muted">${s.codigo}</td>
-        <td class="fw-bold" style="max-width:320px;white-space:normal;">${s.nombre}</td>
-        <td class="text-right fw-bold">${fmtMM(s.v_mes_actual)}</td>
-        <td class="text-right text-muted">${fmtMM(s.v_mes_anterior)}</td>
-        <td class="text-right ${clsPct(s.var_mes)}">${fmtPct(s.var_mes)}</td>
-        <td class="text-right fw-bold">${fmtMM(s.v_ano_actual)}</td>
-        <td class="text-right text-muted">${fmtMM(s.v_ano_anterior)}</td>
-        <td class="text-right ${clsPct(s.var_ano)}">${fmtPct(s.var_ano)}</td>
-        <td class="text-right text-amber">${s.mg_mes.toFixed(1)}%</td>
-      </tr>
-    `).join("");
-
-    const t = d.total;
-    const filaTotal = `
-      <tr class="row-total">
-        <td></td>
-        <td>TOTAL GENERAL (todos los productos)</td>
-        <td class="text-right">${fmtMM(t.v_mes_actual)}</td>
-        <td class="text-right">${fmtMM(t.v_mes_anterior)}</td>
-        <td class="text-right ${clsPct(t.var_mes)}">${fmtPct(t.var_mes)}</td>
-        <td class="text-right">${fmtMM(t.v_ano_actual)}</td>
-        <td class="text-right">${fmtMM(t.v_ano_anterior)}</td>
-        <td class="text-right ${clsPct(t.var_ano)}">${fmtPct(t.var_ano)}</td>
-        <td class="text-right text-amber">${t.mg_mes.toFixed(1)}%</td>
-      </tr>
-    `;
-
-    document.getElementById("tabla-body").innerHTML = filaTotal + rows;
+    _items = items;
+    _total = d.total;
+    renderTabla();
   })
   .catch(err => console.error("Error productos:", err));
+
+function renderTabla() {
+  let ordenados = _items;
+  if (_sortKey) {
+    ordenados = [..._items].sort((a, b) => {
+      let va = a[_sortKey], vb = b[_sortKey];
+      if (typeof va === "string") { va = va.toLowerCase(); vb = (vb || "").toLowerCase(); }
+      if (va < vb) return _sortDir === "asc" ? -1 : 1;
+      if (va > vb) return _sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+  }
+
+  const rows = ordenados.map(s => `
+    <tr>
+      <td class="text-muted">${s.codigo}</td>
+      <td class="fw-bold" style="max-width:320px;white-space:normal;">${s.nombre}</td>
+      <td class="text-right fw-bold">${fmtMM(s.v_mes_actual)}</td>
+      <td class="text-right text-muted">${fmtMM(s.v_mes_anterior)}</td>
+      <td class="text-right ${clsPct(s.var_mes)}">${fmtPct(s.var_mes)}</td>
+      <td class="text-right fw-bold">${fmtMM(s.v_ano_actual)}</td>
+      <td class="text-right text-muted">${fmtMM(s.v_ano_anterior)}</td>
+      <td class="text-right ${clsPct(s.var_ano)}">${fmtPct(s.var_ano)}</td>
+      <td class="text-right text-amber">${s.mg_mes.toFixed(1)}%</td>
+    </tr>
+  `).join("");
+
+  const t = _total;
+  const filaTotal = `
+    <tr class="row-total">
+      <td></td>
+      <td>TOTAL GENERAL (todos los productos)</td>
+      <td class="text-right">${fmtMM(t.v_mes_actual)}</td>
+      <td class="text-right">${fmtMM(t.v_mes_anterior)}</td>
+      <td class="text-right ${clsPct(t.var_mes)}">${fmtPct(t.var_mes)}</td>
+      <td class="text-right">${fmtMM(t.v_ano_actual)}</td>
+      <td class="text-right">${fmtMM(t.v_ano_anterior)}</td>
+      <td class="text-right ${clsPct(t.var_ano)}">${fmtPct(t.var_ano)}</td>
+      <td class="text-right text-amber">${t.mg_mes.toFixed(1)}%</td>
+    </tr>
+  `;
+
+  document.getElementById("tabla-body").innerHTML = filaTotal + rows;
+  actualizarFlechas();
+}
 </script>
 {% endblock %}
