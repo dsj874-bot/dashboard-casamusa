@@ -3,6 +3,7 @@ from functools import wraps
 import os
 import sys
 import data_loader
+import data_loader_inventario
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -118,7 +119,7 @@ AREAS = [
     {"slug": "comercial",     "nombre": "Comercial",     "icono": "🛒", "url": "/resumen",       "activo": True},
     {"slug": "adquisiciones", "nombre": "Adquisiciones", "icono": "📦", "url": "/adquisiciones", "activo": False},
     {"slug": "finanzas",      "nombre": "Finanzas",      "icono": "💰", "url": "/finanzas",      "activo": False},
-    {"slug": "inventario",    "nombre": "Inventario",    "icono": "🗄️", "url": "/inventario",    "activo": False},
+    {"slug": "inventario",    "nombre": "Inventario",    "icono": "🗄️", "url": "/inventario",    "activo": True},
     {"slug": "logistica",     "nombre": "Logística",     "icono": "🚚", "url": "/logistica",     "activo": False},
     {"slug": "bodega",        "nombre": "Bodega",        "icono": "🏭", "url": "/bodega",        "activo": False},
     {"slug": "forecast",      "nombre": "Forecast",      "icono": "🔮", "url": "/forecast",      "activo": False},
@@ -152,7 +153,52 @@ def finanzas():
 @app.route("/inventario")
 @login_requerido
 def inventario():
-    return _area_en_construccion("inventario")
+    return render_template("inventario_resumen.html",
+                           active="inventario_resumen",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/inventario/bodegas")
+@login_requerido
+def inventario_bodegas():
+    return render_template("inventario_bodegas.html",
+                           active="inventario_bodegas",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/inventario/clasificacion")
+@login_requerido
+def inventario_clasificacion():
+    return render_template("inventario_clasificacion.html",
+                           active="inventario_clasificacion",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/inventario/resumen")
+@login_requerido
+def api_inventario_resumen():
+    try:
+        return jsonify(data_loader_inventario.get_resumen_inventario())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/bodegas")
+@login_requerido
+def api_inventario_bodegas():
+    try:
+        return jsonify(data_loader_inventario.get_inventario_por_bodega())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/clasificacion")
+@login_requerido
+def api_inventario_clasificacion():
+    try:
+        return jsonify(data_loader_inventario.get_inventario_por_clasificacion())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/logistica")
@@ -340,6 +386,16 @@ def datos():
 def admin_actualizar():
     try:
         resultado = data_loader.actualizar_desde_archivo_mensual()
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {str(e)}"}), 500
+
+
+@app.route("/admin/actualizar_inventario", methods=["POST"])
+@admin_requerido
+def admin_actualizar_inventario():
+    try:
+        resultado = data_loader_inventario.actualizar_desde_archivo()
         return jsonify(resultado)
     except Exception as e:
         return jsonify({"ok": False, "msg": f"Error: {str(e)}"}), 500

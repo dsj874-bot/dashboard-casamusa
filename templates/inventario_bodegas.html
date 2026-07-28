@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Inventario — Por Bodega{% endblock %}
+{% block page_title %}Inventario — Por Bodega{% endblock %}
+{% block page_subtitle %}Stock, tránsito y valorizado por bodega — foto a la fecha{% endblock %}
+
+{% block sidebar_nav %}
+<div class="nav-section-title">Inventario</div>
+<a href="/inventario" class="nav-item {% if active == 'inventario_resumen' %}active{% endif %}">
+  <span class="nav-icon">📊</span><span class="nav-label"> Resumen</span>
+</a>
+<a href="/inventario/bodegas" class="nav-item {% if active == 'inventario_bodegas' %}active{% endif %}">
+  <span class="nav-icon">🏭</span><span class="nav-label"> Por Bodega</span>
+</a>
+<a href="/inventario/clasificacion" class="nav-item {% if active == 'inventario_clasificacion' %}active{% endif %}">
+  <span class="nav-icon">🏷️</span><span class="nav-label"> Por Clasificación</span>
+</a>
+{% endblock %}
+
+{% block boton_actualizar %}
+{% if es_admin %}
+<button id="btn-actualizar-inv" class="btn-filter" style="padding:8px 14px;font-size:12px;"
+        title="Busca un archivo AAMMDD_Inventario.xlsx en data/inventario/ y reemplaza el inventario completo">
+  🔄 Actualizar Inventario
+</button>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+
+<div class="table-card" style="margin-bottom:20px;">
+  <div class="table-header">
+    <div class="table-header-title">Detalle por Bodega</div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Bodega</th>
+          <th class="text-right">Stock (unid.)</th>
+          <th class="text-right">Valor Stock</th>
+          <th class="text-right">SKUs con Stock</th>
+          <th class="text-right">Tránsito (unid.)</th>
+          <th class="text-right">Valor Tránsito</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-body">
+        <tr><td colspan="6" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const btnActualizarInv = document.getElementById('btn-actualizar-inv');
+if (btnActualizarInv) {
+  btnActualizarInv.addEventListener('click', async function () {
+    const btn = this;
+    const textoOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Actualizando...';
+    try {
+      const r = await fetch('/admin/actualizar_inventario', { method: 'POST' });
+      const d = await r.json();
+      alert(d.msg);
+      if (d.ok) location.reload();
+    } catch (e) {
+      alert('Error al actualizar: ' + e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = textoOriginal;
+    }
+  });
+}
+
+const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
+const fmtInt = v => Math.round(v).toLocaleString("es-CL");
+
+fetch("/api/inventario/bodegas")
+  .then(r => r.json())
+  .then(d => {
+    const rows = d.filas.map(f => `
+      <tr>
+        <td class="fw-bold">${f.bodega}</td>
+        <td class="text-right">${fmtInt(f.stock_qty)}</td>
+        <td class="text-right fw-bold">${fmtCLP(f.valor_stock)}</td>
+        <td class="text-right">${fmtInt(f.skus_con_stock)}</td>
+        <td class="text-right">${f.transito_qty !== null ? fmtInt(f.transito_qty) : '—'}</td>
+        <td class="text-right">${f.valor_transito !== null ? fmtCLP(f.valor_transito) : '—'}</td>
+      </tr>
+    `).join("");
+
+    const t = d.total;
+    const filaTotal = `
+      <tr class="row-total">
+        <td>TOTAL GENERAL</td>
+        <td class="text-right">${fmtInt(t.stock_qty)}</td>
+        <td class="text-right">${fmtCLP(t.valor_stock)}</td>
+        <td class="text-right">${fmtInt(t.skus_con_stock)}</td>
+        <td class="text-right">${fmtInt(t.transito_qty)}</td>
+        <td class="text-right">${fmtCLP(t.valor_transito)}</td>
+      </tr>
+    `;
+
+    document.getElementById("tabla-body").innerHTML = filaTotal + rows;
+  })
+  .catch(err => console.error("Error bodegas inventario:", err));
+</script>
+{% endblock %}

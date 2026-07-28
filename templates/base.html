@@ -519,6 +519,7 @@
       <span class="nav-icon">🏠</span><span class="nav-label"> Todas las áreas</span>
     </a>
 
+    {% block sidebar_nav %}
     <div class="nav-section-title">Principal</div>
     <a href="/resumen" class="nav-item {% if active == 'resumen' %}active{% endif %}">
       <span class="nav-icon">📊</span><span class="nav-label"> Resumen General</span>
@@ -564,6 +565,7 @@
     <a href="/productos" class="nav-item {% if active == 'productos' %}active{% endif %}">
       <span class="nav-icon">🔩</span><span class="nav-label"> Por Producto</span>
     </a>
+    {% endblock %}
 
   </div>
 
@@ -590,12 +592,14 @@
       <div class="topbar-meta">{% block page_subtitle %}{% endblock %}</div>
     </div>
     <div class="topbar-right">
+      {% block boton_actualizar %}
       {% if es_admin %}
       <button id="btn-actualizar" class="btn-filter" style="padding:8px 14px;font-size:12px;"
               title="Busca un archivo YYMM_Vtas.xlsx (ej. 2607_Vtas.xlsx) en la carpeta data/ y agrega los dias nuevos">
         🔄 Actualizar datos
       </button>
       {% endif %}
+      {% endblock %}
       <div class="fecha-badge" id="fecha-hoy"></div>
     </div>
   </div>

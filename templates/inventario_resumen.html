@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Inventario — Resumen{% endblock %}
+{% block page_title %}Inventario — Resumen{% endblock %}
+{% block page_subtitle %}Foto del stock a la fecha — no es acumulable como Ventas{% endblock %}
+
+{% block sidebar_nav %}
+<div class="nav-section-title">Inventario</div>
+<a href="/inventario" class="nav-item {% if active == 'inventario_resumen' %}active{% endif %}">
+  <span class="nav-icon">📊</span><span class="nav-label"> Resumen</span>
+</a>
+<a href="/inventario/bodegas" class="nav-item {% if active == 'inventario_bodegas' %}active{% endif %}">
+  <span class="nav-icon">🏭</span><span class="nav-label"> Por Bodega</span>
+</a>
+<a href="/inventario/clasificacion" class="nav-item {% if active == 'inventario_clasificacion' %}active{% endif %}">
+  <span class="nav-icon">🏷️</span><span class="nav-label"> Por Clasificación</span>
+</a>
+{% endblock %}
+
+{% block boton_actualizar %}
+{% if es_admin %}
+<button id="btn-actualizar-inv" class="btn-filter" style="padding:8px 14px;font-size:12px;"
+        title="Busca un archivo AAMMDD_Inventario.xlsx en data/inventario/ y reemplaza el inventario completo">
+  🔄 Actualizar Inventario
+</button>
+{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid" id="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Valor Stock Disponible</div>
+    <div class="kpi-value" id="kpi-valor-stock">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Valor en Tránsito</div>
+    <div class="kpi-value" id="kpi-valor-transito">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Valor Total (Stock + Tránsito)</div>
+    <div class="kpi-value" id="kpi-valor-total">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">SKUs Totales</div>
+    <div class="kpi-value" id="kpi-total-skus">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">SKUs con Stock</div>
+    <div class="kpi-value" id="kpi-con-stock">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">SKUs sin Stock</div>
+    <div class="kpi-value" id="kpi-sin-stock">—</div>
+  </div>
+</div>
+
+<div class="chart-card">
+  <div class="chart-card-title">Valor de Stock por Bodega</div>
+  <div class="chart-card-sub">Valorizado (cantidad × costo unitario) — no incluye tránsito</div>
+  <canvas id="chartBodegas" height="90"></canvas>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const btnActualizarInv = document.getElementById('btn-actualizar-inv');
+if (btnActualizarInv) {
+  btnActualizarInv.addEventListener('click', async function () {
+    const btn = this;
+    const textoOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Actualizando...';
+    try {
+      const r = await fetch('/admin/actualizar_inventario', { method: 'POST' });
+      const d = await r.json();
+      alert(d.msg);
+      if (d.ok) location.reload();
+    } catch (e) {
+      alert('Error al actualizar: ' + e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = textoOriginal;
+    }
+  });
+}
+
+Chart.defaults.color       = "#64748b";
+Chart.defaults.borderColor = "#1e2a3a";
+Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
+
+const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
+const fmtInt = v => Math.round(v).toLocaleString("es-CL");
+
+fetch("/api/inventario/resumen")
+  .then(r => r.json())
+  .then(d => {
+    document.getElementById("kpi-valor-stock").textContent    = fmtCLP(d.valor_stock_total);
+    document.getElementById("kpi-valor-transito").textContent = fmtCLP(d.valor_transito_total);
+    document.getElementById("kpi-valor-total").textContent    = fmtCLP(d.valor_total);
+    document.getElementById("kpi-total-skus").textContent     = fmtInt(d.total_skus);
+    document.getElementById("kpi-con-stock").textContent      = fmtInt(d.skus_con_stock);
+    document.getElementById("kpi-sin-stock").textContent      = fmtInt(d.skus_sin_stock);
+
+    new Chart(document.getElementById("chartBodegas"), {
+      type: "bar",
+      data: {
+        labels: d.por_bodega.map(b => b.bodega),
+        datasets: [{
+          label: "Valor Stock",
+          data: d.por_bodega.map(b => Math.round(b.valor_stock / 1000000)),
+          backgroundColor: "rgba(34,163,71,0.75)",
+          borderColor: "#22a347",
+          borderWidth: 1,
+          borderRadius: 5,
+        }]
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => " $" + ctx.raw.toLocaleString("es-CL") + " MM" } }
+        },
+        scales: {
+          x: { ticks: { callback: v => "$" + v + " MM" }, grid: { color: "#1e2a3a" } },
+          y: { grid: { display: false } }
+        }
+      }
+    });
+  })
+  .catch(err => console.error("Error resumen inventario:", err));
+</script>
+{% endblock %}

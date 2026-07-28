@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Inventario — Por Clasificación{% endblock %}
+{% block page_title %}Inventario — Por Clasificación{% endblock %}
+{% block page_subtitle %}Valor de stock y tránsito por clasificación de rotación (consolidada) y bodega{% endblock %}
+
+{% block sidebar_nav %}
+<div class="nav-section-title">Inventario</div>
+<a href="/inventario" class="nav-item {% if active == 'inventario_resumen' %}active{% endif %}">
+  <span class="nav-icon">📊</span><span class="nav-label"> Resumen</span>
+</a>
+<a href="/inventario/bodegas" class="nav-item {% if active == 'inventario_bodegas' %}active{% endif %}">
+  <span class="nav-icon">🏭</span><span class="nav-label"> Por Bodega</span>
+</a>
+<a href="/inventario/clasificacion" class="nav-item {% if active == 'inventario_clasificacion' %}active{% endif %}">
+  <span class="nav-icon">🏷️</span><span class="nav-label"> Por Clasificación</span>
+</a>
+{% endblock %}
+
+{% block boton_actualizar %}
+{% if es_admin %}
+<button id="btn-actualizar-inv" class="btn-filter" style="padding:8px 14px;font-size:12px;"
+        title="Busca un archivo AAMMDD_Inventario.xlsx en data/inventario/ y reemplaza el inventario completo">
+  🔄 Actualizar Inventario
+</button>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+
+<div class="table-card" style="margin-bottom:20px;">
+  <div class="table-header">
+    <div class="table-header-title">Valor por Clasificación (CLAS_CSD) y Bodega</div>
+  </div>
+  <div class="table-wrap">
+    <table id="tabla-clas">
+      <thead>
+        <tr id="tabla-head-row">
+          <th>Clase</th>
+          <th class="text-right">SKUs</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-body">
+        <tr><td colspan="2" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const btnActualizarInv = document.getElementById('btn-actualizar-inv');
+if (btnActualizarInv) {
+  btnActualizarInv.addEventListener('click', async function () {
+    const btn = this;
+    const textoOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Actualizando...';
+    try {
+      const r = await fetch('/admin/actualizar_inventario', { method: 'POST' });
+      const d = await r.json();
+      alert(d.msg);
+      if (d.ok) location.reload();
+    } catch (e) {
+      alert('Error al actualizar: ' + e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = textoOriginal;
+    }
+  });
+}
+
+const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
+const fmtInt = v => Math.round(v).toLocaleString("es-CL");
+
+fetch("/api/inventario/clasificacion")
+  .then(r => r.json())
+  .then(d => {
+    // Encabezados: Clase | SKUs | (Bodega | Bodega Transito) x N
+    const headCells = ['<th>Clase</th>', '<th class="text-right">SKUs</th>'];
+    d.bodegas.forEach(b => {
+      headCells.push(`<th class="text-right">${b}</th>`);
+      headCells.push(`<th class="text-right">${b} Tránsito</th>`);
+    });
+    document.getElementById("tabla-head-row").innerHTML = headCells.join("");
+
+    function filaHtml(f, esTotal) {
+      const celdas = [
+        `<td class="fw-bold">${f.clase}</td>`,
+        `<td class="text-right">${fmtInt(f.skus)}</td>`
+      ];
+      d.bodegas.forEach(b => {
+        const v = f.valores[b];
+        celdas.push(`<td class="text-right${esTotal ? '' : ' fw-bold'}">${fmtCLP(v.stock)}</td>`);
+        celdas.push(`<td class="text-right text-muted">${v.transito !== null ? fmtCLP(v.transito) : '—'}</td>`);
+      });
+      return `<tr${esTotal ? ' class="row-total"' : ''}>${celdas.join("")}</tr>`;
+    }
+
+    const filas = d.filas.map(f => filaHtml(f, false)).join("");
+    const filaTotal = filaHtml(d.total, true);
+
+    document.getElementById("tabla-body").innerHTML = filaTotal + filas;
+  })
+  .catch(err => console.error("Error clasificacion inventario:", err));
+</script>
+{% endblock %}
