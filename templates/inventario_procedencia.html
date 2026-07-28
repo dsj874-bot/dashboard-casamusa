@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}Inventario — Resumen{% endblock %}
-{% block page_title %}Inventario — Resumen{% endblock %}
-{% block page_subtitle %}Foto del stock a la fecha — no es acumulable como Ventas{% endblock %}
+{% block title %}Inventario — Por Procedencia{% endblock %}
+{% block page_title %}Inventario — Por Procedencia{% endblock %}
+{% block page_subtitle %}Nacional vs Importado — valorizado{% endblock %}
 
 {% block sidebar_nav %}
 <div class="nav-section-title">Inventario</div>
@@ -38,43 +38,42 @@
 
 {% block content %}
 
-<div class="kpi-grid" id="kpi-grid">
-  <div class="kpi-card">
-    <div class="kpi-label">Valor Stock Disponible</div>
-    <div class="kpi-value" id="kpi-valor-stock">—</div>
+<div class="table-card" style="margin-bottom:20px;">
+  <div class="table-header">
+    <div class="table-header-title">Detalle por Procedencia</div>
   </div>
-  <div class="kpi-card">
-    <div class="kpi-label">Valor en Tránsito</div>
-    <div class="kpi-value" id="kpi-valor-transito">—</div>
-  </div>
-  <div class="kpi-card">
-    <div class="kpi-label">Valor Total (Stock + Tránsito)</div>
-    <div class="kpi-value" id="kpi-valor-total">—</div>
-  </div>
-  <div class="kpi-card">
-    <div class="kpi-label">SKUs Totales</div>
-    <div class="kpi-value" id="kpi-total-skus">—</div>
-  </div>
-  <div class="kpi-card">
-    <div class="kpi-label">SKUs con Stock</div>
-    <div class="kpi-value" id="kpi-con-stock">—</div>
-  </div>
-  <div class="kpi-card">
-    <div class="kpi-label">SKUs sin Stock</div>
-    <div class="kpi-value" id="kpi-sin-stock">—</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Procedencia</th>
+          <th class="text-right">SKUs</th>
+          <th class="text-right">SKUs con Stock</th>
+          <th class="text-right">Valor Stock</th>
+          <th class="text-right">Valor Tránsito</th>
+          <th class="text-right">Valor Total</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-body">
+        <tr><td colspan="6" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+      </tbody>
+    </table>
   </div>
 </div>
 
 <div class="chart-card">
-  <div class="chart-card-title">Valor de Stock por Bodega</div>
-  <div class="chart-card-sub">Valorizado (cantidad × costo unitario) — no incluye tránsito</div>
-  <canvas id="chartBodegas" height="90"></canvas>
+  <div class="chart-card-title">Valor Total por Procedencia</div>
+  <canvas id="chartProcedencia" height="90"></canvas>
 </div>
 
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
+Chart.defaults.color       = "#64748b";
+Chart.defaults.borderColor = "#1e2a3a";
+Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
+
 const btnActualizarInv = document.getElementById('btn-actualizar-inv');
 if (btnActualizarInv) {
   btnActualizarInv.addEventListener('click', async function () {
@@ -96,32 +95,46 @@ if (btnActualizarInv) {
   });
 }
 
-Chart.defaults.color       = "#64748b";
-Chart.defaults.borderColor = "#1e2a3a";
-Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
-
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
 const fmtInt = v => Math.round(v).toLocaleString("es-CL");
 
-fetch("/api/inventario/resumen")
+fetch("/api/inventario/procedencia")
   .then(r => r.json())
   .then(d => {
-    document.getElementById("kpi-valor-stock").textContent    = fmtCLP(d.valor_stock_total);
-    document.getElementById("kpi-valor-transito").textContent = fmtCLP(d.valor_transito_total);
-    document.getElementById("kpi-valor-total").textContent    = fmtCLP(d.valor_total);
-    document.getElementById("kpi-total-skus").textContent     = fmtInt(d.total_skus);
-    document.getElementById("kpi-con-stock").textContent      = fmtInt(d.skus_con_stock);
-    document.getElementById("kpi-sin-stock").textContent      = fmtInt(d.skus_sin_stock);
+    const rows = d.filas.map(f => `
+      <tr>
+        <td class="fw-bold">${f.procedencia}</td>
+        <td class="text-right">${fmtInt(f.skus)}</td>
+        <td class="text-right">${fmtInt(f.skus_con_stock)}</td>
+        <td class="text-right fw-bold">${fmtCLP(f.valor_stock)}</td>
+        <td class="text-right">${fmtCLP(f.valor_transito)}</td>
+        <td class="text-right fw-bold">${fmtCLP(f.valor_total)}</td>
+      </tr>
+    `).join("");
 
-    new Chart(document.getElementById("chartBodegas"), {
+    const t = d.total;
+    const filaTotal = `
+      <tr class="row-total">
+        <td>TOTAL GENERAL</td>
+        <td class="text-right">${fmtInt(t.skus)}</td>
+        <td class="text-right">${fmtInt(t.skus_con_stock)}</td>
+        <td class="text-right">${fmtCLP(t.valor_stock)}</td>
+        <td class="text-right">${fmtCLP(t.valor_transito)}</td>
+        <td class="text-right">${fmtCLP(t.valor_total)}</td>
+      </tr>
+    `;
+
+    document.getElementById("tabla-body").innerHTML = filaTotal + rows;
+
+    new Chart(document.getElementById("chartProcedencia"), {
       type: "bar",
       data: {
-        labels: d.por_bodega.map(b => b.bodega),
+        labels: d.filas.map(f => f.procedencia),
         datasets: [{
-          label: "Valor Stock",
-          data: d.por_bodega.map(b => Math.round(b.valor_stock / 1000000)),
-          backgroundColor: "rgba(34,163,71,0.75)",
-          borderColor: "#22a347",
+          label: "Valor Total",
+          data: d.filas.map(f => Math.round(f.valor_total / 1000000)),
+          backgroundColor: ["rgba(34,163,71,0.75)", "rgba(59,130,246,0.75)"],
+          borderColor: ["#22a347", "#3b82f6"],
           borderWidth: 1,
           borderRadius: 5,
         }]
@@ -140,6 +153,6 @@ fetch("/api/inventario/resumen")
       }
     });
   })
-  .catch(err => console.error("Error resumen inventario:", err));
+  .catch(err => console.error("Error procedencia inventario:", err));
 </script>
 {% endblock %}

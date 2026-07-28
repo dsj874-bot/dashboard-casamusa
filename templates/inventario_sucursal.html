@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}Inventario — Por Bodega{% endblock %}
-{% block page_title %}Inventario — Por Bodega{% endblock %}
-{% block page_subtitle %}Stock, tránsito y valorizado por bodega — foto a la fecha{% endblock %}
+{% block title %}Inventario — Por Sucursal{% endblock %}
+{% block page_title %}Inventario — Por Sucursal{% endblock %}
+{% block page_subtitle %}Mismo detalle de Por Bodega, con las etiquetas de sucursal de Comercial{% endblock %}
 
 {% block sidebar_nav %}
 <div class="nav-section-title">Inventario</div>
@@ -36,13 +36,13 @@
 
 <div class="table-card" style="margin-bottom:20px;">
   <div class="table-header">
-    <div class="table-header-title">Detalle por Bodega</div>
+    <div class="table-header-title">Detalle por Sucursal</div>
   </div>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>Bodega</th>
+          <th>Sucursal</th>
           <th class="text-right">Stock (unid.)</th>
           <th class="text-right">Valor Stock</th>
           <th class="text-right">SKUs con Stock</th>
@@ -54,6 +54,10 @@
         <tr><td colspan="6" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
+  </div>
+  <div style="padding:12px 20px;font-size:11px;color:var(--muted);">
+    San Isidro = SE + CMD combinadas (el archivo de inventario no separa el stock entre esas dos sucursales).
+    Mercado Libre Full / Mercado Libre Full Schneider / E-commerce = Canal Digital.
   </div>
 </div>
 
@@ -85,12 +89,27 @@ if (btnActualizarInv) {
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
 const fmtInt = v => Math.round(v).toLocaleString("es-CL");
 
+// Mismos datos de Por Bodega -- solo se relabelan los nombres con los
+// codigos de sucursal que se usan en Comercial.
+const ETIQUETA_SUCURSAL = {
+  "Chicureo": "CH",
+  "Las Condes": "LC",
+  "Maipú": "MP",
+  "Manuel Rodríguez": "MR",
+  "Matta": "MT",
+  "San Isidro": "SE / CMD",
+  "Oficina": "OF",
+  "Mercado Libre Full": "Canal Digital",
+  "Mercado Libre Full Schneider": "Canal Digital",
+  "E-commerce": "Canal Digital",
+};
+
 fetch("/api/inventario/bodegas")
   .then(r => r.json())
   .then(d => {
     const rows = d.filas.map(f => `
       <tr>
-        <td class="fw-bold">${f.bodega}</td>
+        <td class="fw-bold">${ETIQUETA_SUCURSAL[f.bodega] || f.bodega}</td>
         <td class="text-right">${fmtInt(f.stock_qty)}</td>
         <td class="text-right fw-bold">${fmtCLP(f.valor_stock)}</td>
         <td class="text-right">${fmtInt(f.skus_con_stock)}</td>
@@ -113,6 +132,6 @@ fetch("/api/inventario/bodegas")
 
     document.getElementById("tabla-body").innerHTML = filaTotal + rows;
   })
-  .catch(err => console.error("Error bodegas inventario:", err));
+  .catch(err => console.error("Error sucursal inventario:", err));
 </script>
 {% endblock %}

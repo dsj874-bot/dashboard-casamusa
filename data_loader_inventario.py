@@ -32,6 +32,10 @@ BODEGAS = [
 # (CLAS_CSD) -- AAA es la mas critica, SM0 "sin movimiento".
 ORDEN_CLASIFICACION = ["AAA", "M05", "M04", "M03", "M02", "M01", "SM0"]
 
+# ID_PROCEDENCIA (codigo numerico de SAP): 3 y 7 = Importado, el
+# resto = Nacional -- regla dada por el usuario, no deducida.
+IDS_IMPORTADO = {3, 7}
+
 _cache = {"df": None, "mod_time": None}
 
 
@@ -236,8 +240,44 @@ def get_inventario_por_clasificacion():
                         if col["transito_col"] else None,
         }
 
-    return {
-        "bodegas": [c["bodega"] for c in columnas_bodega],
-        "filas":   filas,
-        "total":   total,
+    return {"filas": filas, "total": total, "bodegas": [c["bodega"] for c in columnas_bodega]}
+
+
+def get_inventario_por_procedencia():
+    """Nacional vs Importado, segun IDS_IMPORTADO (regla dada por el
+    usuario: ID_PROCEDENCIA 3 y 7 = Importado, el resto Nacional)."""
+    df = _leer_inventario()
+    df = df.copy()
+    df["_PROCEDENCIA"] = df["ID_PROCEDENCIA"].apply(
+        lambda x: "Importado" if x in IDS_IMPORTADO else "Nacional"
+    )
+
+    stock_cols    = [s for _, s, _ in BODEGAS if s in df.columns]
+    transito_cols = [t for _, _, t in BODEGAS if t and t in df.columns] + (
+        ["TRANSITO SERVICIO TECNICO"] if "TRANSITO SERVICIO TECNICO" in df.columns else []
+    )
+
+    filas = []
+    for procedencia in ["Nacional", "Importado"]:
+        sub = df[df["_PROCEDENCIA"] == procedencia]
+        valor_stock    = sum(float((sub[c] * sub["CUP"]).sum()) for c in stock_cols)
+        valor_transito = sum(float((sub[c] * sub["CUP"]).sum()) for c in transito_cols)
+        filas.append({
+            "procedencia":    procedencia,
+            "skus":           len(sub),
+            "skus_con_stock": int((sub["TOTAL_GENERAL"] > 0).sum()),
+            "valor_stock":    round(valor_stock, 0),
+            "valor_transito": round(valor_transito, 0),
+            "valor_total":    round(valor_stock + valor_transito, 0),
+        })
+
+    total = {
+        "procedencia":    "TOTAL GENERAL",
+        "skus":           sum(f["skus"] for f in filas),
+        "skus_con_stock": sum(f["skus_con_stock"] for f in filas),
+        "valor_stock":    round(sum(f["valor_stock"] for f in filas), 0),
+        "valor_transito": round(sum(f["valor_transito"] for f in filas), 0),
+        "valor_total":    round(sum(f["valor_total"] for f in filas), 0),
     }
+
+    return {"filas": filas, "total": total}

@@ -174,6 +174,22 @@ def inventario_clasificacion():
                            session_nombre=session.get("nombre"))
 
 
+@app.route("/inventario/sucursal")
+@login_requerido
+def inventario_sucursal():
+    return render_template("inventario_sucursal.html",
+                           active="inventario_sucursal",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/inventario/procedencia")
+@login_requerido
+def inventario_procedencia():
+    return render_template("inventario_procedencia.html",
+                           active="inventario_procedencia",
+                           session_nombre=session.get("nombre"))
+
+
 @app.route("/api/inventario/resumen")
 @login_requerido
 def api_inventario_resumen():
@@ -197,6 +213,15 @@ def api_inventario_bodegas():
 def api_inventario_clasificacion():
     try:
         return jsonify(data_loader_inventario.get_inventario_por_clasificacion())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/procedencia")
+@login_requerido
+def api_inventario_procedencia():
+    try:
+        return jsonify(data_loader_inventario.get_inventario_por_procedencia())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
