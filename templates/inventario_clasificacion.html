@@ -84,11 +84,12 @@ const fmtInt = v => Math.round(v).toLocaleString("es-CL");
 fetch("/api/inventario/clasificacion")
   .then(r => r.json())
   .then(d => {
-    // Encabezados: Clase | SKUs | (Bodega | Bodega Transito) x N
+    // Encabezados: Clase | SKUs | por bodega, solo las columnas que
+    // esa bodega realmente tiene (stock y/o transito).
     const headCells = ['<th>Clase</th>', '<th class="text-right">SKUs</th>'];
     d.bodegas.forEach(b => {
-      headCells.push(`<th class="text-right">${b}</th>`);
-      headCells.push(`<th class="text-right">${b} Tránsito</th>`);
+      if (b.tiene_stock)    headCells.push(`<th class="text-right">${b.bodega}</th>`);
+      if (b.tiene_transito) headCells.push(`<th class="text-right">${b.bodega} Tránsito</th>`);
     });
     document.getElementById("tabla-head-row").innerHTML = headCells.join("");
 
@@ -98,9 +99,9 @@ fetch("/api/inventario/clasificacion")
         `<td class="text-right">${fmtInt(f.skus)}</td>`
       ];
       d.bodegas.forEach(b => {
-        const v = f.valores[b];
-        celdas.push(`<td class="text-right${esTotal ? '' : ' fw-bold'}">${fmtCLP(v.stock)}</td>`);
-        celdas.push(`<td class="text-right text-muted">${v.transito !== null ? fmtCLP(v.transito) : '—'}</td>`);
+        const v = f.valores[b.bodega];
+        if (b.tiene_stock)    celdas.push(`<td class="text-right${esTotal ? '' : ' fw-bold'}">${fmtCLP(v.stock)}</td>`);
+        if (b.tiene_transito) celdas.push(`<td class="text-right text-muted">${fmtCLP(v.transito)}</td>`);
       });
       return `<tr${esTotal ? ' class="row-total"' : ''}>${celdas.join("")}</tr>`;
     }

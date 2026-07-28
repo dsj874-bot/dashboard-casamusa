@@ -39,6 +39,18 @@ IDS_IMPORTADO = {3, 7}
 _cache = {"df": None, "mod_time": None}
 
 
+def _bodegas_activas(df):
+    """BODEGAS filtrado a solo las que existen en el archivo y tienen
+    stock > 0 hoy -- una bodega en $0 (ej. Oficina) se excluye sola de
+    todos los reportes, sin necesidad de sacarla a mano de la lista si
+    algun dia vuelve a tener stock."""
+    return [
+        (nombre, stock_col, transito_col)
+        for nombre, stock_col, transito_col in BODEGAS
+        if stock_col in df.columns and df[stock_col].sum() > 0
+    ]
+
+
 def _leer_inventario():
     if not os.path.exists(INVENTARIO_XLSX):
         raise FileNotFoundError(f"No se encontro {INVENTARIO_XLSX}")
@@ -103,18 +115,18 @@ def get_resumen_inventario():
     dos veces.
     """
     df = _leer_inventario()
+    bodegas_activas = _bodegas_activas(df)
 
     total_skus     = len(df)
     skus_con_stock = int((df["TOTAL_GENERAL"] > 0).sum())
     skus_sin_stock = total_skus - skus_con_stock
 
     valor_stock_total = 0.0
-    for _, stock_col, _ in BODEGAS:
-        if stock_col in df.columns:
-            valor_stock_total += float((df[stock_col] * df["CUP"]).sum())
+    for _, stock_col, _ in bodegas_activas:
+        valor_stock_total += float((df[stock_col] * df["CUP"]).sum())
 
     valor_transito_total = 0.0
-    for _, _, transito_col in BODEGAS:
+    for _, _, transito_col in bodegas_activas:
         if transito_col and transito_col in df.columns:
             valor_transito_total += float((df[transito_col] * df["CUP"]).sum())
     # + transito servicio tecnico, que no tiene bodega de stock propia
@@ -122,9 +134,7 @@ def get_resumen_inventario():
         valor_transito_total += float((df["TRANSITO SERVICIO TECNICO"] * df["CUP"]).sum())
 
     por_bodega = []
-    for nombre, stock_col, _ in BODEGAS:
-        if stock_col not in df.columns:
-            continue
+    for nombre, stock_col, _ in bodegas_activas:
         valor = float((df[stock_col] * df["CUP"]).sum())
         por_bodega.append({"bodega": nombre, "valor_stock": round(valor, 0)})
     por_bodega.sort(key=lambda r: -r["valor_stock"])
@@ -144,9 +154,7 @@ def get_inventario_por_bodega():
     df = _leer_inventario()
 
     filas = []
-    for nombre, stock_col, transito_col in BODEGAS:
-        if stock_col not in df.columns:
-            continue
+    for nombre, stock_col, transito_col in _bodegas_activas(df):
         stock_qty  = float(df[stock_col].sum())
         valor_stock = float((df[stock_col] * df["CUP"]).sum())
         skus_con_stock = int((df[stock_col] > 0).sum())
@@ -213,21 +221,30 @@ def get_inventario_por_clasificacion():
 
     columnas_bodega = [
         {"bodega": nombre, "stock_col": stock_col, "transito_col": transito_col}
-        for nombre, stock_col, transito_col in BODEGAS
-        if stock_col in df.columns
+        for nombre, stock_col, transito_col in _bodegas_activas(df)
     ]
+    # Servicio Tecnico (ST-TRANS) no tiene bodega de stock propia --
+    # se agrega solo con transito, igual que en Por Bodega.
+    if "TRANSITO SERVICIO TECNICO" in df.columns:
+        columnas_bodega.append({
+            "bodega": "Servicio Técnico (ST-TRANS)",
+            "stock_col": None,
+            "transito_col": "TRANSITO SERVICIO TECNICO",
+        })
 
     filas = []
     for clase in clases_presentes:
         sub = df[df["_CLAS"] == clase]
         fila = {"clase": clase, "skus": len(sub), "valores": {}}
         for col in columnas_bodega:
-            valor_stock = float((sub[col["stock_col"]] * sub["CUP"]).sum())
+            valor_stock = None
+            if col["stock_col"]:
+                valor_stock = float((sub[col["stock_col"]] * sub["CUP"]).sum())
             valor_transito = None
             if col["transito_col"] and col["transito_col"] in sub.columns:
                 valor_transito = float((sub[col["transito_col"]] * sub["CUP"]).sum())
             fila["valores"][col["bodega"]] = {
-                "stock":    round(valor_stock, 0),
+                "stock":    round(valor_stock, 0) if valor_stock is not None else None,
                 "transito": round(valor_transito, 0) if valor_transito is not None else None,
             }
         filas.append(fila)
@@ -235,12 +252,18 @@ def get_inventario_por_clasificacion():
     total = {"clase": "TOTAL GENERAL", "skus": len(df), "valores": {}}
     for col in columnas_bodega:
         total["valores"][col["bodega"]] = {
-            "stock":    round(sum(f["valores"][col["bodega"]]["stock"] for f in filas), 0),
+            "stock":    round(sum((f["valores"][col["bodega"]]["stock"] or 0) for f in filas), 0)
+                        if col["stock_col"] else None,
             "transito": round(sum((f["valores"][col["bodega"]]["transito"] or 0) for f in filas), 0)
                         if col["transito_col"] else None,
         }
 
-    return {"filas": filas, "total": total, "bodegas": [c["bodega"] for c in columnas_bodega]}
+    bodegas_meta = [
+        {"bodega": c["bodega"], "tiene_stock": bool(c["stock_col"]), "tiene_transito": bool(c["transito_col"])}
+        for c in columnas_bodega
+    ]
+
+    return {"filas": filas, "total": total, "bodegas": bodegas_meta}
 
 
 def get_inventario_por_procedencia():
@@ -252,8 +275,8 @@ def get_inventario_por_procedencia():
         lambda x: "Importado" if x in IDS_IMPORTADO else "Nacional"
     )
 
-    stock_cols    = [s for _, s, _ in BODEGAS if s in df.columns]
-    transito_cols = [t for _, _, t in BODEGAS if t and t in df.columns] + (
+    stock_cols    = [s for _, s, _ in _bodegas_activas(df)]
+    transito_cols = [t for _, _, t in _bodegas_activas(df) if t] + (
         ["TRANSITO SERVICIO TECNICO"] if "TRANSITO SERVICIO TECNICO" in df.columns else []
     )
 
