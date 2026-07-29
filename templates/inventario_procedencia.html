@@ -2,7 +2,7 @@
 
 {% block title %}Inventario — Por Procedencia{% endblock %}
 {% block page_title %}Inventario — Por Procedencia{% endblock %}
-{% block page_subtitle %}Nacional vs Importado — valorizado{% endblock %}
+{% block page_subtitle %}Nacional vs Importado, por bodega — valorizado{% endblock %}
 
 {% block sidebar_nav %}
 <div class="nav-section-title">Inventario</div>
@@ -31,28 +31,44 @@
 
 {% block extra_head %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  /* Tabla transpuesta: Bodega en filas (una fila extra "Transito" por
+     bodega que la tiene), dimension (clasificacion/procedencia) en
+     columnas -- todas las columnas de dimension del mismo ancho, todo
+     centrado horizontal y vertical, encabezados de 2 lineas parejas. */
+  #tabla-pivot { table-layout: fixed; }
+  #tabla-pivot th, #tabla-pivot td {
+    text-align: center;
+    vertical-align: middle;
+  }
+  #tabla-pivot thead th {
+    white-space: normal;
+    line-height: 1.3;
+    height: 2.6em;
+  }
+  #tabla-pivot col.col-bodega { width: 200px; }
+  #tabla-pivot col.col-dim { width: 140px; }
+  #tabla-pivot tbody td:first-child { text-align: left; }
+</style>
 {% endblock %}
 
 {% block content %}
 
 <div class="table-card" style="margin-bottom:20px;">
   <div class="table-header">
-    <div class="table-header-title">Detalle por Procedencia</div>
+    <div class="table-header-title">Valor por Bodega y Procedencia</div>
   </div>
   <div class="table-wrap">
-    <table>
+    <table id="tabla-pivot">
+      <colgroup id="tabla-colgroup"></colgroup>
       <thead>
-        <tr>
-          <th>Procedencia</th>
-          <th class="text-right">Valor Total</th>
-          <th class="text-right">SKUs</th>
-          <th class="text-right">SKUs con Stock</th>
-          <th class="text-right">Valor Stock</th>
-          <th class="text-right">Valor Tránsito</th>
+        <tr id="tabla-head-row">
+          <th>Bodega</th>
+          <th>Total</th>
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td colspan="6" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+        <tr><td colspan="2" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -93,43 +109,19 @@ if (btnActualizarInv) {
 }
 
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
-const fmtInt = v => Math.round(v).toLocaleString("es-CL");
 
 fetch("/api/inventario/procedencia")
   .then(r => r.json())
   .then(d => {
-    const rows = d.filas.map(f => `
-      <tr>
-        <td class="fw-bold">${f.procedencia}</td>
-        <td class="text-right fw-bold" style="color:#22a347">${fmtCLP(f.valor_total)}</td>
-        <td class="text-right">${fmtInt(f.skus)}</td>
-        <td class="text-right">${fmtInt(f.skus_con_stock)}</td>
-        <td class="text-right">${fmtCLP(f.valor_stock)}</td>
-        <td class="text-right">${fmtCLP(f.valor_transito)}</td>
-      </tr>
-    `).join("");
-
-    const t = d.total;
-    const filaTotal = `
-      <tr class="row-total">
-        <td>TOTAL GENERAL</td>
-        <td class="text-right">${fmtCLP(t.valor_total)}</td>
-        <td class="text-right">${fmtInt(t.skus)}</td>
-        <td class="text-right">${fmtInt(t.skus_con_stock)}</td>
-        <td class="text-right">${fmtCLP(t.valor_stock)}</td>
-        <td class="text-right">${fmtCLP(t.valor_transito)}</td>
-      </tr>
-    `;
-
-    document.getElementById("tabla-body").innerHTML = filaTotal + rows;
+    renderPivot(d);
 
     new Chart(document.getElementById("chartProcedencia"), {
       type: "bar",
       data: {
-        labels: d.filas.map(f => f.procedencia),
+        labels: d.filas.map(f => f.clase),
         datasets: [{
           label: "Valor Total",
-          data: d.filas.map(f => Math.round(f.valor_total / 1000000)),
+          data: d.filas.map(f => Math.round(f.total_general / 1000000)),
           backgroundColor: ["rgba(34,163,71,0.75)", "rgba(59,130,246,0.75)"],
           borderColor: ["#22a347", "#3b82f6"],
           borderWidth: 1,
@@ -151,5 +143,44 @@ fetch("/api/inventario/procedencia")
     });
   })
   .catch(err => console.error("Error procedencia inventario:", err));
+
+function renderPivot(d) {
+  document.getElementById("tabla-colgroup").innerHTML =
+    '<col class="col-bodega"><col class="col-dim">' + d.filas.map(() => '<col class="col-dim">').join("");
+
+  const headCells = ['<th>Bodega</th>', '<th>Total</th>'];
+  d.filas.forEach(f => headCells.push(`<th>${f.clase}</th>`));
+  document.getElementById("tabla-head-row").innerHTML = headCells.join("");
+
+  const bodegasOrdenadas = [...d.bodegas].sort((a, b) => {
+    const ta = (d.total.valores[a.bodega].stock || 0) + (d.total.valores[a.bodega].transito || 0);
+    const tb = (d.total.valores[b.bodega].stock || 0) + (d.total.valores[b.bodega].transito || 0);
+    return tb - ta;
+  });
+
+  function fila(etiqueta, bodegaNombre, campo, esTotalGeneral, clsFila) {
+    const celdas = [`<td class="fw-bold">${etiqueta}</td>`];
+    if (esTotalGeneral) {
+      celdas.push(`<td class="fw-bold" style="color:#22a347">${fmtCLP(d.total.total_general)}</td>`);
+      d.filas.forEach(f => celdas.push(`<td class="fw-bold">${fmtCLP(f.total_general)}</td>`));
+    } else {
+      const totalCelda = d.total.valores[bodegaNombre][campo];
+      celdas.push(`<td class="fw-bold" style="color:#22a347">${fmtCLP(totalCelda || 0)}</td>`);
+      d.filas.forEach(f => {
+        const v = f.valores[bodegaNombre][campo];
+        celdas.push(`<td>${v !== null ? fmtCLP(v) : '—'}</td>`);
+      });
+    }
+    return `<tr${clsFila ? ` class="${clsFila}"` : ''}>${celdas.join("")}</tr>`;
+  }
+
+  let html = fila("TOTAL GENERAL", null, null, true, "row-total");
+  bodegasOrdenadas.forEach(b => {
+    if (b.tiene_stock)    html += fila(b.bodega, b.bodega, "stock", false, "");
+    if (b.tiene_transito) html += fila(b.bodega + " Tránsito", b.bodega, "transito", false, "");
+  });
+
+  document.getElementById("tabla-body").innerHTML = html;
+}
 </script>
 {% endblock %}

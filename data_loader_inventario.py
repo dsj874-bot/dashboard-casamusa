@@ -206,39 +206,35 @@ def get_inventario_por_bodega():
     return {"filas": filas, "total": total}
 
 
-def get_inventario_por_clasificacion():
-    """
-    Apertura por clasificacion consolidada (CLAS_CSD) x bodega: para
-    cada nivel de clasificacion, cuanto valor (stock y transito) hay
-    en cada bodega. Usa CLAS_CSD como unica clasificacion por producto
-    (no una distinta por bodega) -- asi cada fila de la tabla suma
-    limpio sin ambiguedad de "que clasificacion aplica aqui".
-    """
-    df = _leer_inventario()
-    df = df.copy()
-    df["_CLAS"] = df["CLAS_CSD"].fillna("SIN CLASIFICAR")
-
-    clases_presentes = [c for c in ORDEN_CLASIFICACION if c in df["_CLAS"].unique()]
-    if "SIN CLASIFICAR" in df["_CLAS"].unique():
-        clases_presentes.append("SIN CLASIFICAR")
-
-    columnas_bodega = [
+def _columnas_bodega(df):
+    """Bodegas activas + Servicio Tecnico (solo transito), en el
+    formato comun que usan las aperturas por dimension x bodega."""
+    columnas = [
         {"bodega": nombre, "stock_col": stock_col, "transito_col": transito_col}
         for nombre, stock_col, transito_col in _bodegas_activas(df)
     ]
-    # Servicio Tecnico (ST-TRANS) no tiene bodega de stock propia --
-    # se agrega solo con transito, igual que en Por Bodega.
     if "TRANSITO SERVICIO TECNICO" in df.columns:
-        columnas_bodega.append({
+        columnas.append({
             "bodega": "Servicio Técnico (ST-TRANS)",
             "stock_col": None,
             "transito_col": "TRANSITO SERVICIO TECNICO",
         })
+    return columnas
+
+
+def _pivot_dimension_por_bodega(df, columna_dim, valores_dim):
+    """
+    Apertura generica: una dimension (clasificacion, procedencia, etc,
+    ya calculada en columna_dim) x bodega -- cuanto valor (stock y
+    transito) hay en cada bodega para cada valor de esa dimension.
+    valores_dim: lista ordenada de los valores a mostrar como filas.
+    """
+    columnas_bodega = _columnas_bodega(df)
 
     filas = []
-    for clase in clases_presentes:
-        sub = df[df["_CLAS"] == clase]
-        fila = {"clase": clase, "skus": len(sub), "valores": {}}
+    for valor_dim in valores_dim:
+        sub = df[df[columna_dim] == valor_dim]
+        fila = {"clase": valor_dim, "skus": len(sub), "valores": {}}
         for col in columnas_bodega:
             valor_stock = None
             if col["stock_col"]:
@@ -273,41 +269,32 @@ def get_inventario_por_clasificacion():
     return {"filas": filas, "total": total, "bodegas": bodegas_meta}
 
 
+def get_inventario_por_clasificacion():
+    """
+    Apertura por clasificacion consolidada (CLAS_CSD) x bodega. Usa
+    CLAS_CSD como unica clasificacion por producto (no una distinta
+    por bodega) -- asi cada fila de la tabla suma limpio sin
+    ambiguedad de "que clasificacion aplica aqui".
+    """
+    df = _leer_inventario()
+    df = df.copy()
+    df["_CLAS"] = df["CLAS_CSD"].fillna("SIN CLASIFICAR")
+
+    clases_presentes = [c for c in ORDEN_CLASIFICACION if c in df["_CLAS"].unique()]
+    if "SIN CLASIFICAR" in df["_CLAS"].unique():
+        clases_presentes.append("SIN CLASIFICAR")
+
+    return _pivot_dimension_por_bodega(df, "_CLAS", clases_presentes)
+
+
 def get_inventario_por_procedencia():
-    """Nacional vs Importado, segun IDS_IMPORTADO (regla dada por el
-    usuario: ID_PROCEDENCIA 3 y 7 = Importado, el resto Nacional)."""
+    """Nacional vs Importado x bodega, segun IDS_IMPORTADO (regla dada
+    por el usuario: ID_PROCEDENCIA 3 y 7 = Importado, el resto
+    Nacional)."""
     df = _leer_inventario()
     df = df.copy()
     df["_PROCEDENCIA"] = df["ID_PROCEDENCIA"].apply(
         lambda x: "Importado" if x in IDS_IMPORTADO else "Nacional"
     )
 
-    stock_cols    = [s for _, s, _ in _bodegas_activas(df)]
-    transito_cols = [t for _, _, t in _bodegas_activas(df) if t] + (
-        ["TRANSITO SERVICIO TECNICO"] if "TRANSITO SERVICIO TECNICO" in df.columns else []
-    )
-
-    filas = []
-    for procedencia in ["Nacional", "Importado"]:
-        sub = df[df["_PROCEDENCIA"] == procedencia]
-        valor_stock    = sum(float((sub[c] * sub["CUP"]).sum()) for c in stock_cols)
-        valor_transito = sum(float((sub[c] * sub["CUP"]).sum()) for c in transito_cols)
-        filas.append({
-            "procedencia":    procedencia,
-            "skus":           len(sub),
-            "skus_con_stock": int((sub["TOTAL_GENERAL"] > 0).sum()),
-            "valor_stock":    round(valor_stock, 0),
-            "valor_transito": round(valor_transito, 0),
-            "valor_total":    round(valor_stock + valor_transito, 0),
-        })
-
-    total = {
-        "procedencia":    "TOTAL GENERAL",
-        "skus":           sum(f["skus"] for f in filas),
-        "skus_con_stock": sum(f["skus_con_stock"] for f in filas),
-        "valor_stock":    round(sum(f["valor_stock"] for f in filas), 0),
-        "valor_transito": round(sum(f["valor_transito"] for f in filas), 0),
-        "valor_total":    round(sum(f["valor_total"] for f in filas), 0),
-    }
-
-    return {"filas": filas, "total": total}
+    return _pivot_dimension_por_bodega(df, "_PROCEDENCIA", ["Nacional", "Importado"])

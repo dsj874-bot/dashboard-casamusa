@@ -2,7 +2,7 @@
 
 {% block title %}Inventario — Por Clasificación{% endblock %}
 {% block page_title %}Inventario — Por Clasificación{% endblock %}
-{% block page_subtitle %}Valor de stock y tránsito por clasificación de rotación (consolidada) y bodega{% endblock %}
+{% block page_subtitle %}Valor de stock y tránsito por bodega y clasificación de rotación (consolidada){% endblock %}
 
 {% block sidebar_nav %}
 <div class="nav-section-title">Inventario</div>
@@ -31,16 +31,23 @@
 
 {% block extra_head %}
 <style>
-  /* Encabezados de esta tabla en dos lineas (nombre / Transito) para
-     que las columnas no queden tan anchas como el texto completo. */
-  #tabla-clas thead th {
-    white-space: normal;
+  /* Tabla transpuesta: Bodega en filas (una fila extra "Transito" por
+     bodega que la tiene), dimension (clasificacion/procedencia) en
+     columnas -- todas las columnas de dimension del mismo ancho, todo
+     centrado horizontal y vertical, encabezados de 2 lineas parejas. */
+  #tabla-pivot { table-layout: fixed; }
+  #tabla-pivot th, #tabla-pivot td {
     text-align: center;
-    line-height: 1.3;
-    vertical-align: bottom;
-    min-width: 78px;
+    vertical-align: middle;
   }
-  #tabla-clas thead th .nombre-bodega { white-space: nowrap; }
+  #tabla-pivot thead th {
+    white-space: normal;
+    line-height: 1.3;
+    height: 2.6em;
+  }
+  #tabla-pivot col.col-bodega { width: 200px; }
+  #tabla-pivot col.col-dim { width: 110px; }
+  #tabla-pivot tbody td:first-child { text-align: left; }
 </style>
 {% endblock %}
 
@@ -48,14 +55,15 @@
 
 <div class="table-card" style="margin-bottom:20px;">
   <div class="table-header">
-    <div class="table-header-title">Valor por Clasificación (CLAS_CSD) y Bodega</div>
+    <div class="table-header-title">Valor por Bodega y Clasificación (CLAS_CSD)</div>
   </div>
   <div class="table-wrap">
-    <table id="tabla-clas">
+    <table id="tabla-pivot">
+      <colgroup id="tabla-colgroup"></colgroup>
       <thead>
         <tr id="tabla-head-row">
-          <th>Clase</th>
-          <th class="text-right">SKUs</th>
+          <th>Bodega</th>
+          <th>Total</th>
         </tr>
       </thead>
       <tbody id="tabla-body">
@@ -91,39 +99,51 @@ if (btnActualizarInv) {
 }
 
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
-const fmtInt = v => Math.round(v).toLocaleString("es-CL");
 
 fetch("/api/inventario/clasificacion")
   .then(r => r.json())
-  .then(d => {
-    // Encabezados: Clase | SKUs | por bodega, solo las columnas que
-    // esa bodega realmente tiene (stock y/o transito).
-    const headCells = ['<th>Clase</th>', '<th class="text-right">SKUs</th>', '<th class="text-right">Total General</th>'];
-    d.bodegas.forEach(b => {
-      if (b.tiene_stock)    headCells.push(`<th class="text-right"><span class="nombre-bodega">${b.bodega}</span></th>`);
-      if (b.tiene_transito) headCells.push(`<th class="text-right"><span class="nombre-bodega">${b.bodega}</span><br>Tránsito</th>`);
-    });
-    document.getElementById("tabla-head-row").innerHTML = headCells.join("");
-
-    function filaHtml(f, esTotal) {
-      const celdas = [
-        `<td class="fw-bold">${f.clase}</td>`,
-        `<td class="text-right">${fmtInt(f.skus)}</td>`,
-        `<td class="text-right fw-bold" style="color:#22a347">${fmtCLP(f.total_general)}</td>`
-      ];
-      d.bodegas.forEach(b => {
-        const v = f.valores[b.bodega];
-        if (b.tiene_stock)    celdas.push(`<td class="text-right${esTotal ? '' : ' fw-bold'}">${fmtCLP(v.stock)}</td>`);
-        if (b.tiene_transito) celdas.push(`<td class="text-right text-muted">${fmtCLP(v.transito)}</td>`);
-      });
-      return `<tr${esTotal ? ' class="row-total"' : ''}>${celdas.join("")}</tr>`;
-    }
-
-    const filas = d.filas.map(f => filaHtml(f, false)).join("");
-    const filaTotal = filaHtml(d.total, true);
-
-    document.getElementById("tabla-body").innerHTML = filaTotal + filas;
-  })
+  .then(d => renderPivot(d))
   .catch(err => console.error("Error clasificacion inventario:", err));
+
+function renderPivot(d) {
+  // Encabezado: Bodega | Total | una columna por cada valor de la dimension
+  document.getElementById("tabla-colgroup").innerHTML =
+    '<col class="col-bodega"><col class="col-dim">' + d.filas.map(() => '<col class="col-dim">').join("");
+
+  const headCells = ['<th>Bodega</th>', '<th>Total</th>'];
+  d.filas.forEach(f => headCells.push(`<th>${f.clase}</th>`));
+  document.getElementById("tabla-head-row").innerHTML = headCells.join("");
+
+  // Bodegas ordenadas por su total (stock+transito) de mayor a menor
+  const bodegasOrdenadas = [...d.bodegas].sort((a, b) => {
+    const ta = (d.total.valores[a.bodega].stock || 0) + (d.total.valores[a.bodega].transito || 0);
+    const tb = (d.total.valores[b.bodega].stock || 0) + (d.total.valores[b.bodega].transito || 0);
+    return tb - ta;
+  });
+
+  function fila(etiqueta, bodegaNombre, campo, esTotalGeneral, clsFila) {
+    const celdas = [`<td class="fw-bold">${etiqueta}</td>`];
+    if (esTotalGeneral) {
+      celdas.push(`<td class="fw-bold" style="color:#22a347">${fmtCLP(d.total.total_general)}</td>`);
+      d.filas.forEach(f => celdas.push(`<td class="fw-bold">${fmtCLP(f.total_general)}</td>`));
+    } else {
+      const totalCelda = d.total.valores[bodegaNombre][campo];
+      celdas.push(`<td class="fw-bold" style="color:#22a347">${fmtCLP(totalCelda || 0)}</td>`);
+      d.filas.forEach(f => {
+        const v = f.valores[bodegaNombre][campo];
+        celdas.push(`<td>${v !== null ? fmtCLP(v) : '—'}</td>`);
+      });
+    }
+    return `<tr${clsFila ? ` class="${clsFila}"` : ''}>${celdas.join("")}</tr>`;
+  }
+
+  let html = fila("TOTAL GENERAL", null, null, true, "row-total");
+  bodegasOrdenadas.forEach(b => {
+    if (b.tiene_stock)    html += fila(b.bodega, b.bodega, "stock", false, "");
+    if (b.tiene_transito) html += fila(b.bodega + " Tránsito", b.bodega, "transito", false, "");
+  });
+
+  document.getElementById("tabla-body").innerHTML = html;
+}
 </script>
 {% endblock %}
