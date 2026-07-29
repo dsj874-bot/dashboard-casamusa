@@ -167,6 +167,7 @@ def get_inventario_por_bodega():
 
         filas.append({
             "bodega":          nombre,
+            "valor_total":     round(valor_stock + (valor_transito or 0), 0),
             "stock_qty":       round(stock_qty, 0),
             "valor_stock":     round(valor_stock, 0),
             "skus_con_stock":  skus_con_stock,
@@ -182,6 +183,7 @@ def get_inventario_por_bodega():
         valor_transito = float((df["TRANSITO SERVICIO TECNICO"] * df["CUP"]).sum())
         filas.append({
             "bodega":         "Servicio Técnico (tránsito)",
+            "valor_total":    round(valor_transito, 0),
             "stock_qty":      0,
             "valor_stock":    0,
             "skus_con_stock": 0,
@@ -189,10 +191,11 @@ def get_inventario_por_bodega():
             "valor_transito": round(valor_transito, 0),
         })
 
-    filas.sort(key=lambda r: -r["valor_stock"])
+    filas.sort(key=lambda r: -r["valor_total"])
 
     total = {
         "bodega":         "TOTAL GENERAL",
+        "valor_total":    round(sum(f["valor_total"] for f in filas), 0),
         "stock_qty":      round(sum(f["stock_qty"] for f in filas), 0),
         "valor_stock":    round(sum(f["valor_stock"] for f in filas), 0),
         "skus_con_stock": int((df["TOTAL_GENERAL"] > 0).sum()),
@@ -247,6 +250,9 @@ def get_inventario_por_clasificacion():
                 "stock":    round(valor_stock, 0) if valor_stock is not None else None,
                 "transito": round(valor_transito, 0) if valor_transito is not None else None,
             }
+        fila["total_general"] = round(sum(
+            (v["stock"] or 0) + (v["transito"] or 0) for v in fila["valores"].values()
+        ), 0)
         filas.append(fila)
 
     total = {"clase": "TOTAL GENERAL", "skus": len(df), "valores": {}}
@@ -257,6 +263,7 @@ def get_inventario_por_clasificacion():
             "transito": round(sum((f["valores"][col["bodega"]]["transito"] or 0) for f in filas), 0)
                         if col["transito_col"] else None,
         }
+    total["total_general"] = round(sum(f["total_general"] for f in filas), 0)
 
     bodegas_meta = [
         {"bodega": c["bodega"], "tiene_stock": bool(c["stock_col"]), "tiene_transito": bool(c["transito_col"])}

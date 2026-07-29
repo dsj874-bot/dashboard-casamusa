@@ -12,9 +12,6 @@
 <a href="/inventario/bodegas" class="nav-item {% if active == 'inventario_bodegas' %}active{% endif %}">
   <span class="nav-icon">🏭</span><span class="nav-label"> Por Bodega</span>
 </a>
-<a href="/inventario/sucursal" class="nav-item {% if active == 'inventario_sucursal' %}active{% endif %}">
-  <span class="nav-icon">🏪</span><span class="nav-label"> Por Sucursal</span>
-</a>
 <a href="/inventario/clasificacion" class="nav-item {% if active == 'inventario_clasificacion' %}active{% endif %}">
   <span class="nav-icon">🏷️</span><span class="nav-label"> Por Clasificación</span>
 </a>
@@ -40,16 +37,16 @@
 
 <div class="kpi-grid" id="kpi-grid">
   <div class="kpi-card">
+    <div class="kpi-label">Valor Total (Stock + Tránsito)</div>
+    <div class="kpi-value" id="kpi-valor-total" style="color:#22a347">—</div>
+  </div>
+  <div class="kpi-card">
     <div class="kpi-label">Valor Stock Disponible</div>
     <div class="kpi-value" id="kpi-valor-stock">—</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Valor en Tránsito</div>
     <div class="kpi-value" id="kpi-valor-transito">—</div>
-  </div>
-  <div class="kpi-card">
-    <div class="kpi-label">Valor Total (Stock + Tránsito)</div>
-    <div class="kpi-value" id="kpi-valor-total">—</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">SKUs Totales</div>

@@ -12,9 +12,6 @@
 <a href="/inventario/bodegas" class="nav-item {% if active == 'inventario_bodegas' %}active{% endif %}">
   <span class="nav-icon">🏭</span><span class="nav-label"> Por Bodega</span>
 </a>
-<a href="/inventario/sucursal" class="nav-item {% if active == 'inventario_sucursal' %}active{% endif %}">
-  <span class="nav-icon">🏪</span><span class="nav-label"> Por Sucursal</span>
-</a>
 <a href="/inventario/clasificacion" class="nav-item {% if active == 'inventario_clasificacion' %}active{% endif %}">
   <span class="nav-icon">🏷️</span><span class="nav-label"> Por Clasificación</span>
 </a>
@@ -43,6 +40,7 @@
       <thead>
         <tr>
           <th>Bodega</th>
+          <th class="text-right">Valor Total</th>
           <th class="text-right">Stock (unid.)</th>
           <th class="text-right">Valor Stock</th>
           <th class="text-right">SKUs con Stock</th>
@@ -51,7 +49,7 @@
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td colspan="6" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+        <tr><td colspan="7" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -91,8 +89,9 @@ fetch("/api/inventario/bodegas")
     const rows = d.filas.map(f => `
       <tr>
         <td class="fw-bold">${f.bodega}</td>
+        <td class="text-right fw-bold" style="color:#22a347">${fmtCLP(f.valor_total)}</td>
         <td class="text-right">${fmtInt(f.stock_qty)}</td>
-        <td class="text-right fw-bold">${fmtCLP(f.valor_stock)}</td>
+        <td class="text-right">${fmtCLP(f.valor_stock)}</td>
         <td class="text-right">${fmtInt(f.skus_con_stock)}</td>
         <td class="text-right">${f.transito_qty !== null ? fmtInt(f.transito_qty) : '—'}</td>
         <td class="text-right">${f.valor_transito !== null ? fmtCLP(f.valor_transito) : '—'}</td>
@@ -103,6 +102,7 @@ fetch("/api/inventario/bodegas")
     const filaTotal = `
       <tr class="row-total">
         <td>TOTAL GENERAL</td>
+        <td class="text-right">${fmtCLP(t.valor_total)}</td>
         <td class="text-right">${fmtInt(t.stock_qty)}</td>
         <td class="text-right">${fmtCLP(t.valor_stock)}</td>
         <td class="text-right">${fmtInt(t.skus_con_stock)}</td>

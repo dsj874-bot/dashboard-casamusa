@@ -174,14 +174,6 @@ def inventario_clasificacion():
                            session_nombre=session.get("nombre"))
 
 
-@app.route("/inventario/sucursal")
-@login_requerido
-def inventario_sucursal():
-    return render_template("inventario_sucursal.html",
-                           active="inventario_sucursal",
-                           session_nombre=session.get("nombre"))
-
-
 @app.route("/inventario/procedencia")
 @login_requerido
 def inventario_procedencia():

@@ -12,9 +12,6 @@
 <a href="/inventario/bodegas" class="nav-item {% if active == 'inventario_bodegas' %}active{% endif %}">
   <span class="nav-icon">🏭</span><span class="nav-label"> Por Bodega</span>
 </a>
-<a href="/inventario/sucursal" class="nav-item {% if active == 'inventario_sucursal' %}active{% endif %}">
-  <span class="nav-icon">🏪</span><span class="nav-label"> Por Sucursal</span>
-</a>
 <a href="/inventario/clasificacion" class="nav-item {% if active == 'inventario_clasificacion' %}active{% endif %}">
   <span class="nav-icon">🏷️</span><span class="nav-label"> Por Clasificación</span>
 </a>
@@ -30,6 +27,21 @@
   🔄 Actualizar Inventario
 </button>
 {% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Encabezados de esta tabla en dos lineas (nombre / Transito) para
+     que las columnas no queden tan anchas como el texto completo. */
+  #tabla-clas thead th {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.3;
+    vertical-align: bottom;
+    min-width: 78px;
+  }
+  #tabla-clas thead th .nombre-bodega { white-space: nowrap; }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -86,17 +98,18 @@ fetch("/api/inventario/clasificacion")
   .then(d => {
     // Encabezados: Clase | SKUs | por bodega, solo las columnas que
     // esa bodega realmente tiene (stock y/o transito).
-    const headCells = ['<th>Clase</th>', '<th class="text-right">SKUs</th>'];
+    const headCells = ['<th>Clase</th>', '<th class="text-right">SKUs</th>', '<th class="text-right">Total General</th>'];
     d.bodegas.forEach(b => {
-      if (b.tiene_stock)    headCells.push(`<th class="text-right">${b.bodega}</th>`);
-      if (b.tiene_transito) headCells.push(`<th class="text-right">${b.bodega} Tránsito</th>`);
+      if (b.tiene_stock)    headCells.push(`<th class="text-right"><span class="nombre-bodega">${b.bodega}</span></th>`);
+      if (b.tiene_transito) headCells.push(`<th class="text-right"><span class="nombre-bodega">${b.bodega}</span><br>Tránsito</th>`);
     });
     document.getElementById("tabla-head-row").innerHTML = headCells.join("");
 
     function filaHtml(f, esTotal) {
       const celdas = [
         `<td class="fw-bold">${f.clase}</td>`,
-        `<td class="text-right">${fmtInt(f.skus)}</td>`
+        `<td class="text-right">${fmtInt(f.skus)}</td>`,
+        `<td class="text-right fw-bold" style="color:#22a347">${fmtCLP(f.total_general)}</td>`
       ];
       d.bodegas.forEach(b => {
         const v = f.valores[b.bodega];
