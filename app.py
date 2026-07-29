@@ -182,6 +182,14 @@ def inventario_procedencia():
                            session_nombre=session.get("nombre"))
 
 
+@app.route("/inventario/familia")
+@login_requerido
+def inventario_familia():
+    return render_template("inventario_familia.html",
+                           active="inventario_familia",
+                           session_nombre=session.get("nombre"))
+
+
 @app.route("/api/inventario/resumen")
 @login_requerido
 def api_inventario_resumen():
@@ -214,6 +222,15 @@ def api_inventario_clasificacion():
 def api_inventario_procedencia():
     try:
         return jsonify(data_loader_inventario.get_inventario_por_procedencia())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/familia")
+@login_requerido
+def api_inventario_familia():
+    try:
+        return jsonify(data_loader_inventario.get_inventario_por_familia())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

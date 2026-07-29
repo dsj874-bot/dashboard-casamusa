@@ -12,6 +12,7 @@ import pandas as pd
 BASE_DIR             = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR_INVENTARIO  = os.path.join(BASE_DIR, "data", "inventario")
 INVENTARIO_XLSX      = os.path.join(DATA_DIR_INVENTARIO, "Inventario.xlsx")
+DATOS_DUROS_XLSX     = os.path.join(DATA_DIR_INVENTARIO, "Datos_Duros_Inventario.xlsx")
 
 # (nombre a mostrar, columna de stock, columna de transito o None)
 BODEGAS = [
@@ -36,7 +37,7 @@ ORDEN_CLASIFICACION = ["AAA", "M05", "M04", "M03", "M02", "M01", "SM0"]
 # resto = Nacional -- regla dada por el usuario, no deducida.
 IDS_IMPORTADO = {3, 7}
 
-_cache = {"df": None, "mod_time": None}
+_cache = {"df": None, "mod_time": None, "mod_time_dd": None}
 
 
 def _bodegas_activas(df):
@@ -54,15 +55,39 @@ def _bodegas_activas(df):
 def _leer_inventario():
     if not os.path.exists(INVENTARIO_XLSX):
         raise FileNotFoundError(f"No se encontro {INVENTARIO_XLSX}")
-    mod_time = os.path.getmtime(INVENTARIO_XLSX)
-    if _cache["df"] is None or _cache["mod_time"] != mod_time:
+    mod_time    = os.path.getmtime(INVENTARIO_XLSX)
+    mod_time_dd = os.path.getmtime(DATOS_DUROS_XLSX) if os.path.exists(DATOS_DUROS_XLSX) else None
+
+    necesita_recargar = (
+        _cache["df"] is None
+        or _cache["mod_time"] != mod_time
+        or _cache["mod_time_dd"] != mod_time_dd
+    )
+    if necesita_recargar:
         try:
             df = pd.read_excel(INVENTARIO_XLSX, engine="calamine")
         except Exception:
             df = pd.read_excel(INVENTARIO_XLSX)
         df["CUP"] = pd.to_numeric(df["CUP"], errors="coerce").fillna(0)
-        _cache["df"]       = df
-        _cache["mod_time"] = mod_time
+
+        # Familia/Subfamilia/Grupo vienen de un archivo aparte
+        # (Datos_Duros_Inventario.xlsx), cruzado por CODIGO -- opcional,
+        # si no existe el archivo simplemente no hay apertura por Familia.
+        if mod_time_dd is not None:
+            try:
+                dd = pd.read_excel(DATOS_DUROS_XLSX, engine="calamine")
+            except Exception:
+                dd = pd.read_excel(DATOS_DUROS_XLSX)
+            dd = dd[["CODIGO", "FAMILIA", "SUBFAMILIA", "GRUPO"]].drop_duplicates("CODIGO")
+            df = df.merge(dd, on="CODIGO", how="left")
+        else:
+            df["FAMILIA"] = None
+            df["SUBFAMILIA"] = None
+            df["GRUPO"] = None
+
+        _cache["df"]          = df
+        _cache["mod_time"]    = mod_time
+        _cache["mod_time_dd"] = mod_time_dd
     return _cache["df"]
 
 
@@ -298,3 +323,32 @@ def get_inventario_por_procedencia():
     )
 
     return _pivot_dimension_por_bodega(df, "_PROCEDENCIA", ["Nacional", "Importado"])
+
+
+def get_inventario_por_familia():
+    """
+    Apertura por Familia x bodega. FAMILIA viene de un archivo aparte
+    (Datos_Duros_Inventario.xlsx, cruzado por CODIGO) -- si ese archivo
+    no esta presente, todo cae en "SIN FAMILIA".
+    """
+    df = _leer_inventario()
+    df = df.copy()
+    df["_FAMILIA"] = df["FAMILIA"].fillna("SIN FAMILIA")
+
+    # Orden por valor total (stock+transito) de mayor a menor -- a
+    # diferencia de clasificacion/procedencia, aqui no hay un orden de
+    # negocio fijo, asi que se ordena por relevancia.
+    columnas_bodega = _columnas_bodega(df)
+    def valor_familia(familia):
+        sub = df[df["_FAMILIA"] == familia]
+        total = 0.0
+        for col in columnas_bodega:
+            if col["stock_col"]:
+                total += float((sub[col["stock_col"]] * sub["CUP"]).sum())
+            if col["transito_col"] and col["transito_col"] in sub.columns:
+                total += float((sub[col["transito_col"]] * sub["CUP"]).sum())
+        return total
+
+    familias_presentes = sorted(df["_FAMILIA"].unique(), key=valor_familia, reverse=True)
+
+    return _pivot_dimension_por_bodega(df, "_FAMILIA", familias_presentes)

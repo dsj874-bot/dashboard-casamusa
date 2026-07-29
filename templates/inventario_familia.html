@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}Inventario — Por Procedencia{% endblock %}
-{% block page_title %}Inventario — Por Procedencia{% endblock %}
-{% block page_subtitle %}Nacional vs Importado, por bodega — valorizado{% endblock %}
+{% block title %}Inventario — Por Familia{% endblock %}
+{% block page_title %}Inventario — Por Familia{% endblock %}
+{% block page_subtitle %}Valor de stock y tránsito por bodega y familia de producto{% endblock %}
 
 {% block sidebar_nav %}
 <div class="nav-section-title">Inventario</div>
@@ -36,9 +36,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   /* Tabla transpuesta: Bodega en filas (una fila extra "Transito" por
-     bodega que la tiene), dimension (clasificacion/procedencia) en
-     columnas -- todas las columnas de dimension del mismo ancho, todo
-     centrado horizontal y vertical, encabezados de 2 lineas parejas. */
+     bodega que la tiene), dimension (familia) en columnas -- todas
+     las columnas de dimension del mismo ancho, todo centrado
+     horizontal y vertical, encabezados de 2 lineas parejas. */
   #tabla-pivot { table-layout: fixed; }
   #tabla-pivot th, #tabla-pivot td {
     text-align: center;
@@ -50,7 +50,7 @@
     height: 2.6em;
   }
   #tabla-pivot col.col-bodega { width: 200px; }
-  #tabla-pivot col.col-dim { width: 140px; }
+  #tabla-pivot col.col-dim { width: 110px; }
   #tabla-pivot tbody td:first-child { text-align: left; }
 </style>
 {% endblock %}
@@ -59,7 +59,7 @@
 
 <div class="table-card" style="margin-bottom:20px;">
   <div class="table-header">
-    <div class="table-header-title">Valor por Bodega y Procedencia</div>
+    <div class="table-header-title">Valor por Bodega y Familia</div>
   </div>
   <div class="table-wrap">
     <table id="tabla-pivot">
@@ -78,8 +78,8 @@
 </div>
 
 <div class="chart-card">
-  <div class="chart-card-title">Valor Total por Procedencia</div>
-  <canvas id="chartProcedencia" height="90"></canvas>
+  <div class="chart-card-title">Valor Total por Familia</div>
+  <canvas id="chartFamilia" height="140"></canvas>
 </div>
 
 {% endblock %}
@@ -113,20 +113,20 @@ if (btnActualizarInv) {
 
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
 
-fetch("/api/inventario/procedencia")
+fetch("/api/inventario/familia")
   .then(r => r.json())
   .then(d => {
     renderPivot(d);
 
-    new Chart(document.getElementById("chartProcedencia"), {
+    new Chart(document.getElementById("chartFamilia"), {
       type: "bar",
       data: {
         labels: d.filas.map(f => f.clase),
         datasets: [{
           label: "Valor Total",
           data: d.filas.map(f => Math.round(f.total_general / 1000000)),
-          backgroundColor: ["rgba(34,163,71,0.75)", "rgba(59,130,246,0.75)"],
-          borderColor: ["#22a347", "#3b82f6"],
+          backgroundColor: "rgba(34,163,71,0.75)",
+          borderColor: "#22a347",
           borderWidth: 1,
           borderRadius: 5,
         }]
@@ -134,18 +134,19 @@ fetch("/api/inventario/procedencia")
       options: {
         indexAxis: "y",
         responsive: true,
+        maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
           tooltip: { callbacks: { label: ctx => " $" + ctx.raw.toLocaleString("es-CL") + " MM" } }
         },
         scales: {
           x: { ticks: { callback: v => "$" + v + " MM" }, grid: { color: "#1e2a3a" } },
-          y: { grid: { display: false } }
+          y: { grid: { display: false }, ticks: { font: { size: 11 } } }
         }
       }
     });
   })
-  .catch(err => console.error("Error procedencia inventario:", err));
+  .catch(err => console.error("Error familia inventario:", err));
 
 function renderPivot(d) {
   document.getElementById("tabla-colgroup").innerHTML =
