@@ -16,3 +16,6 @@ __pycache__/
 # Entornos
 .venv/
 venv/
+
+# Config local del entorno de desarrollo (Claude Code)
+.claude/

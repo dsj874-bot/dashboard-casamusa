@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Adquisiciones — Lead Time por Proveedor{% endblock %}
+{% block page_title %}Adquisiciones — Lead Time por Proveedor{% endblock %}
+{% block page_subtitle %}Días reales entre la Orden de Compra y la primera recepción{% endblock %}
+
+{% block sidebar_nav %}{% include "_adquisiciones_sidebar.html" %}{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid" id="kpi-grid" style="margin-bottom:20px;">
+  <div class="kpi-card">
+    <div class="kpi-label">Lead Time Promedio Empresa (Año Actual)</div>
+    <div class="kpi-value" id="kpi-lead-actual">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Lead Time Promedio Empresa (Año Anterior)</div>
+    <div class="kpi-value" id="kpi-lead-anterior" style="color:#64748b">—</div>
+  </div>
+</div>
+
+<!-- Tabla detalle -->
+<div class="table-card" style="margin-bottom:20px;">
+  <div class="table-header">
+    <div class="table-header-title" id="tabla-titulo">Detalle por Proveedor</div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th data-key="nombre">Proveedor</th>
+          <th class="text-right" data-key="n_oc_total">N° OC</th>
+          <th class="text-right" data-key="n_oc_recibidas">N° Recibidas</th>
+          <th class="text-right" data-key="n_oc_pendientes">N° Pendientes</th>
+          <th class="text-right" data-key="lead_time_actual" id="th-lead-actual">Lead Time (días)</th>
+          <th class="text-right" data-key="lead_time_min">Mínimo</th>
+          <th class="text-right" data-key="lead_time_max">Máximo</th>
+          <th class="text-right" data-key="lead_time_anterior" id="th-lead-anterior">Lead Time Año Ant.</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-body">
+        <tr><td colspan="8" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const fmtUnid = v => Math.round(v).toLocaleString("es-CL");
+const fmtDias = v => v === null || v === undefined ? "—" : v.toFixed(1) + " d";
+const fmtDiasEntero = v => v === null || v === undefined ? "—" : Math.round(v) + " d";
+
+let _items = [];
+let _sortKey = "lead_time_actual", _sortDir = "desc";
+
+document.querySelectorAll("thead th[data-key]").forEach(th => {
+  th.style.cursor = "pointer";
+  th.addEventListener("click", () => {
+    _sortDir = (_sortKey === th.dataset.key) ? (_sortDir === "desc" ? "asc" : "desc") : "desc";
+    _sortKey = th.dataset.key;
+    renderTabla();
+  });
+});
+
+function actualizarFlechas() {
+  document.querySelectorAll("thead th[data-key]").forEach(th => {
+    const activo = th.dataset.key === _sortKey;
+    th.textContent = th.dataset.label + (activo ? (_sortDir === "desc" ? " ▼" : " ▲") : "");
+  });
+}
+
+fetch("/api/adquisiciones/lead_time")
+  .then(r => r.json())
+  .then(d => {
+    document.getElementById("kpi-lead-actual").textContent = fmtDias(d.lead_time_empresa_actual);
+    document.getElementById("kpi-lead-anterior").textContent = fmtDias(d.lead_time_empresa_anterior);
+    document.getElementById("th-lead-actual").textContent = "Lead Time " + d.ano_actual + " (días)";
+    document.getElementById("th-lead-anterior").textContent = "Lead Time " + d.ano_anterior + " (días)";
+
+    document.querySelectorAll("thead th[data-key]").forEach(th => {
+      th.dataset.label = th.textContent;
+    });
+
+    _items = d.items;
+    renderTabla();
+  })
+  .catch(err => console.error("Error lead time:", err));
+
+function renderTabla() {
+  let ordenados = [..._items];
+  ordenados.sort((a, b) => {
+    let va = a[_sortKey], vb = b[_sortKey];
+    // proveedores sin dato (null) siempre al final, sin importar la direccion de orden
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1;
+    if (vb === null) return -1;
+    if (typeof va === "string") { va = va.toLowerCase(); vb = (vb || "").toLowerCase(); }
+    if (va < vb) return _sortDir === "asc" ? -1 : 1;
+    if (va > vb) return _sortDir === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  const rows = ordenados.map(p => `
+    <tr>
+      <td class="fw-bold">${p.nombre}</td>
+      <td class="text-right">${fmtUnid(p.n_oc_total)}</td>
+      <td class="text-right">${fmtUnid(p.n_oc_recibidas)}</td>
+      <td class="text-right ${p.n_oc_pendientes > 0 ? 'text-amber' : 'text-muted'}">${fmtUnid(p.n_oc_pendientes)}</td>
+      <td class="text-right fw-bold">${fmtDias(p.lead_time_actual)}</td>
+      <td class="text-right text-muted">${fmtDiasEntero(p.lead_time_min)}</td>
+      <td class="text-right text-muted">${fmtDiasEntero(p.lead_time_max)}</td>
+      <td class="text-right text-muted">${fmtDias(p.lead_time_anterior)}</td>
+    </tr>
+  `).join("");
+
+  document.getElementById("tabla-body").innerHTML = rows;
+  actualizarFlechas();
+}
+</script>
+{% endblock %}

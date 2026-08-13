@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Adquisiciones — Códigos "6" Sin Venta{% endblock %}
+{% block page_title %}Adquisiciones — Códigos "6" Sin Venta{% endblock %}
+{% block page_subtitle %}Códigos que empiezan con "6" recibidos que nunca se han vendido — más recientes primero{% endblock %}
+
+{% block sidebar_nav %}{% include "_adquisiciones_sidebar.html" %}{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid" id="kpi-grid" style="margin-bottom:20px;">
+  <div class="kpi-card">
+    <div class="kpi-label">Códigos "6" Recibidos (Total)</div>
+    <div class="kpi-value" id="kpi-total">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Sin Ninguna Venta</div>
+    <div class="kpi-value" id="kpi-sin-venta" style="color:#ef4444">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Monto Invertido Sin Vender</div>
+    <div class="kpi-value" id="kpi-monto" style="color:#ef4444">—</div>
+  </div>
+</div>
+
+<!-- Tabla detalle -->
+<div class="table-card" style="margin-bottom:20px;">
+  <div class="table-header">
+    <div class="table-header-title">Detalle — ordenado por última recepción, más reciente primero</div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th data-key="codigo">Código</th>
+          <th data-key="descripcion">Descripción</th>
+          <th data-key="proveedor">Proveedor</th>
+          <th data-key="tipo_oc">Tipo</th>
+          <th data-key="fecha_ultima_recepcion">Última Recepción</th>
+          <th class="text-right" data-key="dias_desde_recepcion">Días</th>
+          <th class="text-right" data-key="cantidad_recibida">Cant. Recibida</th>
+          <th class="text-right" data-key="monto_recibido">Monto Recibido</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-body">
+        <tr><td colspan="8" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
+const fmtUnid = v => Math.round(v).toLocaleString("es-CL");
+const clsDias = v => v <= 7 ? "text-red" : v <= 30 ? "text-amber" : "text-muted";
+
+let _items = [];
+let _sortKey = "fecha_ultima_recepcion", _sortDir = "desc";
+
+document.querySelectorAll("thead th[data-key]").forEach(th => {
+  th.style.cursor = "pointer";
+  th.addEventListener("click", () => {
+    _sortDir = (_sortKey === th.dataset.key) ? (_sortDir === "desc" ? "asc" : "desc") : "desc";
+    _sortKey = th.dataset.key;
+    renderTabla();
+  });
+});
+
+function actualizarFlechas() {
+  document.querySelectorAll("thead th[data-key]").forEach(th => {
+    const activo = th.dataset.key === _sortKey;
+    th.textContent = th.dataset.label + (activo ? (_sortDir === "desc" ? " ▼" : " ▲") : "");
+  });
+}
+
+// fecha_ultima_recepcion viene como "dd-mm-aaaa" -- para ordenar
+// correctamente se convierte a aaaa-mm-dd al comparar.
+function claveFecha(v) {
+  const [d, m, a] = v.split("-");
+  return `${a}-${m}-${d}`;
+}
+
+fetch("/api/adquisiciones/codigos_6")
+  .then(r => r.json())
+  .then(d => {
+    document.getElementById("kpi-total").textContent = fmtUnid(d.resumen.n_codigos_6_total);
+    document.getElementById("kpi-sin-venta").textContent = fmtUnid(d.resumen.n_codigos_sin_venta);
+    document.getElementById("kpi-monto").textContent = fmtCLP(d.resumen.monto_total_sin_venta);
+
+    document.querySelectorAll("thead th[data-key]").forEach(th => {
+      th.dataset.label = th.textContent;
+    });
+
+    _items = d.items;
+    renderTabla();
+  })
+  .catch(err => console.error("Error codigos 6:", err));
+
+function renderTabla() {
+  let ordenados = [..._items];
+  ordenados.sort((a, b) => {
+    let va = a[_sortKey], vb = b[_sortKey];
+    if (_sortKey === "fecha_ultima_recepcion") { va = claveFecha(va); vb = claveFecha(vb); }
+    if (typeof va === "string") { va = va.toLowerCase(); vb = (vb || "").toLowerCase(); }
+    if (va < vb) return _sortDir === "asc" ? -1 : 1;
+    if (va > vb) return _sortDir === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  if (_items.length === 0) {
+    document.getElementById("tabla-body").innerHTML =
+      `<tr><td colspan="8" style="text-align:center;color:#475569;padding:32px;">Todos los códigos "6" recibidos ya tienen alguna venta.</td></tr>`;
+    return;
+  }
+
+  const rows = ordenados.map(p => `
+    <tr>
+      <td>${p.codigo}</td>
+      <td class="fw-bold">${p.descripcion}</td>
+      <td>${p.proveedor}</td>
+      <td>${p.tipo_oc}</td>
+      <td>${p.fecha_ultima_recepcion}</td>
+      <td class="text-right ${clsDias(p.dias_desde_recepcion)}">${fmtUnid(p.dias_desde_recepcion)}</td>
+      <td class="text-right text-muted">${fmtUnid(p.cantidad_recibida)}</td>
+      <td class="text-right fw-bold">${fmtCLP(p.monto_recibido)}</td>
+    </tr>
+  `).join("");
+
+  document.getElementById("tabla-body").innerHTML = rows;
+  actualizarFlechas();
+}
+</script>
+{% endblock %}

@@ -37,6 +37,21 @@ ORDEN_CLASIFICACION = ["AAA", "M05", "M04", "M03", "M02", "M01", "SM0"]
 # resto = Nacional -- regla dada por el usuario, no deducida.
 IDS_IMPORTADO = {3, 7}
 
+# Bodega -> columna de venta mensual en Datos_Duros_Inventario.xlsx.
+# Solo estas 5 bodegas tienen venta mensual propia; el resto (Maipu,
+# Oficina, Mercado Libre Full, Mercado Libre Full Schneider,
+# E-commerce, Merma) no tiene esa columna -- para esas, venta_mensual
+# y alcance quedan en None (la columna igual se muestra en pantalla,
+# solo el valor queda vacio -- pedido explicito del usuario).
+VENTA_MENSUAL_COL = {
+    "Chicureo":         "VENTA MENSUAL CHICUREO",
+    "Las Condes":       "VENTA MENSUAL LAS CONDES",
+    "Manuel Rodríguez": "VENTA MENSUAL MANUEL RODRIGUEZ",
+    "Matta":            "VENTA MENSUAL MATTA",
+    "San Isidro":       "VENTA MENSUAL SAN ISIDRO",
+}
+VENTA_MENSUAL_TODAS = "VENTA MENSUAL CONSOLIDADA"
+
 _cache = {"df": None, "mod_time": None, "mod_time_dd": None}
 
 
@@ -52,6 +67,25 @@ def _bodegas_activas(df):
     ]
 
 
+def _leer_hoja_con_datos(path, columnas_esperadas):
+    """Lee un Excel buscando la hoja que tiene las columnas esperadas,
+    en vez de asumir que siempre es la primera -- si alguien deja una
+    hoja de trabajo/borrador adicional en el archivo (ej. un pedido
+    armado a mano) y esa queda primera, pandas leeria esa hoja en vez
+    de los datos reales. Si ninguna hoja calza, cae de vuelta a la
+    primera hoja (comportamiento anterior) para no ocultar un error
+    real de formato."""
+    try:
+        xl = pd.ExcelFile(path, engine="calamine")
+    except Exception:
+        xl = pd.ExcelFile(path)
+    for nombre_hoja in xl.sheet_names:
+        columnas = xl.parse(nombre_hoja, nrows=0).columns
+        if all(c in columnas for c in columnas_esperadas):
+            return xl.parse(nombre_hoja)
+    return xl.parse(xl.sheet_names[0])
+
+
 def _leer_inventario():
     if not os.path.exists(INVENTARIO_XLSX):
         raise FileNotFoundError(f"No se encontro {INVENTARIO_XLSX}")
@@ -64,21 +98,16 @@ def _leer_inventario():
         or _cache["mod_time_dd"] != mod_time_dd
     )
     if necesita_recargar:
-        try:
-            df = pd.read_excel(INVENTARIO_XLSX, engine="calamine")
-        except Exception:
-            df = pd.read_excel(INVENTARIO_XLSX)
+        df = _leer_hoja_con_datos(INVENTARIO_XLSX, columnas_esperadas=["CODIGO", "CUP"])
         df["CUP"] = pd.to_numeric(df["CUP"], errors="coerce").fillna(0)
 
         # Familia/Subfamilia/Grupo vienen de un archivo aparte
         # (Datos_Duros_Inventario.xlsx), cruzado por CODIGO -- opcional,
         # si no existe el archivo simplemente no hay apertura por Familia.
         if mod_time_dd is not None:
-            try:
-                dd = pd.read_excel(DATOS_DUROS_XLSX, engine="calamine")
-            except Exception:
-                dd = pd.read_excel(DATOS_DUROS_XLSX)
-            dd = dd[["CODIGO", "FAMILIA", "SUBFAMILIA", "GRUPO"]].drop_duplicates("CODIGO")
+            dd = _leer_hoja_con_datos(DATOS_DUROS_XLSX, columnas_esperadas=["CODIGO", "FAMILIA", "SUBFAMILIA"])
+            cols_venta = [c for c in dd.columns if c.startswith("VENTA MENSUAL")]
+            dd = dd[["CODIGO", "FAMILIA", "SUBFAMILIA", "GRUPO"] + cols_venta].drop_duplicates("CODIGO")
             df = df.merge(dd, on="CODIGO", how="left")
         else:
             df["FAMILIA"] = None
@@ -93,17 +122,23 @@ def _leer_inventario():
 
 def actualizar_desde_archivo():
     """
-    Busca un archivo *_Inventario.xlsx (ej. 260728_Inventario.xlsx,
-    el nombre que exporta SAP con la fecha) en data/inventario/. Si lo
-    encuentra, REEMPLAZA Inventario.xlsx entero (no se fusiona -- el
-    inventario no es acumulable, es una foto nueva cada vez) y marca
-    el original como .done para no volver a procesarlo.
+    Busca un archivo AAMMDD_Inventario.xlsx (6 digitos de fecha, ej.
+    260728_Inventario.xlsx -- el nombre que exporta SAP) en
+    data/inventario/. Si lo encuentra, REEMPLAZA Inventario.xlsx entero
+    (no se fusiona -- el inventario no es acumulable, es una foto nueva
+    cada vez) y marca el original como .done para no volver a
+    procesarlo.
+
+    El patron exige 6 digitos al inicio (no solo "*_Inventario.xlsx")
+    para no confundirse con otros archivos de la misma carpeta que
+    tambien terminan en "_Inventario.xlsx" (ej.
+    Datos_Duros_Inventario.xlsx) -- eso paso una vez y el boton
+    reemplazo Inventario.xlsx con el archivo equivocado.
     """
-    patron = os.path.join(DATA_DIR_INVENTARIO, "*_Inventario.xlsx")
+    patron = os.path.join(DATA_DIR_INVENTARIO, "[0-9][0-9][0-9][0-9][0-9][0-9]_Inventario.xlsx")
     candidatos = [
         f for f in glob.glob(patron)
         if not f.endswith((".done", ".procesando"))
-        and os.path.basename(f) != "Inventario.xlsx"
         and not os.path.basename(f).startswith("~$")
     ]
     if not candidatos:
@@ -352,3 +387,161 @@ def get_inventario_por_familia():
     familias_presentes = sorted(df["_FAMILIA"].unique(), key=valor_familia, reverse=True)
 
     return _pivot_dimension_por_bodega(df, "_FAMILIA", familias_presentes)
+
+
+def get_bodegas_disponibles():
+    """Lista de bodegas con stock propio (para el selector de la
+    pagina Por Marca/Subfamilia) -- no incluye Servicio Tecnico, que
+    solo tiene transito y no tiene sentido "abrir por marca" ahi.
+    "Todas" va primero: suma stock/transito de todas las bodegas y usa
+    VENTA MENSUAL CONSOLIDADA para el alcance."""
+    df = _leer_inventario()
+    activas = _bodegas_activas(df)
+    return [{"bodega": "Todas", "tiene_transito": any(t for _, _, t in activas)}] + [
+        {"bodega": nombre, "tiene_transito": bool(transito_col)}
+        for nombre, _, transito_col in activas
+    ]
+
+
+def get_inventario_por_marca_subfamilia(bodega, procedencia=None):
+    """
+    Apertura por Marca (fila principal) con Subfamilia anidada debajo
+    de cada marca, para una bodega especifica o "Todas" (suma de todas
+    las bodegas) -- opcionalmente filtrada por Nacional/Importado.
+
+    Ademas de stock/transito, incluye Venta Mensual y Alcance (= stock
+    / venta mensual, en meses de cobertura). Si la bodega elegida no
+    tiene columna de venta mensual propia (Maipu, Oficina, Mercado
+    Libre Full, Mercado Libre Full Schneider, E-commerce, Merma),
+    venta_mensual y alcance quedan en None -- pero las columnas siguen
+    mostrandose siempre en pantalla, solo el valor queda vacio (pedido
+    explicito del usuario: "no hacer desaparecer las columnas").
+    """
+    df = _leer_inventario()
+    activas = _bodegas_activas(df)
+
+    if bodega == "Todas":
+        stock_cols = [s for _, s, _ in activas]
+        transito_cols = [t for _, _, t in activas if t]
+        tiene_transito = bool(transito_cols)
+        venta_col = VENTA_MENSUAL_TODAS if VENTA_MENSUAL_TODAS in df.columns else None
+    else:
+        bodega_info = next(((n, s, t) for n, s, t in activas if n == bodega), None)
+        if bodega_info is None:
+            raise ValueError(f"Bodega no encontrada o sin stock: {bodega}")
+        _, stock_col, transito_col = bodega_info
+        stock_cols = [stock_col]
+        transito_cols = [transito_col] if transito_col else []
+        tiene_transito = bool(transito_col)
+        venta_col = VENTA_MENSUAL_COL.get(bodega)
+        if venta_col and venta_col not in df.columns:
+            venta_col = None
+
+    df = df.copy()
+    if procedencia and procedencia not in ("todas", "Todas", ""):
+        df["_PROCEDENCIA"] = df["ID_PROCEDENCIA"].apply(
+            lambda x: "Importado" if x in IDS_IMPORTADO else "Nacional"
+        )
+        df = df[df["_PROCEDENCIA"] == procedencia]
+
+    df["_MARCA"] = df["MARCA"].fillna("SIN MARCA")
+    df["_SUBFAMILIA"] = df["SUBFAMILIA"].fillna("SIN SUBFAMILIA")
+
+    # Columnas auxiliares calculadas UNA vez sobre todo el df (vectorizado)
+    # en vez de volver a sumar columna por columna dentro de cada grupo
+    # chico (marca/subfamilia) -- eso ultimo es lo que hacia lenta esta
+    # pantalla, sobre todo con "Todas" (11 columnas de stock + 6 de
+    # transito), porque pandas repetia el mismo trabajo cientos de veces.
+    df["_STOCK_VALOR"] = 0.0
+    df["_STOCK_QTY"] = 0.0
+    for c in stock_cols:
+        df["_STOCK_VALOR"] += df[c] * df["CUP"]
+        df["_STOCK_QTY"] += df[c]
+    df["_TRANSITO_VALOR"] = 0.0
+    df["_TRANSITO_QTY"] = 0.0
+    for c in transito_cols:
+        df["_TRANSITO_VALOR"] += df[c] * df["CUP"]
+        df["_TRANSITO_QTY"] += df[c]
+
+    # Venta Mensual se muestra valorizada ($ = unidades x CUP, igual que
+    # Stock/Transito) para que sea comparable en pantalla, pero el
+    # Alcance se calcula con UNIDADES puras (stock fisico / venta
+    # mensual en unidades) -- Venta Mensual viene en unidades
+    # (verificado: Chicureo stock=50.179 unid. vs venta mensual=54.077,
+    # misma escala; el stock valorizado son $70M). Mezclar $ con
+    # unidades daria un "alcance" sin sentido.
+    if venta_col:
+        venta_qty = df[venta_col].fillna(0)
+        df["_VENTA_QTY"] = venta_qty
+        df["_VENTA_VALOR"] = venta_qty * df["CUP"]
+    else:
+        df["_VENTA_QTY"] = 0.0
+        df["_VENTA_VALOR"] = 0.0
+
+    # Una sola pasada agregada (marca, subfamilia) -- vectorizado.
+    agg = df.groupby(["_MARCA", "_SUBFAMILIA"], as_index=False).agg(
+        stock=("_STOCK_VALOR", "sum"),
+        transito=("_TRANSITO_VALOR", "sum"),
+        stock_qty=("_STOCK_QTY", "sum"),
+        transito_qty=("_TRANSITO_QTY", "sum"),
+        venta_qty=("_VENTA_QTY", "sum"),
+        venta_valor=("_VENTA_VALOR", "sum"),
+    )
+
+    def fila_de(stock, transito, stock_qty, transito_qty, venta_qty, venta_valor):
+        v_venta = float(venta_valor) if venta_col else None
+        alcance = round(stock_qty / venta_qty, 2) if venta_col and venta_qty > 0 else None
+        return {
+            "stock":         round(float(stock), 0),
+            "transito":      round(float(transito), 0),
+            "stock_qty":     round(float(stock_qty), 0),
+            "transito_qty":  round(float(transito_qty), 0),
+            "venta_mensual": round(v_venta, 0) if v_venta is not None else None,
+            "venta_qty":     round(float(venta_qty), 0) if venta_col else None,
+            "alcance":       alcance,
+        }
+
+    marcas = []
+    for marca, grupo in agg.groupby("_MARCA"):
+        stock_marca = float(grupo["stock"].sum())
+        transito_marca = float(grupo["transito"].sum())
+        if stock_marca == 0 and transito_marca == 0:
+            continue
+        fm = fila_de(
+            stock_marca, transito_marca,
+            float(grupo["stock_qty"].sum()), float(grupo["transito_qty"].sum()),
+            float(grupo["venta_qty"].sum()), float(grupo["venta_valor"].sum()),
+        )
+
+        subfamilias = []
+        for _, row in grupo.iterrows():
+            if row["stock"] == 0 and row["transito"] == 0:
+                continue
+            fs = fila_de(
+                row["stock"], row["transito"], row["stock_qty"], row["transito_qty"],
+                row["venta_qty"], row["venta_valor"],
+            )
+            subfamilias.append({"subfamilia": row["_SUBFAMILIA"], **fs})
+        subfamilias.sort(key=lambda s: -(s["stock"] + s["transito"]))
+
+        marcas.append({"marca": marca, **fm, "subfamilias": subfamilias})
+    marcas.sort(key=lambda m: -(m["stock"] + m["transito"]))
+
+    # El total se recalcula sobre el agregado completo (no sumando los $
+    # de cada marca) para que el alcance general use la misma logica
+    # unidades/unidades que cada fila -- sumar "alcance" por marca no
+    # tendria sentido (no es una cantidad aditiva).
+    total = fila_de(
+        agg["stock"].sum(), agg["transito"].sum(),
+        agg["stock_qty"].sum(), agg["transito_qty"].sum(),
+        agg["venta_qty"].sum(), agg["venta_valor"].sum(),
+    )
+
+    return {
+        "bodega":         bodega,
+        "tiene_transito": tiene_transito,
+        "tiene_venta":    venta_col is not None,
+        "marcas":         marcas,
+        "total":          total,
+    }
+

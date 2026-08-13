@@ -1,0 +1,324 @@
+{% extends "base.html" %}
+
+{% block title %}Inventario — Por Marca{% endblock %}
+{% block page_title %}Inventario — Por Marca{% endblock %}
+{% block page_subtitle %}Stock y tránsito por marca (clic para desplegar subfamilia) — una bodega a la vez{% endblock %}
+
+{% block sidebar_nav %}{% include "_inventario_sidebar.html" %}{% endblock %}
+
+{% block boton_actualizar %}
+{% if es_admin %}
+<button id="btn-actualizar-inv" class="btn-filter" style="padding:8px 14px;font-size:12px;"
+        title="Busca un archivo AAMMDD_Inventario.xlsx en data/inventario/ y reemplaza el inventario completo">
+  🔄 Actualizar Inventario
+</button>
+{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .filtros-marca {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .filtro-item label {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .filtro-item select {
+    min-width: 220px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    cursor: pointer;
+  }
+  .fila-marca { cursor: pointer; }
+  .fila-marca:hover { background: var(--surface2); }
+  .icono-expandir { display: inline-block; width: 14px; transition: transform .15s; }
+  .fila-marca.expandida .icono-expandir { transform: rotate(90deg); }
+  .fila-subfamilia { display: none; }
+  .fila-subfamilia.visible { display: table-row; }
+  .fila-subfamilia td:first-child { padding-left: 40px; color: var(--muted2); font-size: 12.5px; }
+  .modo-toggle {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .modo-btn {
+    background: var(--surface);
+    border: none;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 8px 14px;
+    cursor: pointer;
+  }
+  .modo-btn + .modo-btn { border-left: 1px solid var(--border); }
+  .modo-btn.active { background: #22a347; color: #fff; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="filtros-marca">
+  <div class="filtro-item">
+    <label>Bodega</label>
+    <select id="f-bodega">
+      <option value="Todas">Todas</option>
+    </select>
+  </div>
+  <div class="filtro-item">
+    <label>Procedencia</label>
+    <select id="f-procedencia">
+      <option value="todas">Todas</option>
+      <option value="Nacional">Nacional</option>
+      <option value="Importado">Importado</option>
+    </select>
+  </div>
+  <div class="filtro-item">
+    <label>Vista</label>
+    <div class="modo-toggle">
+      <button type="button" class="modo-btn active" data-modo="valor">Valorizado ($)</button>
+      <button type="button" class="modo-btn" data-modo="cantidad">Cantidades (unid.)</button>
+    </div>
+  </div>
+</div>
+
+<div class="table-card" style="margin-bottom:20px;">
+  <div class="table-header">
+    <div class="table-header-title" id="tabla-titulo">Detalle por Marca</div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th data-key="marca">Marca / Subfamilia</th>
+          <th class="text-right" data-key="stock">Stock</th>
+          <th class="text-right" id="th-transito" data-key="transito">Tránsito</th>
+          <th class="text-right" data-key="total">Total</th>
+          <th class="text-right" data-key="venta_mensual">Venta Mensual</th>
+          <th class="text-right" data-key="alcance">Alcance</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-body">
+        <tr><td colspan="6" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const btnActualizarInv = document.getElementById('btn-actualizar-inv');
+if (btnActualizarInv) {
+  btnActualizarInv.addEventListener('click', async function () {
+    const btn = this;
+    const textoOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Actualizando...';
+    try {
+      const r = await fetch('/admin/actualizar_inventario', { method: 'POST' });
+      const d = await r.json();
+      alert(d.msg);
+      if (d.ok) location.reload();
+    } catch (e) {
+      alert('Error al actualizar: ' + e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = textoOriginal;
+    }
+  });
+}
+
+const fmtCLP  = v => "$" + Math.round(v).toLocaleString("es-CL");
+const fmtUnid = v => Math.round(v).toLocaleString("es-CL");
+const fmtAlcance = v => v.toLocaleString("es-CL", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " m";
+
+// ── Vista: Valorizado ($) o Cantidades (unidades) ──
+let _modo = "valor"; // "valor" | "cantidad"
+const CAMPO_QTY = { stock: "stock_qty", transito: "transito_qty", total: "total_qty", venta_mensual: "venta_qty" };
+
+function campo(obj, base) {
+  return _modo === "cantidad" ? obj[CAMPO_QTY[base]] : obj[base];
+}
+function fmtPrincipal(v) {
+  return _modo === "cantidad" ? fmtUnid(v) : fmtCLP(v);
+}
+
+document.querySelectorAll(".modo-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    if (btn.classList.contains("active")) return;
+    _modo = btn.dataset.modo;
+    document.querySelectorAll(".modo-btn").forEach(b => b.classList.toggle("active", b === btn));
+    renderTabla(_data);
+  });
+});
+
+// ── Ordenamiento de tabla por columna (TOTAL GENERAL siempre fijo) ──
+const ETIQUETAS_BASE = {
+  marca: "Marca / Subfamilia",
+  stock: "Stock",
+  transito: "Tránsito",
+  total: "Total",
+  venta_mensual: "Venta Mensual",
+  alcance: "Alcance",
+};
+
+let _data = null;
+let _sortKey = null, _sortDir = "desc";
+
+function ordenarPor(key) {
+  _sortDir = (_sortKey === key) ? (_sortDir === "desc" ? "asc" : "desc") : "desc";
+  _sortKey = key;
+  renderTabla(_data);
+}
+
+document.querySelectorAll("thead th[data-key]").forEach(th => {
+  th.style.cursor = "pointer";
+  th.addEventListener("click", () => ordenarPor(th.dataset.key));
+});
+
+function actualizarFlechas() {
+  document.querySelectorAll("thead th[data-key]").forEach(th => {
+    const key = th.dataset.key;
+    let label = ETIQUETAS_BASE[key];
+    if (_modo === "cantidad" && CAMPO_QTY[key]) label += " (unid.)";
+    const activo = key === _sortKey;
+    th.textContent = label + (activo ? (_sortDir === "desc" ? " ▼" : " ▲") : "");
+  });
+}
+
+function valorOrden(item, key) {
+  if (key === "marca") return (item.marca || "").toLowerCase();
+  if (key === "alcance") return item.alcance === null ? -Infinity : item.alcance;
+  const v = campo(item, key);
+  return (v === null || v === undefined) ? -Infinity : v;
+}
+
+function cargarDatos() {
+  const bodega = document.getElementById("f-bodega").value;
+  const procedencia = document.getElementById("f-procedencia").value;
+  if (!bodega) return;
+
+  document.getElementById("tabla-body").innerHTML =
+    '<tr><td colspan="6" style="text-align:center;color:#475569;padding:24px;">Cargando...</td></tr>';
+
+  fetch(`/api/inventario/marca_subfamilia?bodega=${encodeURIComponent(bodega)}&procedencia=${encodeURIComponent(procedencia)}`)
+    .then(r => r.json())
+    .then(d => {
+      // Total = Stock + Transito (valorizado y en unidades), calculado
+      // una vez al llegar los datos.
+      d.total.total = d.total.stock + d.total.transito;
+      d.total.total_qty = d.total.stock_qty + d.total.transito_qty;
+      d.marcas.forEach(m => {
+        m.total = m.stock + m.transito;
+        m.total_qty = m.stock_qty + m.transito_qty;
+        m.subfamilias.forEach(s => {
+          s.total = s.stock + s.transito;
+          s.total_qty = s.stock_qty + s.transito_qty;
+        });
+      });
+      _data = d;
+      renderTabla(d);
+    })
+    .catch(err => console.error("Error marca/subfamilia inventario:", err));
+}
+
+function renderTabla(d) {
+  document.getElementById("tabla-titulo").textContent = `Detalle por Marca — ${d.bodega}`;
+  document.getElementById("th-transito").style.display = d.tiene_transito ? "" : "none";
+
+  const celdaVenta = v => v !== null ? fmtPrincipal(v) : '—';
+  const celdaAlcance = v => {
+    if (v === null) return '—';
+    const color = v < 1.5 ? '#ef4444' : '#22a347';
+    return `<span style="color:${color};font-weight:600">${fmtAlcance(v)}</span>`;
+  };
+
+  let filasHtml = `
+    <tr class="row-total">
+      <td>TOTAL GENERAL</td>
+      <td class="text-right">${fmtPrincipal(campo(d.total, "stock"))}</td>
+      <td class="text-right" style="${d.tiene_transito ? '' : 'display:none;'}">${fmtPrincipal(campo(d.total, "transito"))}</td>
+      <td class="text-right">${fmtPrincipal(campo(d.total, "total"))}</td>
+      <td class="text-right">${celdaVenta(campo(d.total, "venta_mensual"))}</td>
+      <td class="text-right">${celdaAlcance(d.total.alcance)}</td>
+    </tr>
+  `;
+
+  let marcas = d.marcas;
+  if (_sortKey) {
+    marcas = [...marcas].sort((a, b) => {
+      const va = valorOrden(a, _sortKey), vb = valorOrden(b, _sortKey);
+      if (va < vb) return _sortDir === "asc" ? -1 : 1;
+      if (va > vb) return _sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+  }
+
+  marcas.forEach((m, i) => {
+    filasHtml += `
+      <tr class="fila-marca" data-idx="${i}">
+        <td class="fw-bold"><span class="icono-expandir">▶</span> ${m.marca}</td>
+        <td class="text-right fw-bold">${fmtPrincipal(campo(m, "stock"))}</td>
+        <td class="text-right" style="${d.tiene_transito ? '' : 'display:none;'}">${fmtPrincipal(campo(m, "transito"))}</td>
+        <td class="text-right fw-bold">${fmtPrincipal(campo(m, "total"))}</td>
+        <td class="text-right">${celdaVenta(campo(m, "venta_mensual"))}</td>
+        <td class="text-right">${celdaAlcance(m.alcance)}</td>
+      </tr>
+    `;
+    m.subfamilias.forEach(s => {
+      filasHtml += `
+        <tr class="fila-subfamilia" data-parent="${i}">
+          <td>${s.subfamilia}</td>
+          <td class="text-right">${fmtPrincipal(campo(s, "stock"))}</td>
+          <td class="text-right" style="${d.tiene_transito ? '' : 'display:none;'}">${fmtPrincipal(campo(s, "transito"))}</td>
+          <td class="text-right">${fmtPrincipal(campo(s, "total"))}</td>
+          <td class="text-right">${celdaVenta(campo(s, "venta_mensual"))}</td>
+          <td class="text-right">${celdaAlcance(s.alcance)}</td>
+        </tr>
+      `;
+    });
+  });
+
+  document.getElementById("tabla-body").innerHTML = filasHtml;
+  actualizarFlechas();
+
+  document.querySelectorAll(".fila-marca").forEach(fila => {
+    fila.addEventListener("click", () => {
+      const idx = fila.dataset.idx;
+      fila.classList.toggle("expandida");
+      const expandido = fila.classList.contains("expandida");
+      document.querySelectorAll(`.fila-subfamilia[data-parent="${idx}"]`).forEach(sub => {
+        sub.classList.toggle("visible", expandido);
+      });
+    });
+  });
+}
+
+fetch("/api/inventario/bodegas_lista")
+  .then(r => r.json())
+  .then(bodegas => {
+    const sel = document.getElementById("f-bodega");
+    sel.innerHTML = bodegas.map(b => `<option value="${b.bodega}">${b.bodega}</option>`).join("");
+    cargarDatos();
+  })
+  .catch(err => console.error("Error lista de bodegas:", err));
+
+document.getElementById("f-bodega").addEventListener("change", cargarDatos);
+document.getElementById("f-procedencia").addEventListener("change", cargarDatos);
+</script>
+{% endblock %}

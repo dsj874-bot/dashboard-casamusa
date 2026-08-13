@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Adquisiciones — Cumplimiento / OTIF{% endblock %}
+{% block page_title %}Adquisiciones — Cumplimiento / OTIF{% endblock %}
+{% block page_subtitle %}% de líneas recibidas completas y a tiempo, por proveedor{% endblock %}
+
+{% block sidebar_nav %}{% include "_adquisiciones_sidebar.html" %}{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid" id="kpi-grid" style="margin-bottom:20px;">
+  <div class="kpi-card">
+    <div class="kpi-label">In Full (Empresa)</div>
+    <div class="kpi-value" id="kpi-in-full">—</div>
+    <div class="kpi-change text-muted">Cantidad recibida = cantidad comprada</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">On Time (Empresa)</div>
+    <div class="kpi-value" id="kpi-on-time">—</div>
+    <div class="kpi-change text-muted" id="kpi-umbral"></div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">OTIF (Empresa)</div>
+    <div class="kpi-value" id="kpi-otif" style="color:#22a347">—</div>
+    <div class="kpi-change text-muted">Cumple ambas condiciones</div>
+  </div>
+</div>
+
+<!-- Tabla detalle -->
+<div class="table-card" style="margin-bottom:20px;">
+  <div class="table-header">
+    <div class="table-header-title">Detalle por Proveedor — Año Actual</div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th data-key="nombre">Proveedor</th>
+          <th class="text-right" data-key="n_lineas">N° Líneas (OC+Código)</th>
+          <th class="text-right" data-key="pct_in_full">% In Full</th>
+          <th class="text-right" data-key="pct_on_time">% On Time</th>
+          <th class="text-right" data-key="pct_otif">% OTIF</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-body">
+        <tr><td colspan="5" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const fmtUnid = v => Math.round(v).toLocaleString("es-CL");
+const fmtPct = v => v.toFixed(1) + "%";
+const clsOtif = v => v >= 80 ? "text-green" : v >= 50 ? "text-amber" : "text-red";
+
+let _items = [];
+let _sortKey = "pct_otif", _sortDir = "asc";
+
+document.querySelectorAll("thead th[data-key]").forEach(th => {
+  th.style.cursor = "pointer";
+  th.addEventListener("click", () => {
+    _sortDir = (_sortKey === th.dataset.key) ? (_sortDir === "desc" ? "asc" : "desc") : "desc";
+    _sortKey = th.dataset.key;
+    renderTabla();
+  });
+});
+
+function actualizarFlechas() {
+  document.querySelectorAll("thead th[data-key]").forEach(th => {
+    const activo = th.dataset.key === _sortKey;
+    th.textContent = th.dataset.label + (activo ? (_sortDir === "desc" ? " ▼" : " ▲") : "");
+  });
+}
+
+fetch("/api/adquisiciones/otif")
+  .then(r => r.json())
+  .then(d => {
+    document.getElementById("kpi-in-full").textContent = fmtPct(d.resumen.pct_in_full);
+    document.getElementById("kpi-on-time").textContent = fmtPct(d.resumen.pct_on_time);
+    document.getElementById("kpi-otif").textContent = fmtPct(d.resumen.pct_otif);
+    document.getElementById("kpi-umbral").textContent = `Umbral: ≤ ${d.umbral_dias_habiles} días hábiles`;
+
+    document.querySelectorAll("thead th[data-key]").forEach(th => {
+      th.dataset.label = th.textContent;
+    });
+
+    _items = d.items;
+    renderTabla();
+  })
+  .catch(err => console.error("Error OTIF:", err));
+
+function renderTabla() {
+  let ordenados = [..._items];
+  ordenados.sort((a, b) => {
+    let va = a[_sortKey], vb = b[_sortKey];
+    if (typeof va === "string") { va = va.toLowerCase(); vb = (vb || "").toLowerCase(); }
+    if (va < vb) return _sortDir === "asc" ? -1 : 1;
+    if (va > vb) return _sortDir === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  const rows = ordenados.map(p => `
+    <tr>
+      <td class="fw-bold">${p.nombre}</td>
+      <td class="text-right">${fmtUnid(p.n_lineas)}</td>
+      <td class="text-right">${fmtPct(p.pct_in_full)}</td>
+      <td class="text-right">${fmtPct(p.pct_on_time)}</td>
+      <td class="text-right fw-bold ${clsOtif(p.pct_otif)}">${fmtPct(p.pct_otif)}</td>
+    </tr>
+  `).join("");
+
+  document.getElementById("tabla-body").innerHTML = rows;
+  actualizarFlechas();
+}
+</script>
+{% endblock %}

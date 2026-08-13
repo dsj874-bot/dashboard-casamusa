@@ -1,9 +1,11 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
 from functools import wraps
 import os
 import sys
 import data_loader
 import data_loader_inventario
+import data_loader_obligatorios
+import data_loader_adquisiciones
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -117,7 +119,7 @@ def login():
 # ══════════════════════════════════════════════════════
 AREAS = [
     {"slug": "comercial",     "nombre": "Comercial",     "icono": "🛒", "url": "/resumen",       "activo": True},
-    {"slug": "adquisiciones", "nombre": "Adquisiciones", "icono": "📦", "url": "/adquisiciones", "activo": False},
+    {"slug": "adquisiciones", "nombre": "Adquisiciones", "icono": "📦", "url": "/adquisiciones", "activo": True},
     {"slug": "finanzas",      "nombre": "Finanzas",      "icono": "💰", "url": "/finanzas",      "activo": False},
     {"slug": "inventario",    "nombre": "Inventario",    "icono": "🗄️", "url": "/inventario",    "activo": True},
     {"slug": "logistica",     "nombre": "Logística",     "icono": "🚚", "url": "/logistica",     "activo": False},
@@ -141,7 +143,180 @@ def _area_en_construccion(slug):
 @app.route("/adquisiciones")
 @login_requerido
 def adquisiciones():
-    return _area_en_construccion("adquisiciones")
+    return render_template("adquisiciones_resumen.html",
+                           active="adquisiciones_resumen",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/adquisiciones/resumen")
+@login_requerido
+def api_adquisiciones_resumen():
+    try:
+        tipo = request.args.get("tipo", "") or None
+        return jsonify(data_loader_adquisiciones.get_resumen(tipo))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/adquisiciones/por_mes")
+@login_requerido
+def api_adquisiciones_por_mes():
+    try:
+        tipo = request.args.get("tipo", "") or None
+        return jsonify(data_loader_adquisiciones.get_compras_por_mes(tipo))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/adquisiciones/proveedores")
+@login_requerido
+def adquisiciones_proveedores():
+    return render_template("adquisiciones_proveedores.html",
+                           active="adquisiciones_proveedores",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/adquisiciones/por_proveedor")
+@login_requerido
+def api_adquisiciones_por_proveedor():
+    try:
+        tipo = request.args.get("tipo", "") or None
+        return jsonify(data_loader_adquisiciones.get_compras_por_proveedor(tipo))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/adquisiciones/pedido")
+@login_requerido
+def adquisiciones_pedido():
+    return render_template("adquisiciones_por_tipo.html",
+                           active="adquisiciones_pedido",
+                           tipo_compra="PEDIDO",
+                           titulo="Compras a Pedido",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/adquisiciones/stock")
+@login_requerido
+def adquisiciones_stock():
+    return render_template("adquisiciones_por_tipo.html",
+                           active="adquisiciones_stock",
+                           tipo_compra="STOCK",
+                           titulo="Compras para Stock",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/adquisiciones/recepciones")
+@login_requerido
+def adquisiciones_recepciones():
+    return render_template("adquisiciones_recepciones.html",
+                           active="adquisiciones_recepciones",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/adquisiciones/recepciones/resumen")
+@login_requerido
+def api_adquisiciones_recepciones_resumen():
+    try:
+        tipo = request.args.get("tipo", "") or None
+        return jsonify(data_loader_adquisiciones.get_resumen_recepciones(tipo))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/adquisiciones/recepciones/por_mes")
+@login_requerido
+def api_adquisiciones_recepciones_por_mes():
+    try:
+        tipo = request.args.get("tipo", "") or None
+        return jsonify(data_loader_adquisiciones.get_recepciones_por_mes(tipo))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/adquisiciones/lead_time")
+@login_requerido
+def adquisiciones_lead_time():
+    return render_template("adquisiciones_lead_time.html",
+                           active="adquisiciones_lead_time",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/adquisiciones/lead_time")
+@login_requerido
+def api_adquisiciones_lead_time():
+    try:
+        return jsonify(data_loader_adquisiciones.get_lead_time_por_proveedor())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/adquisiciones/otif")
+@login_requerido
+def adquisiciones_otif():
+    return render_template("adquisiciones_otif.html",
+                           active="adquisiciones_otif",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/adquisiciones/otif")
+@login_requerido
+def api_adquisiciones_otif():
+    try:
+        return jsonify(data_loader_adquisiciones.get_cumplimiento_por_proveedor())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/adquisiciones/pendientes")
+@login_requerido
+def adquisiciones_pendientes():
+    return render_template("adquisiciones_pendientes.html",
+                           active="adquisiciones_pendientes",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/adquisiciones/pendientes")
+@login_requerido
+def api_adquisiciones_pendientes():
+    try:
+        return jsonify(data_loader_adquisiciones.get_oc_pendientes())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/adquisiciones/conversion_pedido")
+@login_requerido
+def adquisiciones_conversion_pedido():
+    return render_template("adquisiciones_conversion_pedido.html",
+                           active="adquisiciones_conversion_pedido",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/adquisiciones/conversion_pedido")
+@login_requerido
+def api_adquisiciones_conversion_pedido():
+    try:
+        return jsonify(data_loader_adquisiciones.get_conversion_pedido_venta())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/adquisiciones/codigos_6")
+@login_requerido
+def adquisiciones_codigos_6():
+    return render_template("adquisiciones_codigos_6.html",
+                           active="adquisiciones_codigos_6",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/adquisiciones/codigos_6")
+@login_requerido
+def api_adquisiciones_codigos_6():
+    try:
+        return jsonify(data_loader_adquisiciones.get_codigos_6_sin_venta())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/finanzas")
@@ -190,6 +365,140 @@ def inventario_familia():
                            session_nombre=session.get("nombre"))
 
 
+@app.route("/inventario/marca")
+@login_requerido
+def inventario_marca():
+    return render_template("inventario_marca.html",
+                           active="inventario_marca",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/inventario/alertas")
+@login_requerido
+def inventario_alertas():
+    return render_template("inventario_alertas.html",
+                           active="inventario_alertas",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/inventario/alertas_familias")
+@login_requerido
+def api_inventario_alertas_familias():
+    try:
+        return jsonify(data_loader_obligatorios.get_familias_obligatorios())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/alertas_quiebre")
+@login_requerido
+def api_inventario_alertas_quiebre():
+    try:
+        familia = request.args.get("familia", "") or None
+        return jsonify(data_loader_obligatorios.get_alertas_quiebre_critico(familia))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/alertas_quiebre/exportar")
+@login_requerido
+def api_inventario_alertas_quiebre_exportar():
+    try:
+        familia = request.args.get("familia", "") or None
+        buffer = data_loader_obligatorios.exportar_alertas_excel(familia)
+        nombre = f"Alertas_Quiebre_{familia or 'Todas'}.xlsx".replace(" ", "_")
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=nombre,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/inventario/compras")
+@login_requerido
+def inventario_compras():
+    return render_template("inventario_compras.html",
+                           active="inventario_compras",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/inventario/distribucion")
+@login_requerido
+def inventario_distribucion():
+    return render_template("inventario_distribucion.html",
+                           active="inventario_distribucion",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/inventario/distribucion")
+@login_requerido
+def api_inventario_distribucion():
+    try:
+        familia = request.args.get("familia", "") or None
+        return jsonify(data_loader_obligatorios.get_distribucion_desde_san_isidro(familia))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/distribucion/exportar")
+@login_requerido
+def api_inventario_distribucion_exportar():
+    try:
+        familia = request.args.get("familia", "") or None
+        buffer = data_loader_obligatorios.exportar_distribucion_excel(familia)
+        nombre = f"Distribucion_San_Isidro_{familia or 'Todas'}.xlsx".replace(" ", "_")
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=nombre,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/plan_compras")
+@login_requerido
+def api_inventario_plan_compras():
+    try:
+        familia = request.args.get("familia", "") or None
+        meses = request.args.get("meses", type=float)
+        return jsonify(data_loader_obligatorios.get_plan_compra_reposicion(familia, meses))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/plan_compras/resumen_valor")
+@login_requerido
+def api_inventario_plan_compras_resumen_valor():
+    try:
+        familia = request.args.get("familia", "") or None
+        return jsonify(data_loader_obligatorios.get_resumen_valor_compra(familia))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/plan_compras/exportar")
+@login_requerido
+def api_inventario_plan_compras_exportar():
+    try:
+        familia = request.args.get("familia", "") or None
+        meses = request.args.get("meses", type=float)
+        buffer = data_loader_obligatorios.exportar_plan_compras_excel(familia, meses)
+        nombre = f"Plan_de_Compra_{familia or 'Todas'}.xlsx".replace(" ", "_")
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=nombre,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/inventario/resumen")
 @login_requerido
 def api_inventario_resumen():
@@ -231,6 +540,26 @@ def api_inventario_procedencia():
 def api_inventario_familia():
     try:
         return jsonify(data_loader_inventario.get_inventario_por_familia())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/bodegas_lista")
+@login_requerido
+def api_inventario_bodegas_lista():
+    try:
+        return jsonify(data_loader_inventario.get_bodegas_disponibles())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/marca_subfamilia")
+@login_requerido
+def api_inventario_marca_subfamilia():
+    try:
+        bodega = request.args.get("bodega", "")
+        procedencia = request.args.get("procedencia", "todas")
+        return jsonify(data_loader_inventario.get_inventario_por_marca_subfamilia(bodega, procedencia))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
