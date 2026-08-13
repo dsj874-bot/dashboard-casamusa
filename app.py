@@ -12,7 +12,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 app = Flask(__name__)
-app.secret_key = "casamusa_dashboard_2026_secreto"
+app.secret_key = os.environ.get("SECRET_KEY", "casamusa_dashboard_2026_secreto")
 
 # ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
@@ -83,6 +83,19 @@ def _sucursal_forzada():
     """Sucursal a la que esta atado el usuario logueado (Jefe de Sucursal),
     o None si ve todo el dashboard sin restriccion."""
     return session.get("sucursal")
+
+
+# ══════════════════════════════════════════════════════
+#  HEALTHCHECK (Fase 0 Vercel+Supabase: prueba conexion a Postgres)
+# ══════════════════════════════════════════════════════
+@app.route("/api/ping", methods=["GET"])
+def ping():
+    try:
+        import db
+        resultado = db.query_one("SELECT now() AS hora_servidor")
+        return jsonify({"ok": True, "hora_servidor": str(resultado["hora_servidor"])})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 # ══════════════════════════════════════════════════════
