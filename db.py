@@ -11,6 +11,9 @@ transaccion del pooler (Supavisor).
 import os
 import psycopg
 from psycopg.rows import dict_row
+from dotenv import load_dotenv
+
+load_dotenv()
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 

@@ -19,3 +19,6 @@ venv/
 
 # Config local del entorno de desarrollo (Claude Code)
 .claude/
+
+# Credenciales locales (DATABASE_URL, etc.) -- nunca se sube al repo
+.env
