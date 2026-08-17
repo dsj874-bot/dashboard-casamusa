@@ -15,6 +15,19 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "casamusa_dashboard_2026_secreto")
 
 # ══════════════════════════════════════════════════════
+#  MIGRACION A POSTGRES (Fase 1, dominio Comercial)
+#  Flag para poder volver a la version Excel sin deploy (ver plan de
+#  migracion, seccion "Verificacion") -- default ON porque en Vercel
+#  no existen los .xlsx locales, asi que la version Excel no
+#  funcionaria ahi de todas formas. En desarrollo local, poner
+#  USAR_POSTGRES_COMERCIAL=0 en .env para comparar contra la version
+#  Excel original.
+# ══════════════════════════════════════════════════════
+USAR_POSTGRES_COMERCIAL = os.environ.get("USAR_POSTGRES_COMERCIAL", "1") == "1"
+if USAR_POSTGRES_COMERCIAL:
+    import data_loader_pg
+
+# ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
 #  Para agregar un gerente: agregar una línea aquí
 #  "email": {"password": "clave", "nombre": "Nombre", "admin": True/False,
@@ -784,6 +797,8 @@ def admin_actualizar_inventario():
 @login_requerido
 def api_resumen():
     try:
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_resumen_pg(filtro_sucursal=_sucursal_forzada()))
         return jsonify(data_loader.get_resumen(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -802,6 +817,8 @@ def api_ventas_por_mes():
 @login_requerido
 def api_ventas_por_sucursal():
     try:
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_ventas_por_sucursal_pg(filtro_sucursal=_sucursal_forzada()))
         return jsonify(data_loader.get_ventas_por_sucursal(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
