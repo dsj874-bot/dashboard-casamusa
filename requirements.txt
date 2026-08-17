@@ -11,6 +11,7 @@ openpyxl==3.1.5
 pandas==3.0.3
 pillow==12.3.0
 psycopg[binary]==3.2.13
+psycopg-pool==3.2.3
 pyarrow==25.0.0
 python-calamine==0.8.2
 python-dotenv==1.0.1
