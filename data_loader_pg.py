@@ -17,10 +17,13 @@ en vez de una consulta separada por ventana. La primera version hacia
 con latencia real desde Chile); esta version reduce eso a 1 conexion
 y 1-2 round trips.
 """
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import db
-from data_loader import MESES, ORDEN_SUCURSALES, var_pct
+from data_loader import (
+    MESES, ORDEN_SUCURSALES, MG_NE_PCT, var_pct,
+    _dias_habiles_mes, _dias_habiles_hasta,
+)
 
 # Whitelist de columnas agrupables -- evita interpolar un nombre de
 # columna arbitrario en SQL y documenta que "campo" (nombre de columna
@@ -35,6 +38,37 @@ COLUMNAS_AGRUPABLES = {
     "MARCA":           "marca",
     "NOMBRE_CLIENTE":  "nombre_cliente",
 }
+
+# Mapeo filtros de Proyeccion/Metas -> columna Postgres. Mismas claves
+# que _aplicar_filtros_comunes() en data_loader.py.
+COLUMNAS_FILTRO = {
+    "sucursal":    "sucursal_logica",
+    "vendedor":    "vendedor_rpt",
+    "tipo_venta":  "tipo_venta",
+    "familia":     "familia",
+    "marca":       "marca",
+    "subfamilia":  "subfamilia",
+    "procedencia": "procedencia",
+}
+
+
+def _filtros_comunes_sql(filtros):
+    """Equivalente SQL de _aplicar_filtros_comunes(): un fragmento
+    'AND col = ANY(%(clave)s)' por cada filtro presente y != 'todas',
+    mas el dict de params correspondiente. Acepta valor string (una
+    sucursal) o lista (perfil combinado, ej. Express=[CH,MP]) -- igual
+    que _col_coincide, se envuelve el escalar en una lista de 1 para
+    poder usar siempre ANY()."""
+    f = filtros or {}
+    frag = ""
+    params = {}
+    for clave, columna in COLUMNAS_FILTRO.items():
+        valor = f.get(clave, "todas")
+        if valor and valor != "todas":
+            valores = list(valor) if isinstance(valor, (list, tuple, set)) else [valor]
+            frag += f" AND {columna} = ANY(%({clave})s)"
+            params[clave] = valores
+    return frag, params
 
 
 def _hoy():
@@ -264,3 +298,163 @@ def get_ventas_por_sucursal_pg(filtro_sucursal=None):
         "mes_nombre":          data["mes_nombre"],
         "mes_anterior_nombre": data["mes_anterior_nombre"],
     }
+
+
+def get_filtros_proyeccion_pg(filtro_sucursal=None):
+    frag_suc, suc = _filtro_sucursal_sql(filtro_sucursal)
+    params = {"suc": suc} if suc else {}
+    orden = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
+
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""SELECT
+                      array_agg(DISTINCT sucursal_logica) FILTER (WHERE sucursal_logica IS NOT NULL) AS sucursales,
+                      array_agg(DISTINCT vendedor_rpt)     FILTER (WHERE vendedor_rpt IS NOT NULL AND vendedor_rpt != 'OTROS') AS vendedores,
+                      array_agg(DISTINCT tipo_venta)       FILTER (WHERE tipo_venta IS NOT NULL) AS tipo_venta,
+                      array_agg(DISTINCT familia)          FILTER (WHERE familia IS NOT NULL) AS familias,
+                      array_agg(DISTINCT marca)            FILTER (WHERE marca IS NOT NULL) AS marcas,
+                      array_agg(DISTINCT subfamilia)       FILTER (WHERE subfamilia IS NOT NULL) AS subfamilias,
+                      array_agg(DISTINCT procedencia)      FILTER (WHERE procedencia IS NOT NULL) AS procedencias
+                    FROM ventas
+                    WHERE ano = 2026 {frag_suc}""",
+                params,
+            )
+            r = cur.fetchone()
+
+    return {
+        "sucursales":   sorted(r["sucursales"] or [], key=lambda s: orden.get(s, 99)),
+        "vendedores":   sorted(r["vendedores"] or []),
+        "tipo_venta":   sorted(r["tipo_venta"] or []),
+        "familias":     sorted(r["familias"] or []),
+        "marcas":       sorted(r["marcas"] or []),
+        "subfamilias":  sorted(r["subfamilias"] or []),
+        "procedencias": sorted(r["procedencias"] or []),
+    }
+
+
+def _leer_ne_x_facturar_pg(cur):
+    cur.execute("SELECT sucursal, vendedor, monto_ne FROM ne_x_facturar")
+    return {(f["sucursal"], f["vendedor"]): float(f["monto_ne"]) for f in cur.fetchall()}
+
+
+def get_proyeccion_pg(filtros=None):
+    frag_filtros, params = _filtros_comunes_sql(filtros)
+
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            fecha_datos = _fecha_datos_pg(cur)
+            mes_actual = fecha_datos.month
+            dia_actual = fecha_datos.day
+            mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
+            params.update({"mes_actual": mes_actual, "dia_actual": dia_actual, "mes_anterior": mes_anterior})
+
+            cur.execute(
+                f"""SELECT
+                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v_ano_26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS v_ano_25,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
+                    FROM ventas
+                    WHERE ano IN (2025, 2026) {frag_filtros}""",
+                params,
+            )
+            r = cur.fetchone()
+            v_ano_26  = float(r["v_ano_26"])
+            v_ano_25  = float(r["v_ano_25"])
+            v_mes_26  = float(r["v_mes_26"])
+            v_mes_25  = float(r["v_mes_25"])
+            v_mes_ant = float(r["v_mes_ant"])
+
+            dh_total         = _dias_habiles_mes(2026, mes_actual)
+            dh_transcurridos = _dias_habiles_hasta(2026, mes_actual, dia_actual)
+
+            inicio_ano = date(2026, 1, 1)
+            doy = (fecha_datos - inicio_ano).days + 1
+            proyeccion_anual = round(v_ano_26 * 365 / doy, 0) if doy > 0 else 0
+
+            kpis = {
+                "v_ano_actual":       round(v_ano_26, 0),
+                "v_ano_anterior":     round(v_ano_25, 0),
+                "var_ano":            var_pct(v_ano_26, v_ano_25),
+                "v_mes_actual":       round(v_mes_26, 0),
+                "v_mes_ant_ano":      round(v_mes_25, 0),
+                "var_mes_ano":        var_pct(v_mes_26, v_mes_25),
+                "v_mes_ant_mes":      round(v_mes_ant, 0),
+                "var_mes_mes":        var_pct(v_mes_26, v_mes_ant),
+                "proyeccion_anual":   proyeccion_anual,
+                "dh_transcurridos":   dh_transcurridos,
+                "dh_total":           dh_total,
+                "fecha_datos":        fecha_datos.strftime("%d/%m/%Y"),
+                "mes_nombre":         MESES.get(mes_actual, ""),
+                "mes_anterior_nombre":MESES.get(mes_anterior, ""),
+                "ano_actual":         2026,
+                "ano_anterior":       2025,
+            }
+
+            factor_mes = dh_total / dh_transcurridos if dh_transcurridos > 0 else 1.0
+
+            # Union de filas presentes en mes actual 2026 O en el mismo
+            # tramo de dia de 2025 -- equivalente al merge(how="outer")
+            # de la version pandas; coalesce cubre el fillna(0).
+            cur.execute(
+                f"""SELECT sucursal_logica, vendedor_rpt,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS vta_mes,
+                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS mg_mes,
+                      count(*) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s) AS nro_docs,
+                      coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS vta_ant
+                    FROM ventas
+                    WHERE (
+                      (ano = 2026 AND mes = %(mes_actual)s)
+                      OR (ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s)
+                    ) {frag_filtros}
+                    GROUP BY sucursal_logica, vendedor_rpt""",
+                params,
+            )
+            filas_agg = cur.fetchall()
+
+            ne_montos = _leer_ne_x_facturar_pg(cur)
+
+    filas = []
+    for row in filas_agg:
+        suc     = row["sucursal_logica"]
+        vend    = row["vendedor_rpt"]
+        vta     = float(row["vta_mes"])
+        mg      = float(row["mg_mes"])
+        docs    = int(row["nro_docs"])
+        vta_ant = float(row["vta_ant"])
+        pct_mg  = round(mg / vta * 100, 1) if vta > 0 else 0.0
+        proy_l  = round(vta * factor_mes, 0)
+        proy_mg = round(mg  * factor_mes, 0)
+        monto_ne = ne_montos.get((suc, vend), 0.0)
+        filas.append({
+            "sucursal":  suc,
+            "vendedor":  vend,
+            "nro_docs":  docs,
+            "vta_mes":   round(vta, 0),
+            "mg_mes":    round(mg,  0),
+            "pct_mg":    pct_mg,
+            "vta_ant":   round(vta_ant, 0),
+            "var":       var_pct(vta, vta_ant),
+            "proy_lineal": proy_l,
+            "proy_mg":   proy_mg,
+            "monto_ne":       round(monto_ne, 0),
+            "proy_lineal_ne": round(proy_l + monto_ne, 0),
+            "mg_con_ne":      round(proy_mg + monto_ne * MG_NE_PCT, 0),
+            "is_otros":  vend == "OTROS",
+        })
+
+    total_proy_mes = round(v_mes_26 * factor_mes, 0)
+    kpis["proy_lineal"] = total_proy_mes
+
+    orden_suc = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
+    filas.sort(key=lambda x: (
+        orden_suc.get(x["sucursal"], 99),
+        1 if x["is_otros"] else 0,
+        -x["vta_mes"],
+    ))
+
+    return {"kpis": kpis, "filas": filas}

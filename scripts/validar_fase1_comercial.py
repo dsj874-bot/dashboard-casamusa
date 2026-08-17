@@ -39,13 +39,23 @@ def _diff_dict(nombre, viejo, nuevo, ruta=""):
         if isinstance(v, dict) and isinstance(n, dict):
             _diff_dict(nombre, v, n, r)
         elif isinstance(v, list) and isinstance(n, list):
+            if v and not isinstance(v[0], dict):
+                if set(v) != set(n):
+                    fallas.append(
+                        f"[{nombre}] {r}: solo_Excel={set(v) - set(n)!r} solo_Postgres={set(n) - set(v)!r}"
+                    )
+                continue
             _diff_lista(nombre, v, n, r)
         elif not _cerca(v, n):
             fallas.append(f"[{nombre}] {r}: Excel={v!r} vs Postgres={n!r}")
 
 
 def _clave_fila(r):
-    return r["nombre"] if "nombre" in r else r["mes"]
+    if "nombre" in r:
+        return r["nombre"]
+    if "mes" in r:
+        return r["mes"]
+    return (r["sucursal"], r["vendedor"])
 
 
 def _diff_lista(nombre, viejo, nuevo, ruta):
@@ -99,6 +109,27 @@ def main():
         "get_ventas_por_sucursal (MT)",
         dl.get_ventas_por_sucursal(filtro_sucursal="MT"),
         dlpg.get_ventas_por_sucursal_pg(filtro_sucursal="MT"),
+    )
+
+    print("Comparando get_filtros_proyeccion()...")
+    check("get_filtros_proyeccion (sin filtro)", dl.get_filtros_proyeccion(), dlpg.get_filtros_proyeccion_pg())
+
+    print("Comparando get_proyeccion()...")
+    check("get_proyeccion (sin filtros)", dl.get_proyeccion(), dlpg.get_proyeccion_pg())
+    check(
+        "get_proyeccion (sucursal MT)",
+        dl.get_proyeccion({"sucursal": "MT"}),
+        dlpg.get_proyeccion_pg({"sucursal": "MT"}),
+    )
+    check(
+        "get_proyeccion (sucursal Express=[CH,MP])",
+        dl.get_proyeccion({"sucursal": ["CH", "MP"]}),
+        dlpg.get_proyeccion_pg({"sucursal": ["CH", "MP"]}),
+    )
+    check(
+        "get_proyeccion (procedencia Importado)",
+        dl.get_proyeccion({"procedencia": "Importado"}),
+        dlpg.get_proyeccion_pg({"procedencia": "Importado"}),
     )
 
     print()

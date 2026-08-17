@@ -830,6 +830,8 @@ def api_ventas_por_sucursal():
 @login_requerido
 def api_filtros_proyeccion():
     try:
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_filtros_proyeccion_pg(filtro_sucursal=_sucursal_forzada()))
         return jsonify(data_loader.get_filtros_proyeccion(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -842,6 +844,8 @@ def api_proyeccion():
         filtros = request.get_json(silent=True) or {}
         if _sucursal_forzada():
             filtros["sucursal"] = _sucursal_forzada()
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_proyeccion_pg(filtros))
         return jsonify(data_loader.get_proyeccion(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
