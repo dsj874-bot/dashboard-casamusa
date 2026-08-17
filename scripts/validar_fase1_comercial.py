@@ -44,9 +44,13 @@ def _diff_dict(nombre, viejo, nuevo, ruta=""):
             fallas.append(f"[{nombre}] {r}: Excel={v!r} vs Postgres={n!r}")
 
 
+def _clave_fila(r):
+    return r["nombre"] if "nombre" in r else r["mes"]
+
+
 def _diff_lista(nombre, viejo, nuevo, ruta):
-    idx_viejo = {r["nombre"]: r for r in viejo}
-    idx_nuevo = {r["nombre"]: r for r in nuevo}
+    idx_viejo = {_clave_fila(r): r for r in viejo}
+    idx_nuevo = {_clave_fila(r): r for r in nuevo}
     claves = set(idx_viejo.keys()) | set(idx_nuevo.keys())
     for k in sorted(claves):
         r = f"{ruta}[{k}]"
@@ -79,6 +83,14 @@ def main():
         "get_resumen (Express=[CH,MP])",
         dl.get_resumen(filtro_sucursal=["CH", "MP"]),
         dlpg.get_resumen_pg(filtro_sucursal=["CH", "MP"]),
+    )
+
+    print("Comparando get_ventas_por_mes()...")
+    check("get_ventas_por_mes (sin filtro)", dl.get_ventas_por_mes(), dlpg.get_ventas_por_mes_pg())
+    check(
+        "get_ventas_por_mes (MT)",
+        dl.get_ventas_por_mes(filtro_sucursal="MT"),
+        dlpg.get_ventas_por_mes_pg(filtro_sucursal="MT"),
     )
 
     print("Comparando get_ventas_por_sucursal()...")

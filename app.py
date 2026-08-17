@@ -808,6 +808,8 @@ def api_resumen():
 @login_requerido
 def api_ventas_por_mes():
     try:
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_ventas_por_mes_pg(filtro_sucursal=_sucursal_forzada()))
         return jsonify(data_loader.get_ventas_por_mes(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
