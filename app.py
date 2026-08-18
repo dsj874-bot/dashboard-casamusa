@@ -861,6 +861,8 @@ def api_metas():
         filtros = request.get_json(silent=True) or {}
         if _sucursal_forzada():
             filtros["sucursal"] = _sucursal_forzada()
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_seguimiento_metas_pg(filtros))
         return jsonify(data_loader.get_seguimiento_metas(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500

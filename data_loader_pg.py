@@ -532,6 +532,121 @@ def sincronizar_ventas_pg(df, fechas):
         conn.commit()
 
 
+def get_seguimiento_metas_pg(filtros=None):
+    frag_filtros, params = _filtros_comunes_sql(filtros)
+
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            fecha_datos = _fecha_datos_pg(cur)
+            mes_actual = fecha_datos.month
+            dia_actual = fecha_datos.day
+            mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
+            params.update({"mes_actual": mes_actual, "dia_actual": dia_actual, "mes_anterior": mes_anterior})
+
+            cur.execute(
+                f"""SELECT
+                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v_ano_26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS v_ano_25,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
+                    FROM ventas
+                    WHERE ano IN (2025, 2026) {frag_filtros}""",
+                params,
+            )
+            r = cur.fetchone()
+            v_ano_26  = float(r["v_ano_26"])
+            v_ano_25  = float(r["v_ano_25"])
+            v_mes_26  = float(r["v_mes_26"])
+            v_mes_25  = float(r["v_mes_25"])
+            v_mes_ant = float(r["v_mes_ant"])
+
+            dh_total         = _dias_habiles_mes(2026, mes_actual)
+            dh_transcurridos = _dias_habiles_hasta(2026, mes_actual, dia_actual)
+            factor_dias = dh_transcurridos / dh_total if dh_total > 0 else 0
+
+            kpis = {
+                "v_ano_actual":       round(v_ano_26, 0),
+                "v_ano_anterior":     round(v_ano_25, 0),
+                "var_ano":            var_pct(v_ano_26, v_ano_25),
+                "v_mes_actual":       round(v_mes_26, 0),
+                "v_mes_ant_ano":      round(v_mes_25, 0),
+                "var_mes_ano":        var_pct(v_mes_26, v_mes_25),
+                "v_mes_ant_mes":      round(v_mes_ant, 0),
+                "var_mes_mes":        var_pct(v_mes_26, v_mes_ant),
+                "dh_transcurridos":   dh_transcurridos,
+                "dh_total":           dh_total,
+                "fecha_datos":        fecha_datos.strftime("%d/%m/%Y"),
+                "mes_nombre":         MESES.get(mes_actual, ""),
+                "mes_anterior_nombre":MESES.get(mes_anterior, ""),
+                "ano_actual":         2026,
+                "ano_anterior":       2025,
+            }
+
+            # Metas del mes actual -- ojo, igual que la version Excel: solo
+            # se filtra por sucursal, NO por los otros 6 filtros de
+            # _aplicar_filtros_comunes (asi se ven las metas de todo el
+            # equipo de la sucursal aunque se filtre por un vendedor/
+            # familia/etc puntual).
+            filtro_suc = (filtros or {}).get("sucursal")
+            frag_meta_suc = ""
+            params_meta = {"mes_actual": mes_actual}
+            if filtro_suc and filtro_suc not in ("todas", "todos", ""):
+                valores = list(filtro_suc) if isinstance(filtro_suc, (list, tuple, set)) else [filtro_suc]
+                frag_meta_suc = " AND sucursal = ANY(%(suc_meta)s)"
+                params_meta["suc_meta"] = valores
+
+            cur.execute(
+                f"SELECT sucursal, vendedor, meta FROM metas WHERE ano = 2026 AND mes = %(mes_actual)s {frag_meta_suc}",
+                params_meta,
+            )
+            meta_dic = {(f["sucursal"].strip(), f["vendedor"].strip()): float(f["meta"]) for f in cur.fetchall()}
+
+            # Ventas del mes por sucursal+vendedor (ya filtrado por los 7
+            # filtros del panel via frag_filtros).
+            cur.execute(
+                f"""SELECT sucursal_logica, vendedor_rpt, coalesce(sum(total), 0) AS vta
+                    FROM ventas
+                    WHERE ano = 2026 AND mes = %(mes_actual)s {frag_filtros}
+                    GROUP BY sucursal_logica, vendedor_rpt""",
+                params,
+            )
+            grp = {(f["sucursal_logica"], f["vendedor_rpt"]): float(f["vta"]) for f in cur.fetchall()}
+
+    # Incluir vendedores con meta aunque no tengan venta
+    claves = set(grp.keys()) | set(meta_dic.keys())
+
+    filas = {}
+    for (suc, vend) in claves:
+        vta  = grp.get((suc, vend), 0.0)
+        meta = meta_dic.get((suc, vend), 0.0)
+        meta_acum  = round(meta * factor_dias, 0) if meta > 0 else 0
+        pct_cumpl  = round((1 - vta / meta_acum) * 100, 1) if meta_acum > 0 else None
+        pct_global = round((1 - vta / meta)       * 100, 1) if meta > 0       else None
+        filas[(suc, vend)] = {
+            "sucursal":  suc,
+            "vendedor":  vend,
+            "vta_mes":   round(vta, 0),
+            "meta_acum": meta_acum,
+            "pct_cumpl": pct_cumpl,
+            "meta":      round(meta, 0),
+            "pct_global":pct_global,
+            "is_otros":  vend == "OTROS",
+        }
+
+    orden_suc = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
+    lista = list(filas.values())
+    lista.sort(key=lambda x: (
+        orden_suc.get(x["sucursal"], 99),
+        1 if x["is_otros"] else 0,
+        -(x["meta"] or 0),
+    ))
+
+    return {"kpis": kpis, "filas": lista}
+
+
 def confirmar_fecha_pg(fecha, updated_by="actualizar_diario"):
     """Equivalente Postgres de escribir data/comercial/fecha_confirmada.txt
     -- upsert en control_datos (area='comercial'). GREATEST() lo hace

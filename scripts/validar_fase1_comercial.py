@@ -132,6 +132,19 @@ def main():
         dlpg.get_proyeccion_pg({"procedencia": "Importado"}),
     )
 
+    print("Comparando get_seguimiento_metas()...")
+    check("get_seguimiento_metas (sin filtros)", dl.get_seguimiento_metas(), dlpg.get_seguimiento_metas_pg())
+    check(
+        "get_seguimiento_metas (sucursal MT)",
+        dl.get_seguimiento_metas({"sucursal": "MT"}),
+        dlpg.get_seguimiento_metas_pg({"sucursal": "MT"}),
+    )
+    check(
+        "get_seguimiento_metas (vendedor puntual)",
+        dl.get_seguimiento_metas({"vendedor": "FRANCISCA CORREA"}),
+        dlpg.get_seguimiento_metas_pg({"vendedor": "FRANCISCA CORREA"}),
+    )
+
     print()
     if fallas:
         print(f"{len(fallas)} diferencias encontradas:")
