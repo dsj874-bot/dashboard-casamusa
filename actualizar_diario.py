@@ -20,6 +20,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 
 import data_loader
+import data_loader_pg
 
 LOG_PATH    = os.path.join(BASE_DIR, "actualizar_diario.log")
 BACKUP_DIR  = r"C:\Users\Marcelo\OneDrive\CasaMusa_Dashboard_Backup"
@@ -49,12 +50,16 @@ def _respaldar_datos():
 
 
 def main():
-    resultado = data_loader.actualizar_desde_archivo_mensual()
+    resultado = data_loader.actualizar_desde_archivo_mensual(on_nuevo=data_loader_pg.sincronizar_ventas_pg)
     lineas = [f"{datetime.now():%Y-%m-%d %H:%M:%S} - {resultado.get('msg')}"]
+    if resultado.get("pg_sync_error"):
+        lineas.append(f"{datetime.now():%Y-%m-%d %H:%M:%S} - Aviso: sync Postgres (ventas) fallo: {resultado['pg_sync_error']}")
 
     if not resultado.get("ok"):
-        confirmacion = data_loader.confirmar_dia_sin_ventas()
+        confirmacion = data_loader.confirmar_dia_sin_ventas(on_confirmado=data_loader_pg.confirmar_fecha_pg)
         lineas.append(f"{datetime.now():%Y-%m-%d %H:%M:%S} - {confirmacion.get('msg')}")
+        if confirmacion.get("pg_sync_error"):
+            lineas.append(f"{datetime.now():%Y-%m-%d %H:%M:%S} - Aviso: sync Postgres (fecha_confirmada) fallo: {confirmacion['pg_sync_error']}")
 
     respaldo = _respaldar_datos()
     lineas.append(f"{datetime.now():%Y-%m-%d %H:%M:%S} - {respaldo.get('msg')}")

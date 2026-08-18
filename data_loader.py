@@ -408,11 +408,20 @@ def _leer_ne_x_facturar():
     return montos
 
 
-def actualizar_desde_archivo_mensual():
+def actualizar_desde_archivo_mensual(on_nuevo=None):
     """
     Detecta YYMM_Vtas*.xlsx en data/, consolida en cache e invalida memoria.
-    Llamado SOLO desde el endpoint /admin/actualizar.
+    Llamado desde el endpoint /admin/actualizar y desde actualizar_diario.py.
     Retorna dict con resultado.
+
+    on_nuevo(df, fechas): callback opcional, llamado con las filas recien
+    consolidadas (con SUCURSAL_LOGICA/VENDEDOR_RPT ya aplicado, releidas
+    via get_df_2026() tras escribir el cache) y la lista de fechas que
+    trajo el archivo -- usado para sincronizar Postgres sin acoplar este
+    modulo a Postgres directamente (ver data_loader_pg.sincronizar_ventas_pg).
+    Un fallo del callback NO aborta la consolidacion local (que ya
+    termino al momento de llamarlo) -- se reporta en el dict de retorno
+    como "pg_sync_error" para que el caller lo loguee.
     """
     archivo = _detectar_archivo_mensual()
     if not archivo:
@@ -458,6 +467,15 @@ def actualizar_desde_archivo_mensual():
         _cache[2026]["df"]       = None
         _cache[2026]["mod_time"] = None
 
+        pg_sync_error = None
+        if on_nuevo:
+            try:
+                df_sync = get_df_2026()
+                df_sync = df_sync[df_sync["FECHA_CONTA"].dt.date.isin(fechas_nuevas)]
+                on_nuevo(df_sync, list(fechas_nuevas))
+            except Exception as e:
+                pg_sync_error = str(e)
+
         # Borrar o marcar como procesado
         try:
             os.remove(archivo)
@@ -467,7 +485,7 @@ def actualizar_desde_archivo_mensual():
             except OSError:
                 pass
 
-        return {
+        resultado = {
             "ok":      True,
             "mes":     mes,
             "ano":     ano,
@@ -475,6 +493,9 @@ def actualizar_desde_archivo_mensual():
             "vta":     vta_nueva,
             "msg":     f"OK: {n_filas} filas de {mes:02d}/{ano} consolidadas (${vta_nueva:,.0f})",
         }
+        if pg_sync_error:
+            resultado["pg_sync_error"] = pg_sync_error
+        return resultado
 
     except Exception as e:
         return {"ok": False, "msg": f"Error: {str(e)}"}
@@ -544,7 +565,7 @@ def _leer_fecha_confirmada():
         return None
 
 
-def confirmar_dia_sin_ventas():
+def confirmar_dia_sin_ventas(on_confirmado=None):
     """
     Llamada SOLO desde actualizar_diario.py (tarea de las 19:00), y
     SOLO como respaldo cuando no hay archivo nuevo que consolidar.
@@ -567,17 +588,43 @@ def confirmar_dia_sin_ventas():
     de las 19:00 (hora en que corre la tarea programada) — si esto se
     ejecuta antes de esa hora (ej. a mano, de dia), hoy todavia puede
     tener venta sin cargar, asi que se confirma el dia ANTERIOR, no hoy.
+
+    on_confirmado(fecha): callback opcional, SIEMPRE llamado con la
+    fecha confirmada vigente (la recien escrita, o la que ya estaba si
+    no habia nada nuevo que hacer) -- no solo cuando este archivo avanza
+    el corte. Necesario porque Postgres (control_datos, ver
+    data_loader_pg.confirmar_fecha_pg) es un sistema aparte que puede
+    haberse quedado atras aunque el archivo local ya estuviera al dia
+    (ej. si Postgres no estaba conectado un dia); el callback es
+    idempotente/monotono (usa GREATEST) asi que llamarlo de mas no hace
+    daño y permite que se autocorrija solo. Un fallo del callback NO
+    afecta el resultado local -- se reporta como "pg_sync_error".
     """
     hoy = _hoy()
     dia_a_confirmar = hoy if datetime.now().hour >= 19 else hoy - timedelta(days=1)
 
     actual = _leer_fecha_confirmada()
-    if actual and actual >= dia_a_confirmar:
-        return {"ok": True, "msg": f"Ya estaba confirmado hasta {actual}."}
+    ya_estaba = bool(actual and actual >= dia_a_confirmar)
+    fecha_final = actual if ya_estaba else dia_a_confirmar
 
-    with open(FECHA_CONFIRMADA_PATH, "w", encoding="utf-8") as f:
-        f.write(dia_a_confirmar.strftime("%Y-%m-%d"))
-    return {"ok": True, "msg": f"Confirmado {dia_a_confirmar} como dato final (sin archivo nuevo)."}
+    if not ya_estaba:
+        with open(FECHA_CONFIRMADA_PATH, "w", encoding="utf-8") as f:
+            f.write(dia_a_confirmar.strftime("%Y-%m-%d"))
+
+    pg_sync_error = None
+    if on_confirmado:
+        try:
+            on_confirmado(fecha_final)
+        except Exception as e:
+            pg_sync_error = str(e)
+
+    if ya_estaba:
+        resultado = {"ok": True, "msg": f"Ya estaba confirmado hasta {actual}."}
+    else:
+        resultado = {"ok": True, "msg": f"Confirmado {dia_a_confirmar} como dato final (sin archivo nuevo)."}
+    if pg_sync_error:
+        resultado["pg_sync_error"] = pg_sync_error
+    return resultado
 
 
 # ══════════════════════════════════════════════════════

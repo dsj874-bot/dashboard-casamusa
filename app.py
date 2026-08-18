@@ -774,7 +774,10 @@ def datos():
 @admin_requerido
 def admin_actualizar():
     try:
-        resultado = data_loader.actualizar_desde_archivo_mensual()
+        on_nuevo = data_loader_pg.sincronizar_ventas_pg if USAR_POSTGRES_COMERCIAL else None
+        resultado = data_loader.actualizar_desde_archivo_mensual(on_nuevo=on_nuevo)
+        if resultado.get("pg_sync_error"):
+            resultado["msg"] += f" (aviso: sync Postgres fallo: {resultado['pg_sync_error']})"
         return jsonify(resultado)
     except Exception as e:
         return jsonify({"ok": False, "msg": f"Error: {str(e)}"}), 500

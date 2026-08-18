@@ -13,29 +13,16 @@ Uso: python scripts/backfill_fase1_comercial.py
 """
 import os
 import sys
-import math
 import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
 import data_loader as dl
+import data_loader_pg as dlpg
 import db
 
-
-def _valor(v):
-    """None para NaN/NaT de pandas; tipos nativos de Python para todo lo demas."""
-    if v is None:
-        return None
-    if isinstance(v, float) and math.isnan(v):
-        return None
-    if pd.isna(v):
-        return None
-    if isinstance(v, pd.Timestamp):
-        return v.date()
-    if hasattr(v, "item"):
-        return v.item()
-    return v
+_valor = dlpg.valor_sql
 
 
 def backfill_productos(df_2025, df_2026):
@@ -73,28 +60,8 @@ def backfill_productos(df_2025, df_2026):
     print(f"  {len(filas)} productos cargados/actualizados.")
 
 
-VENTAS_COLUMNAS = [
-    "doc_sap", "folio", "tipo_doc", "fecha_conta", "fecha_doc",
-    "codigo_cliente", "nombre_cliente", "procedencia", "sucursal",
-    "sucursal_logica", "codigo_cm", "id_procedencia", "codigo_proveedor",
-    "descripcion", "marca", "unidad_medida", "familia", "subfamilia",
-    "grupo", "cantidad", "costo_cup", "costo_total", "precio_unitario",
-    "total", "utilidad_bruta", "mg_bruto", "vendedor", "vendedor_rpt",
-    "cond_pago", "empresa", "proveedor_por_defecto", "liquidar",
-    "tipo_venta", "estatus_sku", "ano", "mes", "dia", "producto_key",
-]
-
-# Mapeo columna Postgres -> columna del DataFrame (mismo orden que VENTAS_COLUMNAS)
-_DF_COLS = [
-    "DOC_SAP", "FOLIO", "TIPO_DOC", "FECHA_CONTA", "FECHA_DOC",
-    "CODIGO_CLIENTE", "NOMBRE_CLIENTE", "PROCEDENCIA", "SUCURSAL",
-    "SUCURSAL_LOGICA", "CODIGO_CM", "ID_PROCEDENCIA", "CODIGO_PROVEEDOR",
-    "DESCRIPCION", "MARCA", "UNIDAD_MEDIDA", "FAMILIA", "SUBFAMILIA",
-    "GRUPO", "CANTIDAD", "COSTO_CUP", "COSTO_TOTAL", "PRECIO_UNITARIO",
-    "TOTAL", "UTILIDAD_BRUTA", "MG_BRUTO", "VENDEDOR", "VENDEDOR_RPT",
-    "COND_PAGO", "EMPRESA", "PROVEEDOR_POR_DEFECTO", "LIQUIDAR",
-    "TIPO_VENTA", "ESTATUS_SKU", "ANO", "MES", "DIA", "PRODUCTO_KEY",
-]
+VENTAS_COLUMNAS = dlpg.VENTAS_COLUMNAS
+_DF_COLS = dlpg.VENTAS_DF_COLS
 
 
 def _lotes(seq, tamano):

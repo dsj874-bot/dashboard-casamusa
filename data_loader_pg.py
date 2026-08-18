@@ -17,13 +17,59 @@ en vez de una consulta separada por ventana. La primera version hacia
 con latencia real desde Chile); esta version reduce eso a 1 conexion
 y 1-2 round trips.
 """
+import math
 from datetime import date, datetime, timedelta
+
+import pandas as pd
 
 import db
 from data_loader import (
     MESES, ORDEN_SUCURSALES, MG_NE_PCT, var_pct,
     _dias_habiles_mes, _dias_habiles_hasta,
 )
+
+# Columnas tabla ventas (Postgres) y su mapeo al DataFrame de
+# data_loader (mismo orden) -- usadas tanto por el backfill inicial
+# (scripts/backfill_fase1_comercial.py) como por la sincronizacion
+# diaria (sincronizar_ventas_pg), para no mantener dos copias.
+VENTAS_COLUMNAS = [
+    "doc_sap", "folio", "tipo_doc", "fecha_conta", "fecha_doc",
+    "codigo_cliente", "nombre_cliente", "procedencia", "sucursal",
+    "sucursal_logica", "codigo_cm", "id_procedencia", "codigo_proveedor",
+    "descripcion", "marca", "unidad_medida", "familia", "subfamilia",
+    "grupo", "cantidad", "costo_cup", "costo_total", "precio_unitario",
+    "total", "utilidad_bruta", "mg_bruto", "vendedor", "vendedor_rpt",
+    "cond_pago", "empresa", "proveedor_por_defecto", "liquidar",
+    "tipo_venta", "estatus_sku", "ano", "mes", "dia", "producto_key",
+]
+
+VENTAS_DF_COLS = [
+    "DOC_SAP", "FOLIO", "TIPO_DOC", "FECHA_CONTA", "FECHA_DOC",
+    "CODIGO_CLIENTE", "NOMBRE_CLIENTE", "PROCEDENCIA", "SUCURSAL",
+    "SUCURSAL_LOGICA", "CODIGO_CM", "ID_PROCEDENCIA", "CODIGO_PROVEEDOR",
+    "DESCRIPCION", "MARCA", "UNIDAD_MEDIDA", "FAMILIA", "SUBFAMILIA",
+    "GRUPO", "CANTIDAD", "COSTO_CUP", "COSTO_TOTAL", "PRECIO_UNITARIO",
+    "TOTAL", "UTILIDAD_BRUTA", "MG_BRUTO", "VENDEDOR", "VENDEDOR_RPT",
+    "COND_PAGO", "EMPRESA", "PROVEEDOR_POR_DEFECTO", "LIQUIDAR",
+    "TIPO_VENTA", "ESTATUS_SKU", "ANO", "MES", "DIA", "PRODUCTO_KEY",
+]
+
+
+def valor_sql(v):
+    """None para NaN/NaT de pandas; tipos nativos de Python para todo
+    lo demas -- necesario porque psycopg no sabe serializar tipos
+    numpy/pandas directamente."""
+    if v is None:
+        return None
+    if isinstance(v, float) and math.isnan(v):
+        return None
+    if pd.isna(v):
+        return None
+    if isinstance(v, pd.Timestamp):
+        return v.date()
+    if hasattr(v, "item"):
+        return v.item()
+    return v
 
 # Whitelist de columnas agrupables -- evita interpolar un nombre de
 # columna arbitrario en SQL y documenta que "campo" (nombre de columna
@@ -458,3 +504,47 @@ def get_proyeccion_pg(filtros=None):
     ))
 
     return {"kpis": kpis, "filas": filas}
+
+
+def sincronizar_ventas_pg(df, fechas):
+    """Sincroniza en Postgres las filas de `df` que caen en `fechas`:
+    delete-by-fecha + insert -- mismo criterio de dedupe por rango de
+    fecha que usa el cache local (actualizar_desde_archivo_mensual) y
+    el backfill inicial (scripts/backfill_fase1_comercial.py).
+
+    `df` debe traer SUCURSAL_LOGICA/VENDEDOR_RPT ya aplicado (ver el
+    callback on_nuevo en data_loader.actualizar_desde_archivo_mensual,
+    que relee via get_df_2026() antes de llamar esto)."""
+    fechas = list(fechas)
+    if not fechas:
+        return
+
+    cols_sql = ", ".join(VENTAS_COLUMNAS)
+    placeholders = ", ".join(["%s"] * len(VENTAS_COLUMNAS))
+    sql = f"insert into ventas ({cols_sql}) values ({placeholders})"
+    filas = [tuple(valor_sql(getattr(r, c)) for c in VENTAS_DF_COLS) for r in df.itertuples(index=False)]
+
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute("delete from ventas where fecha_conta = ANY(%s)", (fechas,))
+            for i in range(0, len(filas), 5000):
+                cur.executemany(sql, filas[i:i + 5000])
+        conn.commit()
+
+
+def confirmar_fecha_pg(fecha, updated_by="actualizar_diario"):
+    """Equivalente Postgres de escribir data/comercial/fecha_confirmada.txt
+    -- upsert en control_datos (area='comercial'). GREATEST() lo hace
+    avanzar-solamente/idempotente: llamarlo con una fecha menor a la ya
+    guardada no la retrocede, asi que es seguro llamarlo todos los dias
+    aunque no haya cambiado nada (ver docstring de
+    data_loader.confirmar_dia_sin_ventas)."""
+    db.execute(
+        """INSERT INTO control_datos (area, fecha_confirmada, updated_by)
+           VALUES ('comercial', %(fecha)s, %(by)s)
+           ON CONFLICT (area) DO UPDATE SET
+             fecha_confirmada = GREATEST(control_datos.fecha_confirmada, excluded.fecha_confirmada),
+             updated_at = now(),
+             updated_by = excluded.updated_by""",
+        {"fecha": fecha, "by": updated_by},
+    )
