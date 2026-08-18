@@ -74,7 +74,7 @@ VEND_HOME = {
         "VENTAS OFICINA CH",
     },
     "MP": {
-        "IGOR MOYA",
+        "MARCELO GATICA",
         "PEDRO NAVEA",
         "JOSE VILLEGAS RODRIGUEZ",
     },
