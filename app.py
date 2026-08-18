@@ -912,6 +912,8 @@ def vta_acum():
 @login_requerido
 def api_filtros_vta_acum():
     try:
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_filtros_vta_acum_pg(filtro_sucursal=_sucursal_forzada()))
         return jsonify(data_loader.get_filtros_vta_acum(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -924,6 +926,8 @@ def api_vta_acum():
         filtros = request.get_json(silent=True) or {}
         if _sucursal_forzada():
             filtros["sucursal"] = _sucursal_forzada()
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_vta_acum_pg(filtros))
         return jsonify(data_loader.get_vta_acum(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -944,6 +948,8 @@ def api_vta_mes_mg():
         filtros = request.get_json(silent=True) or {}
         if _sucursal_forzada():
             filtros["sucursal"] = _sucursal_forzada()
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_vta_mes_mg_acum_pg(filtros))
         return jsonify(data_loader.get_vta_mes_mg_acum(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -964,6 +970,8 @@ def api_vta_mg_mensual():
         filtros = request.get_json(silent=True) or {}
         if _sucursal_forzada():
             filtros["sucursal"] = _sucursal_forzada()
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_vta_mg_mensual_pg(filtros))
         return jsonify(data_loader.get_vta_mg_mensual(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500

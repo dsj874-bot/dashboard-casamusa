@@ -64,6 +64,8 @@ def _diff_dict(nombre, viejo, nuevo, ruta=""):
 def _clave_fila(r):
     if "nombre" in r:
         return r["nombre"]
+    if "categoria" in r:
+        return r["categoria"]
     if "mes" in r:
         return r["mes"]
     if "vendedor" in r:
@@ -184,6 +186,40 @@ def main():
     check("get_ventas_por_familia (marca)", dl.get_ventas_por_familia("marca"), dlpg.get_ventas_por_familia_pg("marca"))
     check("get_ventas_por_cliente (sin filtro)", dl.get_ventas_por_cliente(), dlpg.get_ventas_por_cliente_pg())
     check("get_ventas_por_producto (sin filtro)", dl.get_ventas_por_producto(), dlpg.get_ventas_por_producto_pg())
+
+    print("Comparando get_filtros_vta_acum/get_vta_acum/get_vta_mes_mg_acum/get_vta_mg_mensual()...")
+    check("get_filtros_vta_acum (sin filtro)", dl.get_filtros_vta_acum(), dlpg.get_filtros_vta_acum_pg())
+    check("get_vta_acum (marca, sin filtros)", dl.get_vta_acum({"categoria": "marca"}), dlpg.get_vta_acum_pg({"categoria": "marca"}))
+    check(
+        "get_vta_acum (familia, sucursal MT)",
+        dl.get_vta_acum({"categoria": "familia", "sucursal": "MT"}),
+        dlpg.get_vta_acum_pg({"categoria": "familia", "sucursal": "MT"}),
+    )
+    check(
+        "get_vta_acum (proveedor, procedencia Importado)",
+        dl.get_vta_acum({"categoria": "proveedor", "procedencia": "Importado"}),
+        dlpg.get_vta_acum_pg({"categoria": "proveedor", "procedencia": "Importado"}),
+    )
+    check(
+        "get_vta_mes_mg_acum (familia, sin filtros)",
+        dl.get_vta_mes_mg_acum({"categoria": "familia"}),
+        dlpg.get_vta_mes_mg_acum_pg({"categoria": "familia"}),
+    )
+    check(
+        "get_vta_mes_mg_acum (vendedor, sucursal MT)",
+        dl.get_vta_mes_mg_acum({"categoria": "vendedor", "sucursal": "MT"}),
+        dlpg.get_vta_mes_mg_acum_pg({"categoria": "vendedor", "sucursal": "MT"}),
+    )
+    check(
+        "get_vta_mg_mensual (marca, sin filtros)",
+        dl.get_vta_mg_mensual({"categoria": "marca"}),
+        dlpg.get_vta_mg_mensual_pg({"categoria": "marca"}),
+    )
+    check(
+        "get_vta_mg_mensual (cond_pago, sin filtros)",
+        dl.get_vta_mg_mensual({"categoria": "cond_pago"}),
+        dlpg.get_vta_mg_mensual_pg({"categoria": "cond_pago"}),
+    )
 
     print()
     if fallas:
