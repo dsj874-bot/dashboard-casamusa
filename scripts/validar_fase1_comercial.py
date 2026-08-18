@@ -171,6 +171,20 @@ def main():
         dlpg.get_seguimiento_ppto_pg(filtro_sucursal=["CH", "MP"]),
     )
 
+    print("Comparando get_ventas_por_vendedor/canal/procedencia/familia/marca/cliente/producto()...")
+    check("get_ventas_por_vendedor (sin filtro)", dl.get_ventas_por_vendedor(), dlpg.get_ventas_por_vendedor_pg())
+    check(
+        "get_ventas_por_vendedor (MT)",
+        dl.get_ventas_por_vendedor(filtro_sucursal="MT"),
+        dlpg.get_ventas_por_vendedor_pg(filtro_sucursal="MT"),
+    )
+    check("get_ventas_por_canal (sin filtro)", dl.get_ventas_por_canal(), dlpg.get_ventas_por_canal_pg())
+    check("get_ventas_por_procedencia (sin filtro)", dl.get_ventas_por_procedencia(), dlpg.get_ventas_por_procedencia_pg())
+    check("get_ventas_por_familia (familia)", dl.get_ventas_por_familia("familia"), dlpg.get_ventas_por_familia_pg("familia"))
+    check("get_ventas_por_familia (marca)", dl.get_ventas_por_familia("marca"), dlpg.get_ventas_por_familia_pg("marca"))
+    check("get_ventas_por_cliente (sin filtro)", dl.get_ventas_por_cliente(), dlpg.get_ventas_por_cliente_pg())
+    check("get_ventas_por_producto (sin filtro)", dl.get_ventas_por_producto(), dlpg.get_ventas_por_producto_pg())
+
     print()
     if fallas:
         print(f"{len(fallas)} diferencias encontradas:")

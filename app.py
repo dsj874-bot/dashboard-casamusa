@@ -667,6 +667,8 @@ def vendedores():
 @login_requerido
 def api_ventas_por_vendedor():
     try:
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_ventas_por_vendedor_pg(filtro_sucursal=_sucursal_forzada()))
         return jsonify(data_loader.get_ventas_por_vendedor(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -684,6 +686,8 @@ def canal():
 @login_requerido
 def api_ventas_por_canal():
     try:
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_ventas_por_canal_pg(filtro_sucursal=_sucursal_forzada()))
         return jsonify(data_loader.get_ventas_por_canal(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -702,6 +706,8 @@ def familia():
 def api_ventas_por_familia():
     try:
         agrupar_por = request.args.get("agrupar_por", "familia")
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_ventas_por_familia_pg(agrupar_por, filtro_sucursal=_sucursal_forzada()))
         return jsonify(data_loader.get_ventas_por_familia(agrupar_por, filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -719,6 +725,8 @@ def procedencia():
 @login_requerido
 def api_ventas_por_procedencia():
     try:
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_ventas_por_procedencia_pg(filtro_sucursal=_sucursal_forzada()))
         return jsonify(data_loader.get_ventas_por_procedencia(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -736,6 +744,8 @@ def clientes():
 @login_requerido
 def api_ventas_por_cliente():
     try:
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_ventas_por_cliente_pg(filtro_sucursal=_sucursal_forzada()))
         return jsonify(data_loader.get_ventas_por_cliente(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -753,6 +763,8 @@ def productos():
 @login_requerido
 def api_ventas_por_producto():
     try:
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_ventas_por_producto_pg(filtro_sucursal=_sucursal_forzada()))
         return jsonify(data_loader.get_ventas_por_producto(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500

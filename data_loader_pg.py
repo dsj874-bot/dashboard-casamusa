@@ -83,6 +83,7 @@ COLUMNAS_AGRUPABLES = {
     "FAMILIA":         "familia",
     "MARCA":           "marca",
     "NOMBRE_CLIENTE":  "nombre_cliente",
+    "PRODUCTO_KEY":    "producto_key",
 }
 
 # Mapeo filtros de Proyeccion/Metas -> columna Postgres. Mismas claves
@@ -344,6 +345,39 @@ def get_ventas_por_sucursal_pg(filtro_sucursal=None):
         "mes_nombre":          data["mes_nombre"],
         "mes_anterior_nombre": data["mes_anterior_nombre"],
     }
+
+
+def get_ventas_por_vendedor_pg(filtro_sucursal=None):
+    # Se agrupa por VENDEDOR (nombre real SAP), no VENDEDOR_RPT -- ver
+    # docstring de data_loader.get_ventas_por_vendedor.
+    return get_ventas_por_campo_pg("VENDEDOR", filtro_sucursal=filtro_sucursal)
+
+
+def get_ventas_por_canal_pg(filtro_sucursal=None):
+    return get_ventas_por_campo_pg("TIPO_VENTA", filtro_sucursal=filtro_sucursal)
+
+
+def get_ventas_por_procedencia_pg(filtro_sucursal=None):
+    return get_ventas_por_campo_pg("PROCEDENCIA", filtro_sucursal=filtro_sucursal)
+
+
+def get_ventas_por_cliente_pg(filtro_sucursal=None):
+    return get_ventas_por_campo_pg("NOMBRE_CLIENTE", top_n=15, filtro_sucursal=filtro_sucursal)
+
+
+def get_ventas_por_producto_pg(filtro_sucursal=None):
+    data = get_ventas_por_campo_pg("PRODUCTO_KEY", top_n=15, filtro_sucursal=filtro_sucursal)
+    for r in data["items"]:
+        codigo, _, descripcion = r["nombre"].partition("||")
+        r["codigo"] = codigo
+        r["nombre"] = descripcion
+    return data
+
+
+def get_ventas_por_familia_pg(agrupar_por="familia", filtro_sucursal=None):
+    campo = "MARCA" if agrupar_por == "marca" else "FAMILIA"
+    top_n = 30 if campo == "MARCA" else None
+    return get_ventas_por_campo_pg(campo, top_n=top_n, filtro_sucursal=filtro_sucursal)
 
 
 def get_filtros_proyeccion_pg(filtro_sucursal=None):
