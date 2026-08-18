@@ -40,10 +40,21 @@ def _diff_dict(nombre, viejo, nuevo, ruta=""):
             _diff_dict(nombre, v, n, r)
         elif isinstance(v, list) and isinstance(n, list):
             if v and not isinstance(v[0], dict):
-                if set(v) != set(n):
-                    fallas.append(
-                        f"[{nombre}] {r}: solo_Excel={set(v) - set(n)!r} solo_Postgres={set(n) - set(v)!r}"
-                    )
+                # Lista de escalares: si son todos strings (ej. lista de
+                # sucursales/vendedores) el orden no importa -- comparar
+                # como conjunto. Si son numeros (ej. venta por mes), el
+                # orden SI importa -- comparar posicion a posicion.
+                if all(isinstance(x, str) for x in v + n):
+                    if set(v) != set(n):
+                        fallas.append(
+                            f"[{nombre}] {r}: solo_Excel={set(v) - set(n)!r} solo_Postgres={set(n) - set(v)!r}"
+                        )
+                elif len(v) != len(n):
+                    fallas.append(f"[{nombre}] {r}: largo distinto Excel={len(v)} vs Postgres={len(n)}")
+                else:
+                    for i, (vi, ni) in enumerate(zip(v, n)):
+                        if not _cerca(vi, ni):
+                            fallas.append(f"[{nombre}] {r}[{i}]: Excel={vi!r} vs Postgres={ni!r}")
                 continue
             _diff_lista(nombre, v, n, r)
         elif not _cerca(v, n):
@@ -55,7 +66,9 @@ def _clave_fila(r):
         return r["nombre"]
     if "mes" in r:
         return r["mes"]
-    return (r["sucursal"], r["vendedor"])
+    if "vendedor" in r:
+        return (r["sucursal"], r["vendedor"])
+    return r["sucursal"]
 
 
 def _diff_lista(nombre, viejo, nuevo, ruta):
@@ -143,6 +156,19 @@ def main():
         "get_seguimiento_metas (vendedor puntual)",
         dl.get_seguimiento_metas({"vendedor": "FRANCISCA CORREA"}),
         dlpg.get_seguimiento_metas_pg({"vendedor": "FRANCISCA CORREA"}),
+    )
+
+    print("Comparando get_seguimiento_ppto()...")
+    check("get_seguimiento_ppto (sin filtro)", dl.get_seguimiento_ppto(), dlpg.get_seguimiento_ppto_pg())
+    check(
+        "get_seguimiento_ppto (MT)",
+        dl.get_seguimiento_ppto(filtro_sucursal="MT"),
+        dlpg.get_seguimiento_ppto_pg(filtro_sucursal="MT"),
+    )
+    check(
+        "get_seguimiento_ppto (Express=[CH,MP])",
+        dl.get_seguimiento_ppto(filtro_sucursal=["CH", "MP"]),
+        dlpg.get_seguimiento_ppto_pg(filtro_sucursal=["CH", "MP"]),
     )
 
     print()

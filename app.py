@@ -880,6 +880,8 @@ def ppto():
 @login_requerido
 def api_ppto():
     try:
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_seguimiento_ppto_pg(filtro_sucursal=_sucursal_forzada()))
         return jsonify(data_loader.get_seguimiento_ppto(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500

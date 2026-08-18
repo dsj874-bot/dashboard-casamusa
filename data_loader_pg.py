@@ -647,6 +647,150 @@ def get_seguimiento_metas_pg(filtros=None):
     return {"kpis": kpis, "filas": lista}
 
 
+def get_seguimiento_ppto_pg(filtro_sucursal=None):
+    frag_suc, suc = _filtro_sucursal_sql(filtro_sucursal)
+    params = {"suc": suc} if suc else {}
+
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            fecha_datos = _fecha_datos_pg(cur)
+            mes_actual = fecha_datos.month
+            dia_actual = fecha_datos.day
+            mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
+            params.update({"mes_actual": mes_actual, "dia_actual": dia_actual, "mes_anterior": mes_anterior})
+
+            cur.execute(
+                f"""SELECT
+                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v_ano_26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS v_ano_25,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
+                    FROM ventas
+                    WHERE ano IN (2025, 2026) {frag_suc}""",
+                params,
+            )
+            r = cur.fetchone()
+            v_ano_26  = float(r["v_ano_26"])
+            v_ano_25  = float(r["v_ano_25"])
+            v_mes_26  = float(r["v_mes_26"])
+            v_mes_25  = float(r["v_mes_25"])
+            v_mes_ant = float(r["v_mes_ant"])
+
+            inicio_ano   = date(2026, 1, 1)
+            doy          = (fecha_datos - inicio_ano).days + 1
+            factor_anual = doy / 365.0
+
+            kpis = {
+                "v_ano_actual":        round(v_ano_26, 0),
+                "v_ano_anterior":      round(v_ano_25, 0),
+                "var_ano":             var_pct(v_ano_26, v_ano_25),
+                "v_mes_actual":        round(v_mes_26, 0),
+                "v_mes_ant_ano":       round(v_mes_25, 0),
+                "var_mes_ano":         var_pct(v_mes_26, v_mes_25),
+                "v_mes_ant_mes":       round(v_mes_ant, 0),
+                "var_mes_mes":         var_pct(v_mes_26, v_mes_ant),
+                "dh_transcurridos":    _dias_habiles_hasta(2026, mes_actual, dia_actual),
+                "dh_total":            _dias_habiles_mes(2026, mes_actual),
+                "fecha_datos":         fecha_datos.strftime("%d/%m/%Y"),
+                "mes_nombre":          MESES.get(mes_actual, ""),
+                "mes_anterior_nombre": MESES.get(mes_anterior, ""),
+                "ano_actual":          2026,
+                "ano_anterior":        2025,
+            }
+
+            cur.execute("SELECT sucursal, presupuesto_anual FROM presupuesto WHERE ano = 2026")
+            ppto_dic = {f["sucursal"].strip(): float(f["presupuesto_anual"]) for f in cur.fetchall()}
+
+            # sucursales presentes en 2026 (igual que "unique()" sobre df26) +
+            # acumulado 2026 (YTD completo) y 2025 (mismo tramo de dias) --
+            # n26 sirve para excluir una sucursal que solo tenga historia en
+            # 2025 (no aparece en df26, no deberia listarse).
+            cur.execute(
+                f"""SELECT sucursal_logica,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS acum_26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS acum_25,
+                      count(*) FILTER (WHERE ano = 2026) AS n26
+                    FROM ventas
+                    WHERE ano IN (2025, 2026) AND sucursal_logica IS NOT NULL {frag_suc}
+                    GROUP BY sucursal_logica""",
+                params,
+            )
+            acumulados = {f["sucursal_logica"]: f for f in cur.fetchall()}
+
+            cur.execute(
+                f"""SELECT sucursal_logica, ano, mes, coalesce(sum(total), 0) AS v
+                    FROM ventas
+                    WHERE ano IN (2025, 2026) AND sucursal_logica IS NOT NULL {frag_suc}
+                    GROUP BY sucursal_logica, ano, mes""",
+                params,
+            )
+            grid = {(f["sucursal_logica"], f["ano"], f["mes"]): float(f["v"]) for f in cur.fetchall()}
+
+            cur.execute(
+                f"""SELECT ano, mes, coalesce(sum(total), 0) AS v
+                    FROM ventas
+                    WHERE ano IN (2025, 2026) {frag_suc}
+                    GROUP BY ano, mes""",
+                params,
+            )
+            totales_grid = {(f["ano"], f["mes"]): float(f["v"]) for f in cur.fetchall()}
+
+    orden_suc  = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
+    sucursales = sorted(
+        (s for s, f in acumulados.items() if f["n26"] > 0),
+        key=lambda s: orden_suc.get(s, 99),
+    )
+
+    tabla_acum = []
+    for suc in sucursales:
+        f = acumulados[suc]
+        acum_26 = float(f["acum_26"])
+        acum_25 = float(f["acum_25"])
+        ppto_anual = ppto_dic.get(suc, 0.0)
+        ppto_ytd   = ppto_anual * factor_anual
+        proyeccion = acum_26 / factor_anual if factor_anual > 0 else 0.0
+        var_ppto_v = var_pct(acum_26, ppto_ytd) if ppto_ytd > 0 else None
+        tabla_acum.append({
+            "sucursal":     suc,
+            "vta_acum":     round(acum_26,    0),
+            "vta_acum_ant": round(acum_25,    0),
+            "pct_crec":     var_pct(acum_26, acum_25),
+            "ppto_anual":   round(ppto_anual, 0),
+            "ppto_ytd":     round(ppto_ytd,   0),
+            "var_ppto":     var_ppto_v,
+            "proyeccion":   round(proyeccion, 0),
+        })
+
+    mensual_25 = {s: [round(grid.get((s, 2025, m), 0.0), 0) for m in range(1, 13)] for s in sucursales}
+    mensual_26 = {s: [round(grid.get((s, 2026, m), 0.0), 0) for m in range(1, 13)] for s in sucursales}
+    totales_25 = [round(totales_grid.get((2025, m), 0.0), 0) for m in range(1, 13)]
+    totales_26 = [round(totales_grid.get((2026, m), 0.0), 0) for m in range(1, 13)]
+
+    if filtro_sucursal:
+        claves_ppto = filtro_sucursal if isinstance(filtro_sucursal, (list, tuple, set)) else [filtro_sucursal]
+        ppto_anual_total = sum(ppto_dic.get(s, 0.0) for s in claves_ppto)
+    else:
+        ppto_anual_total = sum(ppto_dic.values())
+    ppto_mensual = [round(ppto_anual_total / 12, 0)] * 12
+
+    return {
+        "kpis":          kpis,
+        "tabla_acum":    tabla_acum,
+        "mensual_25":    mensual_25,
+        "mensual_26":    mensual_26,
+        "totales_25":    totales_25,
+        "totales_26":    totales_26,
+        "ppto_mensual":  ppto_mensual,
+        "sucursales":    sucursales,
+        "meses_nombres": list(MESES.values()),
+    }
+
+
 def confirmar_fecha_pg(fecha, updated_by="actualizar_diario"):
     """Equivalente Postgres de escribir data/comercial/fecha_confirmada.txt
     -- upsert en control_datos (area='comercial'). GREATEST() lo hace
