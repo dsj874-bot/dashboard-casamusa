@@ -3,25 +3,61 @@
 ## Stack
 - Python 3.14 + Flask 3.1 + pandas 3.0
 - Templates Jinja2 + Chart.js (CDN)
-- Sin base de datos — lee Excel exports de SAP B1
+- **Comercial corre sobre Postgres (Supabase) desde el 2026-08-19** — ver
+  "Fase 1: Comercial en Postgres" más abajo. Excel/pandas (`data_loader.py`)
+  sigue existiendo intacto como fuente independiente para el diff de
+  validación, pero el dashboard real (local Y Vercel) ya no lo lee para
+  Comercial. Inventario/Adquisiciones/Obligatorios siguen 100% en Excel.
 - Dependencias no estándar: `python-calamine` (lectura rápida de xlsx),
-  `pyarrow` (cache en parquet), `pillow` (edición de imágenes, ej. logo)
+  `pyarrow` (cache en parquet), `pillow` (edición de imágenes, ej. logo),
+  `psycopg[binary]` + `psycopg-pool` (Postgres), `openpyxl` (escribir
+  Excel, ej. `generar_plantilla_ne.py`)
+- Deploy en Vercel (rama `fase-1-comercial`) + Supabase Postgres
+  (región Oregon/us-west-2) — ver sección Vercel/Supabase más abajo.
 - Git con remoto en GitHub (privado): `dsj874-bot/dashboard-casamusa`
   (configurado 2026-07-27, respaldo del código). Identidad configurada
   solo en este repo: David Sepúlveda / dsepulveda@casamusa.cl
 - Respaldo diario de `data/` (Excel/parquet) a OneDrive
   (`C:\Users\Marcelo\OneDrive\CasaMusa_Dashboard_Backup`), corre junto
   con `actualizar_diario.py` a las 19:00 — ver `_respaldar_datos()`.
+- **El Flask local corre como Servicio de Windows** (`CasaMusaDashboard`,
+  instalado con NSSM — NO se abre a mano con `iniciar.bat` en el uso
+  normal). Reiniciarlo: `services.msc` → "CasaMusa Dashboard" → clic
+  derecho → Reiniciar (requiere permisos de administrador que Claude
+  Code no tiene en esta máquina — pedirle al usuario que lo haga).
+  Necesario después de CUALQUIER cambio a `.py` (no solo templates),
+  porque Python no recarga código en caliente (`debug=False`).
 
 ## Estructura
 ```
 Dashboard/
 ├── app.py                    # Rutas Flask
-├── data_loader.py            # Lógica de datos (~1500 líneas)
-├── iniciar.bat                # Abre Flask en Windows (instala deps)
+├── data_loader.py            # Lógica de datos Excel/pandas (~1900 líneas,
+│                              # sin cambios funcionales — ground truth del diff)
+├── data_loader_pg.py          # Equivalente Postgres de cada funcion de
+│                              # data_loader.py (Fase 1, Comercial) + helpers
+│                              # de gestion (asignar_vendedor_home, etc.)
+├── db.py                     # Pool de conexiones Postgres (psycopg_pool)
+├── migrations/                # SQL versionado, se aplica a mano (sin
+│   ├── 001_control_datos.sql  #  herramienta de migraciones tipo alembic)
+│   ├── 002_fase1_comercial.sql
+│   └── 003_vendedor_home.sql  # tabla vendedor_home + vista v_ventas
+├── scripts/
+│   ├── backfill_fase1_comercial.py  # Carga inicial Excel -> Postgres (uso
+│   │                                  # unico, ya corrido; reusa columnas de
+│   │                                  # data_loader_pg.VENTAS_COLUMNAS)
+│   └── validar_fase1_comercial.py   # Diff Excel vs Postgres, correr tras
+│                                      # CUALQUIER cambio en data_loader_pg.py
+├── vercel.json                # Config deploy Vercel
+├── iniciar.bat                # Abre Flask en Windows (instala deps) --
+│                              # NO es como corre hoy en produccion, ver
+│                              # nota de Servicio de Windows arriba
 ├── actualizar_diario.py/.bat # Consolida sin necesitar Flask corriendo
 │                              # (usado por Tarea Programada Windows, 19:00)
+│                              # -- ahora tambien sincroniza a Postgres
 ├── generar_plantilla_ne.py   # Regenera data/comercial/NE_x_Facturar.xlsx
+│                              # (el Excel local; la fuente real ya es Postgres,
+│                              # ver /cargar_ne mas abajo)
 ├── actualizar_diario.log     # Log de cada corrida automática (gitignored)
 ├── data/                      # Una subcarpeta por area — cada una la
 │   │                          # carga una persona distinta. Solo
@@ -30,15 +66,18 @@ Dashboard/
 │   │   ├── Ventas_2026.xlsx      # Export SAP B1 2026 (gitignored)
 │   │   ├── Ventas_2025.xlsx      # Export SAP B1 2025 (gitignored)
 │   │   ├── *.parquet             # Cache rápido, se regenera solo (gitignored)
-│   │   ├── presupuesto.xlsx      # Presupuesto anual por sucursal
-│   │   ├── metas.xlsx            # Metas mensuales por vendedor
-│   │   ├── NE_x_Facturar.xlsx    # Negocios Ganados x Facturar (semanal, gitignored)
+│   │   ├── presupuesto.xlsx      # Presupuesto anual por sucursal (legacy,
+│   │   │                          # la fuente real es la tabla presupuesto)
+│   │   ├── metas.xlsx            # Metas mensuales por vendedor (legacy, la
+│   │   │                          # fuente real es la tabla metas / /cargar_metas)
+│   │   ├── NE_x_Facturar.xlsx    # legacy (semanal, gitignored) -- fuente
+│   │   │                          # real es la tabla ne_x_facturar / /cargar_ne
 │   │   └── AAMM_Vtas.xlsx        # Archivo mensual a consolidar (temporal, se
 │   │                              # borra solo tras "Actualizar datos")
 │   ├── inventario/            # Inventario.xlsx (nombre fijo, foto del
 │   │                          # stock a la fecha — se reemplaza entero
 │   │                          # cada vez, no se acumula como Ventas)
-│   ├── adquisiciones/         # vacía, sin contenido aun
+│   ├── adquisiciones/         # vacía, sin contenido aun (siguiente en la lista)
 │   └── finanzas/              # vacía, sin contenido aun
 ├── static/img/logo.png       # Fondo transparente (no tocar con fondo solido)
 └── templates/
@@ -56,6 +95,10 @@ Dashboard/
     ├── vta_acum.html         # /vta_acum
     ├── vta_mes_mg.html       # /vta_mes_mg
     ├── vta_mg_mensual.html   # /vta_mg_mensual
+    ├── subir_ventas.html     # /subir_ventas (autoservicio, admin)
+    ├── cargar_ne.html        # /cargar_ne (autoservicio, admin)
+    ├── cargar_metas.html     # /cargar_metas (autoservicio, admin)
+    ├── gestionar_vendedores.html  # /gestionar_vendedores (autoservicio, admin)
     └── en_construccion.html  # solo /datos la usa por ahora
 ```
 
@@ -101,7 +144,7 @@ Flujo real (no automático desde SAP, alguien copia el archivo a mano):
 3. Dos formas de disparar la consolidación:
    - Botón "🔄 Actualizar datos" en el topbar → POST `/admin/actualizar`
      (**solo visible/permitido para usuarios con `admin: True` en
-     GERENTES** — hoy solo el usuario "Administrador", ver sección
+     GERENTES** — hoy dsepulveda/emusa/jsantana/naguilera, ver sección
      Autenticación). SOLO consolida archivos — no confirma días sin
      ventas, ver más abajo. Es el
      respaldo manual: si un día hábil no se cargó el archivo antes de
@@ -164,6 +207,116 @@ Flujo real (no automático desde SAP, alguien copia el archivo a mano):
   `_fecha_datos()` — no llamarlo directo para calcular cortes o
   comparaciones en ninguna función nueva.
 
+## Fase 1 — Comercial en Postgres (arquitectura general)
+Hecho en una sesión larga el 2026-08-19. Idea general: `data_loader_pg.py`
+tiene una función equivalente a cada función de `data_loader.py` (mismo
+nombre + sufijo `_pg`, misma firma, mismo shape de retorno), y `app.py`
+elige cuál llamar con un flag:
+
+```python
+USAR_POSTGRES_COMERCIAL = os.environ.get("USAR_POSTGRES_COMERCIAL", "1") == "1"
+```
+
+Default ON porque en Vercel no existen los `.xlsx` locales — la version
+Excel no funcionaria ahi de todas formas. Poner `USAR_POSTGRES_COMERCIAL=0`
+en `.env` local para comparar contra la version Excel original si hace
+falta debuggear una diferencia.
+
+- **`db.py`**: pool de conexiones a nivel de modulo (`db.conexion_pool()`,
+  lazy, `psycopg_pool.ConnectionPool`) — no una conexion nueva por query.
+  `DATABASE_URL` (env var) usa el connection string con **pooler** de
+  Supabase (puerto 6543, modo transaccion, `Supavisor`) — `get_connection()`
+  (conexion suelta, sin pool) es solo para scripts de backfill/migracion
+  que corren una vez.
+- **Cada funcion `_pg` hace pocas queries** (1-6 tipicamente), consolidando
+  agregados por ventana de fecha con `FILTER (WHERE ...)` en un solo
+  `GROUP BY` en vez de una consulta separada por ventana — la region de
+  Supabase (Oregon) tiene latencia real desde Chile, cada round-trip cuenta.
+- **`migrations/*.sql`**: se aplican a mano (leer el archivo y ejecutarlo
+  via `db.get_connection()`), no hay herramienta de migraciones. Antes de
+  agregar una tabla/columna nueva, crear el archivo `00N_descripcion.sql`
+  ahi para que quede versionado, aunque se aplique a mano.
+- **`scripts/validar_fase1_comercial.py`**: compara campo-por-campo el
+  resultado de cada funcion Excel vs su equivalente Postgres (varias
+  combinaciones de filtros). **Correr esto despues de CUALQUIER cambio en
+  data_loader_pg.py o en las tablas** — es la unica forma confiable de
+  confirmar que no se rompio nada. Un remanente de ~$1-700 en
+  `utilidad_bruta` (de un total de ~$100M) es ESPERADO y no es bug — es
+  precision float64 (pandas) vs numeric exacto (Postgres) en sumas sobre
+  cientos de miles de filas; no perseguirlo.
+- **Sincronizacion de ventas (`sincronizar_ventas_pg(df, fechas)` en
+  data_loader_pg.py)**: delete-by-fecha_conta + insert, mismo criterio de
+  dedupe que usa el cache local. Se llama desde 3 lugares:
+  - `actualizar_diario.py` (tarea 19:00) y el boton "Actualizar datos"
+    local, via el parametro `on_nuevo` de
+    `data_loader.actualizar_desde_archivo_mensual()` — data_loader.py NO
+    importa Postgres directamente (el acoplamiento vive en el caller),
+    para mantener su rol de "verdad Excel" para el diff.
+  - `/api/subir_ventas` (pagina web, ver mas abajo) — unico camino que
+    NO pasa por Excel/cache local en absoluto.
+  - **Si alguna vez Postgres se ve con datos de venta desfasados**
+    (venta total no coincide con Excel para un dia que deberia estar
+    cargado): la causa casi siempre es una consolidacion que paso por un
+    proceso Flask corriendo con codigo viejo (sin el callback), o varias
+    cargas parciales de un mismo mes sin resincronizar el mes completo
+    despues. Fix: `dlpg.sincronizar_ventas_pg(dl.get_df_2026()[mask], fechas)`
+    para las fechas afectadas (ver historial de commits `98d75a8`,
+    resync de agosto completo tras encontrar 12 fechas con
+    `utilidad_bruta` desactualizada).
+- **`confirmar_fecha_pg(fecha)`**: equivalente Postgres de escribir
+  `fecha_confirmada.txt` — upsert en `control_datos` con `GREATEST()`
+  (avanza-solamente, se autocorrige solo si se llama de mas). Se llama
+  SIEMPRE desde `confirmar_dia_sin_ventas()` (no solo cuando el corte
+  realmente avanza) para que Postgres se autocorrija si se quedo atras.
+
+### Vercel / Supabase — notas de infraestructura
+- **Function Region: `pdx1`** (Portland, Oregon, us-west-2) — MISMA
+  region que Supabase. Antes estaba en `iad1` (Virginia), agregando un
+  salto cruzando EEUU en cada query ademas del salto real Chile-Oregon.
+  Cambiar en Vercel → Settings → Functions → Function Region (requiere
+  un nuevo deployment para tomar efecto — un commit vacio alcanza).
+- **Fluid Compute**: activado (Settings → Functions) — permite reusar
+  instancias "tibias" entre requests en vez de abrir conexion nueva
+  siempre.
+- **Deployment Protection ("Vercel Authentication")**: DESACTIVADO
+  (Settings → Deployment Protection) — estaba en "Standard Protection"
+  por defecto, lo que exigia que cualquier visitante tuviera cuenta de
+  Vercel Y fuera miembro del team antes de llegar siquiera al login
+  propio de la app. Con el equipo comercial usando el dashboard (no solo
+  Marcelo), esto hay que dejarlo apagado — si Vercel lo reactiva solo en
+  un plan nuevo o similar, desactivarlo de nuevo ahi.
+- Medicion real de latencia (2026-08-19, desde Chile): conexion Postgres
+  fria ~2.5s, tibia ~0.6s por query. Con Fluid Compute + `pdx1` co-ubicado
+  con Supabase, el mismo trabajo desde la funcion de Vercel deberia ser
+  ~10-90ms (no medido directamente porque no se debe escribir la
+  contraseña de la app en un navegador controlado por Claude — pedirle al
+  usuario que abra el dashboard el mismo y reporte lo que siente).
+
+### Páginas de autoservicio (sidebar "Administración", solo `admin: True`)
+Reemplazan flujos que antes exigian acceso a esta maquina o pedirle a
+Claude que corriera un script Python:
+- **`/subir_ventas`**: arrastrar el export mensual de SAP (cualquier
+  nombre de archivo, las fechas salen de la columna FECHA_CONTA, no del
+  nombre) → `_normalizar_df()` + `_aplicar_sucursal_logica()` (reusa
+  data_loader.py) → `sincronizar_ventas_pg()`. Funciona igual en Vercel
+  que local — no toca el Excel/cache local NUNCA (decision explicita:
+  Postgres es la fuente real para esta via).
+- **`/cargar_ne`** y **`/cargar_metas`**: tablas web (roster desde
+  `vendedor_home`, no desde los Excel) que reemplazan `NE_x_Facturar.xlsx`
+  (columnas bloqueadas) y `metas.xlsx` (sin interfaz alguna antes).
+  `/cargar_metas` tiene selector de mes/año + boton "Copiar mes anterior".
+- **`/gestionar_vendedores`**: formulario sobre
+  `asignar_vendedor_home`/`quitar_vendedor_home`/`reemplazar_vendedor`
+  (ver seccion Sucursales lógicas mas abajo). El campo de nombre usa un
+  `<datalist>` poblado con nombres REALES que aparecen en `ventas` (no
+  texto libre sin validar) + vista previa en vivo ("X tiene $Y en Z
+  filas") — esto es mas sensible que NE/Metas porque un error de tipeo
+  aqui reatribuye venta real en silencio (cae en "OTROS") en vez de
+  fallar visiblemente.
+- Todas via `/api/gestionar_vendedores`, `/api/cargar_ne`, `/api/cargar_metas`,
+  `/api/subir_ventas` — mismo patron: GET trae datos, POST guarda,
+  `admin_requerido` en ambos.
+
 ## Sucursales lógicas (SUCURSAL_LOGICA) y vendedores
 SAP maneja sucursales físicas. La función `_aplicar_sucursal_logica()`:
 - Mapea sucursales físicas → lógicas (`_MAPA_SUC_BASE`).
@@ -220,8 +373,9 @@ resincronizacion de historia:
     filas de `metas`/`ne_x_facturar` de nombre_viejo a nombre_nuevo
     (mismo puesto, mismas metas/NE pendientes). Este es el caso real de
     Igor Moya → Marcelo Gatica (hecho a mano antes de que existiera
-    esta funcion — ver commits `c7632eb`/`bf...` para la migracion
-    completa).
+    esta funcion — ver commit `c7632eb` para la migracion original a
+    mano, y `0a81f5d` donde se construyo `v_ventas`/`vendedor_home`
+    para que el proximo caso sea automatico).
 - `VEND_HOME` (Python) y `vendedor_home` (Postgres) NO estan
   sincronizados automaticamente entre si — son independientes a
   proposito (Postgres no debe depender de Excel ni viceversa). Si se
@@ -255,15 +409,48 @@ solo a partir de los índices de las series agregadas (YTD-filtradas),
 alguien que vendió solo fuera de esa ventana desaparece de la lista
 en vez de mostrarse en $0 (bug real que apareció al optimizar esto).
 
+## Nro Docs (Proyección) — contar documentos, no filas ni strings
+`get_proyeccion()`/`get_proyeccion_pg()` calculan `nro_docs` por
+sucursal+vendedor. Un documento (boleta/factura) trae **una fila por
+producto vendido**, asi que:
+- **NUNCA usar `count(*)`/`("TOTAL","count")`** — cuenta filas/lineas,
+  no documentos (bug real encontrado 2026-08-19: 458 "documentos"
+  mostrados vs 176 reales para un vendedor en un mes real, ~2.6x
+  inflado). El numero correcto es DOC_SAP+FOLIO **distintos**.
+- **En pandas, NO concatenar DOC_SAP+FOLIO como string para dedupe**
+  (`df["DOC_SAP"].astype(str) + "||" + df["FOLIO"].astype(str)`) — FOLIO
+  es float64 (columna con folios faltantes fuerza el tipo) y ese camino
+  junta documentos DISTINTOS por error de conversion a texto (bug real:
+  2410 "documentos" via string vs 2529 reales comparando las columnas
+  crudas para un mes completo). Usar
+  `df.groupby([...]).apply(lambda g: g[["DOC_SAP","FOLIO"]].drop_duplicates().shape[0])`
+  en su lugar — el numero de grupos (sucursal+vendedor, ~50) es chico,
+  `.apply()` ahi es rapido (no es el caso de CLIENTE/DESCRIPCION con
+  miles de valores distintos, ver "Reporte generico por campo" abajo).
+- En Postgres, `count(DISTINCT (doc_sap, folio))` es correcto y no tiene
+  el problema de precision de pandas (ambas columnas son `text` en la
+  tabla `ventas`, no float) — no usar `count(*)` ahi tampoco.
+- Un documento real puede repartir sus lineas entre 2 vendedores/
+  sucursales distintos en casos raros (3 de ~2500 en agosto 2026) — la
+  suma de `nro_docs` por fila queda un poco por encima (ej. 2532) del
+  total global de documentos distintos (2529); es correcto, no un bug
+  (cada grupo cuenta el documento una vez, si aparece en 2 grupos se
+  cuenta 2 veces en la suma).
+
 ## NE x Facturar (Negocios Ganados por facturar)
-- `data/comercial/NE_x_Facturar.xlsx`: 1 fila por vendedor home (más "OTROS" por
-  sucursal), columnas Sucursal/Vendedor bloqueadas, solo Monto NE
-  editable. Lo actualiza el gerente comercial ~1 vez por semana.
-- `generar_plantilla_ne.py`: regenera la plantilla si cambia el equipo
-  de ventas (conserva montos ya cargados para quienes siguen).
+- **Fuente real desde 2026-08-19: tabla `ne_x_facturar` en Postgres,
+  editable en `/cargar_ne`** (self-service, sin Excel). El Excel local
+  (`data/comercial/NE_x_Facturar.xlsx`, 1 fila por vendedor home + "OTROS"
+  por sucursal) sigue existiendo pero es legacy — ya no se lee para el
+  dashboard real, solo lo usa `data_loader.get_proyeccion()` (lado Excel,
+  ground truth del diff).
+- `generar_plantilla_ne.py`: sigue regenerando el Excel legacy si cambia
+  `VEND_HOME` — util para mantener consistencia si alguna vez se necesita
+  comparar el lado Excel, pero ya no es el flujo operativo real.
 - En Proyección: `Proy. Lineal + NE = Proy. Lineal + Monto NE`,
   `Mg con NE = Proy. Mg + Monto NE × 20%` (`MG_NE_PCT` en data_loader.py).
-- Si el archivo no existe, todo el mecanismo es no-op (monto_ne = 0).
+- Lado Postgres: si un vendedor no tiene fila en `ne_x_facturar`, el
+  monto es 0 (mismo no-op que el lado Excel si el archivo no existe).
 
 ## Colores (base.html `:root`)
 `--red` es un rojo real (`#ef4444`). El verde de marca (`#22a347`, usado
@@ -281,22 +468,42 @@ correo con cualquier capitalización al iniciar sesión).
 servidor si no es admin). Por defecto los gerentes nuevos NO son admin.
 Session Flask con secret_key.
 
-Usuarios actuales (actualizado 2026-07-20):
-| Correo | Nombre | Admin |
+Usuarios actuales (actualizado 2026-08-19):
+| Correo | Nombre | Admin (ve "Administración") |
 |---|---|---|
-| dsepulveda@casamusa.cl | Administrador | ✅ Sí (único) |
-| emusa@casamusa.cl | G. General | No |
+| dsepulveda@casamusa.cl | Administrador | ✅ Sí |
+| emusa@casamusa.cl | G. General | ✅ Sí (agregado 2026-08-19, sube venta mensual) |
+| jsantana@casamusa.cl | Comercial | ✅ Sí (agregado 2026-08-19, sube venta mensual) |
+| naguilera@casamusa.cl | ECI | ✅ Sí |
 | fmusa@casamusa.cl | Importaciones | No |
 | malvarado@casamusa.cl | Finanzas | No |
-| jsantana@casamusa.cl | Comercial | No |
-| naguilera@casamusa.cl | ECI | No |
 
-Las claves siguen el patrón `Rol2026` (ej. `Admin2026`, `ECI2026`).
-Los usuarios previos (gerente@, ventas@, enrique@, marcelo@, y el
-antiguo "David Sepúlveda") fueron eliminados — dsepulveda@casamusa.cl
-se reutilizó para el nuevo rol "Administrador".
+Jefes de sucursal (ven solo su sucursal, sin "Administración"):
+| Correo | Sucursal(es) |
+|---|---|
+| gcarrasco@casamusa.cl | MT |
+| sarjona@casamusa.cl | LC |
+| evalera@casamusa.cl | MR |
+| jvillegas@casamusa.cl | CH + MP (perfil "Express") |
+
+Las claves siguen el patrón `Rol2026` (ej. `Admin2026`, `ECI2026`,
+`Comercial2026`, `GGeneral2026`). Los usuarios previos (gerente@,
+ventas@, enrique@, marcelo@, y el antiguo "David Sepúlveda") fueron
+eliminados — dsepulveda@casamusa.cl se reutilizó para el nuevo rol
+"Administrador". emusa/jsantana recibieron `admin: True` el 2026-08-19
+especificamente para poder usar `/subir_ventas` (las 3 personas que
+suben la venta mensual: dsepulveda, jsantana, emusa) — esto tambien
+les dio acceso a `/cargar_ne`, `/cargar_metas` y `/gestionar_vendedores`,
+ya que hoy `admin` es un solo flag (no hay permisos mas finos).
 
 ## Páginas activas
+Las 14 de esta tabla corren sobre Postgres desde Fase 1 (2026-08-19) —
+la columna "Función datos" lista la version Excel; la real (Vercel y
+local) es la misma función + sufijo `_pg` en `data_loader_pg.py`. Las 4
+páginas de autoservicio (`/subir_ventas`, `/cargar_ne`, `/cargar_metas`,
+`/gestionar_vendedores`) no están en esta tabla porque no muestran un
+reporte — ver sección "Páginas de autoservicio" más arriba.
+
 | Ruta | Template | Función datos |
 |------|----------|---------------|
 | /resumen | resumen.html | get_resumen() |
@@ -328,7 +535,10 @@ Ambas paginas comparten `/api/filtros_proyeccion`
 data_loader.py. Si se agrega un filtro nuevo a una, hay que
 agregarlo a ambos lugares (la lista de opciones Y el mapeo
 clave→columna en `_aplicar_filtros_comunes`) o quedará en el
-dropdown pero sin efecto real.
+dropdown pero sin efecto real. **Lado Postgres:** equivalente es
+`get_filtros_proyeccion_pg()` y `_filtros_comunes_sql()` en
+data_loader_pg.py — un filtro nuevo tambien hay que agregarlo ahi
+(y en `_filtros_vta_sql()`/`FILTROS_VTA_COL` si aplica a Vta Acumulada).
 
 ## Barra lateral colapsable
 `base.html` tiene un botón (`#sidebar-toggle`, borde de la barra,
@@ -367,12 +577,22 @@ Los reportes siguen la estructura del sistema BIWISER interno:
    JS: `'$' + Math.round(v).toLocaleString('es-CL')`
 4. No crear el cache (parquet/pkl) desde sandbox Linux — solo Flask en
    Windows debe crearlo.
-5. Tras cualquier cambio en data_loader.py o templates, reiniciar Flask
-   (matar proceso en puerto 5000 y volver a lanzar) — no hay reloader
-   activo (`debug=False`).
-6. `app.py` fuerza stdout/stderr a UTF-8 al importar — necesario porque
+5. Tras cualquier cambio en `.py` (data_loader.py, data_loader_pg.py,
+   app.py) o templates, reiniciar el Servicio de Windows
+   `CasaMusaDashboard` (`services.msc`, no matar-proceso-y-relanzar —
+   ver Stack arriba) — no hay reloader activo (`debug=False`), y Claude
+   Code no tiene permisos de administrador en esta maquina para
+   reiniciarlo solo, hay que pedirselo al usuario cada vez.
+6. Tras cualquier cambio en `data_loader_pg.py` o en las tablas de
+   Postgres, correr `python scripts/validar_fase1_comercial.py` antes
+   de dar el cambio por terminado.
+7. `app.py` fuerza stdout/stderr a UTF-8 al importar — necesario porque
    la consola de Windows por defecto no soporta los caracteres de caja
    del banner ni tildes en prints.
+8. El puerto de Flask es configurable via env var `PORT` (default 5000,
+   sin cambiar el comportamiento normal) — permite levantar una
+   instancia de prueba en otro puerto (`PORT=5051 python app.py`) sin
+   afectar el servicio real mientras se prueba algo nuevo.
 
 ## Formato numérico (JS)
 ```js
