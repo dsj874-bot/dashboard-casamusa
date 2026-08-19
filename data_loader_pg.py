@@ -1338,6 +1338,87 @@ def reemplazar_vendedor(nombre_viejo, nombre_nuevo, sucursal, vigente_desde=None
     db.execute("UPDATE ne_x_facturar SET vendedor = %s, updated_at = now() WHERE vendedor = %s", (nombre_nuevo, nombre_viejo))
 
 
+def _roster_por_sucursal(cur):
+    """(sucursal -> [vendedores]) desde vendedor_home, ordenado por
+    ORDEN_SUCURSALES y alfabetico dentro de cada sucursal. Fuente unica
+    del roster para las tablas web de NE/Metas -- un vendedor nuevo
+    (agregado via asignar_vendedor_home) aparece solo, sin regenerar
+    nada a mano."""
+    cur.execute("SELECT vendedor, sucursal FROM vendedor_home")
+    por_suc = {}
+    for f in cur.fetchall():
+        por_suc.setdefault(f["sucursal"], []).append(f["vendedor"])
+    orden_suc = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
+    return {suc: sorted(vends) for suc, vends in sorted(por_suc.items(), key=lambda kv: orden_suc.get(kv[0], 99))}
+
+
+def get_ne_x_facturar_pg():
+    """Roster completo (vendedor_home + una fila 'OTROS' por sucursal,
+    igual que generar_plantilla_ne.py) con el monto NE actual -- 0 si
+    nunca se cargo nada para ese vendedor."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            roster = _roster_por_sucursal(cur)
+            cur.execute("SELECT sucursal, vendedor, monto_ne FROM ne_x_facturar")
+            montos = {(f["sucursal"], f["vendedor"]): float(f["monto_ne"]) for f in cur.fetchall()}
+
+    filas = []
+    for suc, vendedores in roster.items():
+        for vend in vendedores:
+            filas.append({"sucursal": suc, "vendedor": vend, "monto_ne": montos.get((suc, vend), 0.0)})
+        filas.append({"sucursal": suc, "vendedor": "OTROS", "monto_ne": montos.get((suc, "OTROS"), 0.0)})
+    return filas
+
+
+def guardar_ne_x_facturar_pg(filas, updated_by="admin"):
+    """filas: [{sucursal, vendedor, monto_ne}, ...] -- upsert completo."""
+    sql = """INSERT INTO ne_x_facturar (sucursal, vendedor, monto_ne, updated_by)
+             VALUES (%(sucursal)s, %(vendedor)s, %(monto_ne)s, %(by)s)
+             ON CONFLICT (sucursal, vendedor) DO UPDATE SET
+               monto_ne = excluded.monto_ne, updated_at = now(), updated_by = excluded.updated_by"""
+    params = [
+        {"sucursal": f["sucursal"], "vendedor": f["vendedor"], "monto_ne": f["monto_ne"], "by": updated_by}
+        for f in filas
+    ]
+    with db.get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(sql, params)
+        conn.commit()
+
+
+def get_metas_roster_pg(ano, mes):
+    """Roster de vendedor_home (sin fila OTROS, igual que metas.xlsx
+    hoy) con la meta guardada para (ano, mes) -- 0 si no hay nada
+    cargado aun para ese mes."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            roster = _roster_por_sucursal(cur)
+            cur.execute("SELECT sucursal, vendedor, meta FROM metas WHERE ano = %s AND mes = %s", (ano, mes))
+            metas_actual = {(f["sucursal"], f["vendedor"]): float(f["meta"]) for f in cur.fetchall()}
+
+    filas = []
+    for suc, vendedores in roster.items():
+        for vend in vendedores:
+            filas.append({"sucursal": suc, "vendedor": vend, "meta": metas_actual.get((suc, vend), 0.0)})
+    return filas
+
+
+def guardar_metas_pg(ano, mes, filas):
+    """filas: [{sucursal, vendedor, meta}, ...] -- upsert completo para
+    ese (ano, mes)."""
+    sql = """INSERT INTO metas (ano, mes, sucursal, vendedor, meta)
+             VALUES (%(ano)s, %(mes)s, %(sucursal)s, %(vendedor)s, %(meta)s)
+             ON CONFLICT (ano, mes, sucursal, vendedor) DO UPDATE SET meta = excluded.meta"""
+    params = [
+        {"ano": ano, "mes": mes, "sucursal": f["sucursal"], "vendedor": f["vendedor"], "meta": f["meta"]}
+        for f in filas
+    ]
+    with db.get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(sql, params)
+        conn.commit()
+
+
 def confirmar_fecha_pg(fecha, updated_by="actualizar_diario"):
     """Equivalente Postgres de escribir data/comercial/fecha_confirmada.txt
     -- upsert en control_datos (area='comercial'). GREATEST() lo hace

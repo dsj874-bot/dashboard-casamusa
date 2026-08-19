@@ -875,6 +875,70 @@ def api_subir_ventas():
     })
 
 
+# ══════════════════════════════════════════════════════
+#  NE X FACTURAR — tabla web (reemplaza el Excel de columnas
+#  bloqueadas: el roster sale de vendedor_home, el monto se edita y
+#  guarda directo en Postgres)
+# ══════════════════════════════════════════════════════
+@app.route("/cargar_ne")
+@admin_requerido
+def cargar_ne():
+    return render_template("cargar_ne.html",
+                           active="cargar_ne",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/cargar_ne", methods=["GET", "POST"])
+@admin_requerido
+def api_cargar_ne():
+    if not USAR_POSTGRES_COMERCIAL:
+        return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_COMERCIAL=1)."}), 400
+    try:
+        if request.method == "GET":
+            return jsonify({"ok": True, "filas": data_loader_pg.get_ne_x_facturar_pg()})
+
+        body = request.get_json(silent=True) or {}
+        filas = body.get("filas", [])
+        data_loader_pg.guardar_ne_x_facturar_pg(filas, updated_by=session.get("usuario", "admin"))
+        return jsonify({"ok": True, "msg": f"Guardado: {len(filas)} filas de NE x Facturar."})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+# ══════════════════════════════════════════════════════
+#  METAS — tabla web (reemplaza metas.xlsx; roster desde
+#  vendedor_home, una meta por vendedor/mes/año)
+# ══════════════════════════════════════════════════════
+@app.route("/cargar_metas")
+@admin_requerido
+def cargar_metas():
+    return render_template("cargar_metas.html",
+                           active="cargar_metas",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/cargar_metas", methods=["GET", "POST"])
+@admin_requerido
+def api_cargar_metas():
+    if not USAR_POSTGRES_COMERCIAL:
+        return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_COMERCIAL=1)."}), 400
+    try:
+        if request.method == "GET":
+            hoy = data_loader._hoy()
+            ano = int(request.args.get("ano", hoy.year))
+            mes = int(request.args.get("mes", hoy.month))
+            return jsonify({"ok": True, "ano": ano, "mes": mes, "filas": data_loader_pg.get_metas_roster_pg(ano, mes)})
+
+        body = request.get_json(silent=True) or {}
+        ano   = int(body.get("ano"))
+        mes   = int(body.get("mes"))
+        filas = body.get("filas", [])
+        data_loader_pg.guardar_metas_pg(ano, mes, filas)
+        return jsonify({"ok": True, "msg": f"Guardado: {len(filas)} metas de {mes:02d}/{ano}."})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
 @app.route("/admin/actualizar_inventario", methods=["POST"])
 @admin_requerido
 def admin_actualizar_inventario():

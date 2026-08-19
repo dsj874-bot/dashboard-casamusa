@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block title %}Cargar Metas{% endblock %}
+{% block page_title %}Cargar Metas{% endblock %}
+{% block page_subtitle %}Meta mensual por sucursal y vendedor{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .tabla-wrap { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+
+  .selector-mes {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 18px;
+  }
+  .selector-mes select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 13px;
+  }
+  .btn-copiar {
+    margin-left: auto;
+    padding: 8px 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted2);
+    border-radius: 8px;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  .btn-copiar:hover { border-color: var(--accent); color: var(--text); }
+
+  .tabla-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  table.tbl-editable { width: 100%; border-collapse: collapse; }
+  table.tbl-editable thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--muted);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.tbl-editable thead th.col-monto { text-align: right; }
+  table.tbl-editable tbody td {
+    padding: 9px 16px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.tbl-editable tbody tr:last-child td { border-bottom: none; }
+  table.tbl-editable tbody tr.fila-suc-inicio td { border-top: 2px solid var(--border); }
+  table.tbl-editable tbody tr.fila-suc-inicio:first-child td { border-top: none; }
+  .col-suc { font-weight: 700; color: var(--accent); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .col-vend { color: var(--text); }
+
+  input.input-monto {
+    width: 130px;
+    text-align: right;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 6px 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  input.input-monto:focus { outline: none; border-color: var(--accent); }
+
+  .barra-guardar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .btn-guardar {
+    padding: 12px 24px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-guardar:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .resultado { display: none; border-radius: 10px; padding: 12px 16px; font-size: 13px; }
+  .resultado.mostrar { display: block; }
+  .resultado.ok { background: rgba(34,163,71,0.12); border: 1px solid var(--accent); color: var(--text); }
+  .resultado.error { background: rgba(239,68,68,0.1); border: 1px solid var(--red); color: var(--red-light); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tabla-wrap">
+
+  <div class="selector-mes">
+    <label>Mes</label>
+    <select id="sel-mes">
+      <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+      <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+      <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+      <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+    </select>
+    <label>Año</label>
+    <select id="sel-ano"></select>
+    <button class="btn-copiar" id="btn-copiar">📋 Copiar mes anterior</button>
+  </div>
+
+  <div class="tabla-card">
+    <table class="tbl-editable" id="tabla-metas">
+      <thead>
+        <tr>
+          <th>Sucursal</th>
+          <th>Vendedor</th>
+          <th class="col-monto">Meta</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-metas"></tbody>
+    </table>
+  </div>
+
+  <div class="barra-guardar">
+    <button class="btn-guardar" id="btn-guardar">Guardar cambios</button>
+    <span id="resultado" class="resultado"></span>
+  </div>
+
+</div>
+
+<script>
+  const selMes = document.getElementById('sel-mes');
+  const selAno = document.getElementById('sel-ano');
+  const tbody = document.getElementById('tbody-metas');
+  const btnGuardar = document.getElementById('btn-guardar');
+  const btnCopiar = document.getElementById('btn-copiar');
+  const resultadoEl = document.getElementById('resultado');
+
+  const hoy = new Date();
+  for (let a = hoy.getFullYear() - 1; a <= hoy.getFullYear() + 1; a++) {
+    const opt = document.createElement('option');
+    opt.value = a; opt.textContent = a;
+    if (a === hoy.getFullYear()) opt.selected = true;
+    selAno.appendChild(opt);
+  }
+  selMes.value = hoy.getMonth() + 1;
+
+  function fmtInput(v) { return Math.round(v).toString(); }
+
+  function pintarFilas(filas) {
+    tbody.innerHTML = '';
+    let sucAnterior = null;
+    for (const f of filas) {
+      const tr = document.createElement('tr');
+      if (f.sucursal !== sucAnterior) tr.classList.add('fila-suc-inicio');
+      sucAnterior = f.sucursal;
+
+      const tdSuc = document.createElement('td');
+      tdSuc.className = 'col-suc';
+      tdSuc.textContent = f.sucursal;
+
+      const tdVend = document.createElement('td');
+      tdVend.className = 'col-vend';
+      tdVend.textContent = f.vendedor;
+
+      const tdMeta = document.createElement('td');
+      tdMeta.style.textAlign = 'right';
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'input-monto';
+      input.dataset.sucursal = f.sucursal;
+      input.dataset.vendedor = f.vendedor;
+      input.value = fmtInput(f.meta);
+      tdMeta.appendChild(input);
+
+      tr.append(tdSuc, tdVend, tdMeta);
+      tbody.appendChild(tr);
+    }
+  }
+
+  async function cargar(ano, mes) {
+    const r = await fetch(`/api/cargar_metas?ano=${ano}&mes=${mes}`);
+    const d = await r.json();
+    if (d.ok) pintarFilas(d.filas);
+    resultadoEl.classList.remove('mostrar');
+  }
+
+  function mostrarResultado(ok, msg) {
+    resultadoEl.textContent = msg;
+    resultadoEl.className = 'resultado mostrar ' + (ok ? 'ok' : 'error');
+  }
+
+  selMes.addEventListener('change', () => cargar(selAno.value, selMes.value));
+  selAno.addEventListener('change', () => cargar(selAno.value, selMes.value));
+
+  btnCopiar.addEventListener('click', async () => {
+    let mesAnterior = parseInt(selMes.value) - 1;
+    let anoAnterior = parseInt(selAno.value);
+    if (mesAnterior < 1) { mesAnterior = 12; anoAnterior -= 1; }
+    const r = await fetch(`/api/cargar_metas?ano=${anoAnterior}&mes=${mesAnterior}`);
+    const d = await r.json();
+    if (!d.ok) { mostrarResultado(false, d.msg); return; }
+    const metasPrevias = {};
+    for (const f of d.filas) metasPrevias[f.sucursal + '|' + f.vendedor] = f.meta;
+    tbody.querySelectorAll('input.input-monto').forEach(inp => {
+      const clave = inp.dataset.sucursal + '|' + inp.dataset.vendedor;
+      if (clave in metasPrevias) inp.value = fmtInput(metasPrevias[clave]);
+    });
+    mostrarResultado(true, `Copiado desde ${mesAnterior}/${anoAnterior} — revisa y presiona "Guardar cambios".`);
+  });
+
+  btnGuardar.addEventListener('click', async () => {
+    const filas = Array.from(tbody.querySelectorAll('input.input-monto')).map(inp => ({
+      sucursal: inp.dataset.sucursal,
+      vendedor: inp.dataset.vendedor,
+      meta: parseFloat(inp.value) || 0,
+    }));
+    btnGuardar.disabled = true;
+    btnGuardar.textContent = 'Guardando...';
+    try {
+      const r = await fetch('/api/cargar_metas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ano: parseInt(selAno.value), mes: parseInt(selMes.value), filas }),
+      });
+      const d = await r.json();
+      mostrarResultado(d.ok, d.msg);
+    } catch (e) {
+      mostrarResultado(false, 'Error de conexión al guardar.');
+    } finally {
+      btnGuardar.disabled = false;
+      btnGuardar.textContent = 'Guardar cambios';
+    }
+  });
+
+  cargar(selAno.value, selMes.value);
+</script>
+{% endblock %}

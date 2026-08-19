@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}NE x Facturar{% endblock %}
+{% block page_title %}NE x Facturar{% endblock %}
+{% block page_subtitle %}Negocios Ganados aún no facturados, por sucursal y vendedor{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .tabla-wrap { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+
+  .tabla-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  table.tbl-editable { width: 100%; border-collapse: collapse; }
+  table.tbl-editable thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--muted);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.tbl-editable thead th.col-monto { text-align: right; }
+  table.tbl-editable tbody td {
+    padding: 9px 16px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.tbl-editable tbody tr:last-child td { border-bottom: none; }
+  table.tbl-editable tbody tr.fila-suc-inicio td { border-top: 2px solid var(--border); }
+  table.tbl-editable tbody tr.fila-suc-inicio:first-child td { border-top: none; }
+  .col-suc { font-weight: 700; color: var(--accent); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .col-vend { color: var(--text); }
+  .col-vend.es-otros { color: var(--muted2); font-style: italic; }
+
+  input.input-monto {
+    width: 130px;
+    text-align: right;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 6px 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  input.input-monto:focus { outline: none; border-color: var(--accent); }
+
+  .barra-guardar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .btn-guardar {
+    padding: 12px 24px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-guardar:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .resultado { display: none; border-radius: 10px; padding: 12px 16px; font-size: 13px; }
+  .resultado.mostrar { display: block; }
+  .resultado.ok { background: rgba(34,163,71,0.12); border: 1px solid var(--accent); color: var(--text); }
+  .resultado.error { background: rgba(239,68,68,0.1); border: 1px solid var(--red); color: var(--red-light); }
+
+  .info-nota { font-size: 12.5px; color: var(--muted2); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tabla-wrap">
+
+  <p class="info-nota">Se actualiza aprox. 1 vez por semana. Solo edita "Monto NE" — el resto se arma solo desde el equipo actual.</p>
+
+  <div class="tabla-card">
+    <table class="tbl-editable" id="tabla-ne">
+      <thead>
+        <tr>
+          <th>Sucursal</th>
+          <th>Vendedor</th>
+          <th class="col-monto">Monto NE</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-ne"></tbody>
+    </table>
+  </div>
+
+  <div class="barra-guardar">
+    <button class="btn-guardar" id="btn-guardar">Guardar cambios</button>
+    <span id="resultado" class="resultado"></span>
+  </div>
+
+</div>
+
+<script>
+  const tbody = document.getElementById('tbody-ne');
+  const btnGuardar = document.getElementById('btn-guardar');
+  const resultadoEl = document.getElementById('resultado');
+
+  function fmtInput(v) { return Math.round(v).toString(); }
+
+  function pintarFilas(filas) {
+    tbody.innerHTML = '';
+    let sucAnterior = null;
+    for (const f of filas) {
+      const tr = document.createElement('tr');
+      if (f.sucursal !== sucAnterior) tr.classList.add('fila-suc-inicio');
+      sucAnterior = f.sucursal;
+
+      const tdSuc = document.createElement('td');
+      tdSuc.className = 'col-suc';
+      tdSuc.textContent = f.sucursal;
+
+      const tdVend = document.createElement('td');
+      tdVend.className = 'col-vend' + (f.vendedor === 'OTROS' ? ' es-otros' : '');
+      tdVend.textContent = f.vendedor;
+
+      const tdMonto = document.createElement('td');
+      tdMonto.style.textAlign = 'right';
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'input-monto';
+      input.dataset.sucursal = f.sucursal;
+      input.dataset.vendedor = f.vendedor;
+      input.value = fmtInput(f.monto_ne);
+      tdMonto.appendChild(input);
+
+      tr.append(tdSuc, tdVend, tdMonto);
+      tbody.appendChild(tr);
+    }
+  }
+
+  async function cargar() {
+    const r = await fetch('/api/cargar_ne');
+    const d = await r.json();
+    if (d.ok) pintarFilas(d.filas);
+  }
+
+  function mostrarResultado(ok, msg) {
+    resultadoEl.textContent = msg;
+    resultadoEl.className = 'resultado mostrar ' + (ok ? 'ok' : 'error');
+  }
+
+  btnGuardar.addEventListener('click', async () => {
+    const filas = Array.from(tbody.querySelectorAll('input.input-monto')).map(inp => ({
+      sucursal: inp.dataset.sucursal,
+      vendedor: inp.dataset.vendedor,
+      monto_ne: parseFloat(inp.value) || 0,
+    }));
+    btnGuardar.disabled = true;
+    btnGuardar.textContent = 'Guardando...';
+    try {
+      const r = await fetch('/api/cargar_ne', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filas }),
+      });
+      const d = await r.json();
+      mostrarResultado(d.ok, d.msg);
+    } catch (e) {
+      mostrarResultado(false, 'Error de conexión al guardar.');
+    } finally {
+      btnGuardar.disabled = false;
+      btnGuardar.textContent = 'Guardar cambios';
+    }
+  });
+
+  cargar();
+</script>
+{% endblock %}
