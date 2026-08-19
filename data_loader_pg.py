@@ -1419,6 +1419,47 @@ def guardar_metas_pg(ano, mes, filas):
         conn.commit()
 
 
+def get_roster_vendedor_home_pg():
+    """Contenido actual de vendedor_home, ordenado por sucursal
+    (ORDEN_SUCURSALES) y alfabetico -- para mostrar en la pantalla de
+    gestion de vendedores."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT vendedor, sucursal, vigente_desde FROM vendedor_home")
+            filas = cur.fetchall()
+    orden_suc = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
+    filas = sorted(filas, key=lambda f: (orden_suc.get(f["sucursal"], 99), f["vendedor"]))
+    return [
+        {
+            "vendedor": f["vendedor"],
+            "sucursal": f["sucursal"],
+            "vigente_desde": f["vigente_desde"].isoformat() if f["vigente_desde"] else None,
+        }
+        for f in filas
+    ]
+
+
+def get_vendedores_con_venta_pg():
+    """Todo nombre de VENDEDOR (crudo, tal cual SAP) que aparece en
+    ventas, con su venta total y filas -- para el buscador/autocomplete
+    de la pantalla de gestion de vendedores. Un nombre elegido de aqui
+    hace match exacto garantizado (evita errores de tipeo al mover/
+    reemplazar a alguien); un nombre que NO aparece aqui es un
+    vendedor nuevo sin ventas registradas todavia."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT vendedor, sum(total) AS venta, count(*) AS n_filas
+                    FROM ventas WHERE vendedor IS NOT NULL
+                    GROUP BY vendedor ORDER BY vendedor"""
+            )
+            filas = cur.fetchall()
+    return [
+        {"vendedor": f["vendedor"], "venta": float(f["venta"]), "n_filas": f["n_filas"]}
+        for f in filas
+    ]
+
+
 def confirmar_fecha_pg(fecha, updated_by="actualizar_diario"):
     """Equivalente Postgres de escribir data/comercial/fecha_confirmada.txt
     -- upsert en control_datos (area='comercial'). GREATEST() lo hace

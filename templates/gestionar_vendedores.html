@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+
+{% block title %}Gestionar Vendedores{% endblock %}
+{% block page_title %}Gestionar Vendedores{% endblock %}
+{% block page_subtitle %}Mover, sacar o reemplazar vendedores del equipo comercial{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .gv-wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+
+  .roster-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .roster-card h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 12px; }
+  .roster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 20px; }
+  .roster-suc { font-weight: 700; color: var(--accent); font-size: 11.5px; text-transform: uppercase; margin-bottom: 4px; }
+  .roster-vend { font-size: 12.5px; color: var(--text); padding: 2px 0; display: flex; justify-content: space-between; gap: 6px; }
+  .roster-vend .desde { color: var(--muted2); font-size: 11px; }
+
+  .accion-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 12px;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .accion-card h3 { font-size: 15px; margin: 0; }
+  .accion-card p.desc { font-size: 12.5px; color: var(--muted2); margin: 0; }
+
+  .campo { display: flex; flex-direction: column; gap: 5px; }
+  .campo label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+  .campo input, .campo select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+  .fila-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  .preview {
+    font-size: 12.5px;
+    border-radius: 8px;
+    padding: 9px 12px;
+    background: var(--surface2);
+    color: var(--muted2);
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+  }
+  .preview.tiene-venta { color: var(--accent); }
+  .preview.nuevo { color: var(--amber); }
+
+  .btn-accion {
+    align-self: flex-start;
+    padding: 9px 18px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-accion:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .resultado { display: none; font-size: 12.5px; border-radius: 8px; padding: 8px 12px; }
+  .resultado.mostrar { display: block; }
+  .resultado.ok { background: rgba(34,163,71,0.12); border: 1px solid var(--accent); color: var(--text); }
+  .resultado.error { background: rgba(239,68,68,0.1); border: 1px solid var(--red); color: var(--red-light); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="gv-wrap">
+
+  <div class="roster-card">
+    <h3>Equipo actual</h3>
+    <div class="roster-grid" id="roster-grid"></div>
+  </div>
+
+  <!-- ── Mover de sucursal ─────────────────────── -->
+  <div class="accion-card">
+    <h3>🔀 Mover a alguien de sucursal</h3>
+    <p class="desc">Misma persona, cambia dónde se le atribuye la venta.</p>
+    <div class="fila-2">
+      <div class="campo">
+        <label>Vendedor</label>
+        <input list="lista-vendedores" id="mover-vendedor" placeholder="Nombre tal como aparece en SAP">
+      </div>
+      <div class="campo">
+        <label>Sucursal nueva</label>
+        <select id="mover-sucursal"></select>
+      </div>
+    </div>
+    <div class="campo">
+      <label>Vigente desde (opcional — solo si es un traspaso real)</label>
+      <input type="date" id="mover-fecha">
+    </div>
+    <div class="preview" id="mover-preview">Escribe un nombre para ver su venta actual.</div>
+    <button class="btn-accion" id="mover-btn">Mover</button>
+    <span class="resultado" id="mover-resultado"></span>
+  </div>
+
+  <!-- ── Sacar del equipo ──────────────────────── -->
+  <div class="accion-card">
+    <h3>🚪 Sacar del equipo (sin reemplazo)</h3>
+    <p class="desc">Su venta pasada y futura se cuenta como "Otros" en su sucursal.</p>
+    <div class="campo">
+      <label>Vendedor</label>
+      <select id="quitar-vendedor"><option value="">Elige un vendedor del equipo actual</option></select>
+    </div>
+    <div class="preview" id="quitar-preview"></div>
+    <button class="btn-accion" id="quitar-btn">Sacar del equipo</button>
+    <span class="resultado" id="quitar-resultado"></span>
+  </div>
+
+  <!-- ── Reemplazar ────────────────────────────── -->
+  <div class="accion-card">
+    <h3>🔁 Alguien nuevo reemplaza a otro</h3>
+    <p class="desc">El que se va cae en "Otros"; el que entra toma su sucursal y sus metas/NE pendientes.</p>
+    <div class="fila-2">
+      <div class="campo">
+        <label>Quien se va</label>
+        <select id="reemplazar-viejo"><option value="">Elige un vendedor del equipo actual</option></select>
+      </div>
+      <div class="campo">
+        <label>Quien entra</label>
+        <input list="lista-vendedores" id="reemplazar-nuevo" placeholder="Nombre tal como aparece en SAP">
+      </div>
+    </div>
+    <div class="fila-2">
+      <div class="campo">
+        <label>Sucursal</label>
+        <select id="reemplazar-sucursal"></select>
+      </div>
+      <div class="campo">
+        <label>Vigente desde (opcional)</label>
+        <input type="date" id="reemplazar-fecha">
+      </div>
+    </div>
+    <div class="preview" id="reemplazar-preview">Elige quién se va para ver su sucursal y venta actual.</div>
+    <button class="btn-accion" id="reemplazar-btn">Reemplazar</button>
+    <span class="resultado" id="reemplazar-resultado"></span>
+  </div>
+
+  <datalist id="lista-vendedores"></datalist>
+
+</div>
+
+<script>
+  let ROSTER = [];
+  let VENDEDORES = {};
+
+  function fmtCLP(v) { return '$' + Math.round(v).toLocaleString('es-CL'); }
+
+  function pintarRoster() {
+    const grid = document.getElementById('roster-grid');
+    grid.innerHTML = '';
+    const porSuc = {};
+    for (const f of ROSTER) (porSuc[f.sucursal] = porSuc[f.sucursal] || []).push(f);
+    for (const suc in porSuc) {
+      const col = document.createElement('div');
+      const titulo = document.createElement('div');
+      titulo.className = 'roster-suc';
+      titulo.textContent = suc;
+      col.appendChild(titulo);
+      for (const f of porSuc[suc]) {
+        const row = document.createElement('div');
+        row.className = 'roster-vend';
+        row.innerHTML = `<span>${f.vendedor}</span>` + (f.vigente_desde ? `<span class="desde">desde ${f.vigente_desde}</span>` : '');
+        col.appendChild(row);
+      }
+      grid.appendChild(col);
+    }
+  }
+
+  function pintarSelects() {
+    document.querySelectorAll('#mover-sucursal, #reemplazar-sucursal').forEach(sel => {
+      sel.innerHTML = '';
+      for (const s of SUCURSALES) {
+        const opt = document.createElement('option');
+        opt.value = s; opt.textContent = s;
+        sel.appendChild(opt);
+      }
+    });
+
+    const optsRoster = ROSTER.map(f => `<option value="${f.vendedor}">${f.vendedor} (${f.sucursal})</option>`).join('');
+    document.getElementById('quitar-vendedor').innerHTML = '<option value="">Elige un vendedor del equipo actual</option>' + optsRoster;
+    document.getElementById('reemplazar-viejo').innerHTML = '<option value="">Elige un vendedor del equipo actual</option>' + optsRoster;
+
+    const datalist = document.getElementById('lista-vendedores');
+    datalist.innerHTML = Object.keys(VENDEDORES).map(v => `<option value="${v}">`).join('');
+  }
+
+  function previewVenta(nombre) {
+    const n = (nombre || '').trim().toUpperCase();
+    if (!n) return { html: 'Escribe un nombre para ver su venta actual.', clase: '' };
+    const info = VENDEDORES[n];
+    if (info) return { html: `✓ ${info.n_filas.toLocaleString('es-CL')} filas, ${fmtCLP(info.venta)} en ventas registradas.`, clase: 'tiene-venta' };
+    return { html: 'Sin ventas registradas aún bajo este nombre — se creará como vendedor nuevo.', clase: 'nuevo' };
+  }
+
+  function aplicarPreview(elId, nombre) {
+    const el = document.getElementById(elId);
+    const { html, clase } = previewVenta(nombre);
+    el.textContent = html;
+    el.className = 'preview' + (clase ? ' ' + clase : '');
+  }
+
+  document.getElementById('mover-vendedor').addEventListener('input', (e) => aplicarPreview('mover-preview', e.target.value));
+
+  document.getElementById('quitar-vendedor').addEventListener('change', (e) => {
+    const roster = ROSTER.find(f => f.vendedor === e.target.value);
+    const el = document.getElementById('quitar-preview');
+    if (!roster) { el.textContent = ''; return; }
+    const info = VENDEDORES[e.target.value] || { venta: 0, n_filas: 0 };
+    el.textContent = `Actualmente en ${roster.sucursal} — ${info.n_filas.toLocaleString('es-CL')} filas, ${fmtCLP(info.venta)} en ventas.`;
+    el.className = 'preview';
+  });
+
+  document.getElementById('reemplazar-viejo').addEventListener('change', (e) => {
+    const roster = ROSTER.find(f => f.vendedor === e.target.value);
+    if (roster) document.getElementById('reemplazar-sucursal').value = roster.sucursal;
+    const el = document.getElementById('reemplazar-preview');
+    if (!roster) { el.textContent = 'Elige quién se va para ver su sucursal y venta actual.'; return; }
+    const info = VENDEDORES[e.target.value] || { venta: 0, n_filas: 0 };
+    el.textContent = `${e.target.value} está hoy en ${roster.sucursal} — ${info.n_filas.toLocaleString('es-CL')} filas, ${fmtCLP(info.venta)} en ventas.`;
+    el.className = 'preview';
+  });
+  document.getElementById('reemplazar-nuevo').addEventListener('input', (e) => {
+    const n = e.target.value.trim().toUpperCase();
+    if (!n) return;
+    const info = VENDEDORES[n];
+    const el = document.getElementById('reemplazar-preview');
+    if (info) el.textContent += ` — ${n} ya tiene ${info.n_filas.toLocaleString('es-CL')} filas propias.`;
+  });
+
+  function mostrarResultado(id, ok, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.className = 'resultado mostrar ' + (ok ? 'ok' : 'error');
+  }
+
+  async function enviar(accion, payload, resultadoId, btnId) {
+    const btn = document.getElementById(btnId);
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/gestionar_vendedores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion, ...payload }),
+      });
+      const d = await r.json();
+      mostrarResultado(resultadoId, d.ok, d.msg);
+      if (d.ok) await cargarDatos();
+    } catch (e) {
+      mostrarResultado(resultadoId, false, 'Error de conexión.');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById('mover-btn').addEventListener('click', () => {
+    enviar('asignar', {
+      vendedor: document.getElementById('mover-vendedor').value,
+      sucursal: document.getElementById('mover-sucursal').value,
+      vigente_desde: document.getElementById('mover-fecha').value || null,
+    }, 'mover-resultado', 'mover-btn');
+  });
+
+  document.getElementById('quitar-btn').addEventListener('click', () => {
+    const vendedor = document.getElementById('quitar-vendedor').value;
+    if (!vendedor) { mostrarResultado('quitar-resultado', false, 'Elige un vendedor.'); return; }
+    enviar('quitar', { vendedor }, 'quitar-resultado', 'quitar-btn');
+  });
+
+  document.getElementById('reemplazar-btn').addEventListener('click', () => {
+    enviar('reemplazar', {
+      nombre_viejo: document.getElementById('reemplazar-viejo').value,
+      nombre_nuevo: document.getElementById('reemplazar-nuevo').value,
+      sucursal: document.getElementById('reemplazar-sucursal').value,
+      vigente_desde: document.getElementById('reemplazar-fecha').value || null,
+    }, 'reemplazar-resultado', 'reemplazar-btn');
+  });
+
+  let SUCURSALES = [];
+
+  async function cargarDatos() {
+    const r = await fetch('/api/gestionar_vendedores/datos');
+    const d = await r.json();
+    if (!d.ok) return;
+    ROSTER = d.roster;
+    SUCURSALES = d.sucursales;
+    VENDEDORES = {};
+    for (const v of d.vendedores) VENDEDORES[v.vendedor] = v;
+    pintarRoster();
+    pintarSelects();
+  }
+
+  cargarDatos();
+</script>
+{% endblock %}

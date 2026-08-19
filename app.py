@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
 from functools import wraps
+from datetime import date
 import io
 import os
 import sys
@@ -935,6 +936,76 @@ def api_cargar_metas():
         filas = body.get("filas", [])
         data_loader_pg.guardar_metas_pg(ano, mes, filas)
         return jsonify({"ok": True, "msg": f"Guardado: {len(filas)} metas de {mes:02d}/{ano}."})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+# ══════════════════════════════════════════════════════
+#  GESTIONAR VENDEDORES — mover/sacar/reemplazar sin tocar codigo
+#  (ver CLAUDE.md, seccion "En Postgres: cambiar de sucursal...")
+# ══════════════════════════════════════════════════════
+@app.route("/gestionar_vendedores")
+@admin_requerido
+def gestionar_vendedores():
+    return render_template("gestionar_vendedores.html",
+                           active="gestionar_vendedores",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/gestionar_vendedores/datos")
+@admin_requerido
+def api_gestionar_vendedores_datos():
+    if not USAR_POSTGRES_COMERCIAL:
+        return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_COMERCIAL=1)."}), 400
+    try:
+        return jsonify({
+            "ok": True,
+            "roster": data_loader_pg.get_roster_vendedor_home_pg(),
+            "vendedores": data_loader_pg.get_vendedores_con_venta_pg(),
+            "sucursales": data_loader.ORDEN_SUCURSALES,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+@app.route("/api/gestionar_vendedores", methods=["POST"])
+@admin_requerido
+def api_gestionar_vendedores():
+    if not USAR_POSTGRES_COMERCIAL:
+        return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_COMERCIAL=1)."}), 400
+    body = request.get_json(silent=True) or {}
+    accion = body.get("accion")
+    quien = session.get("usuario", "admin")
+
+    def _fecha(valor):
+        return date.fromisoformat(valor) if valor else None
+
+    try:
+        if accion == "asignar":
+            vendedor = (body.get("vendedor") or "").strip().upper()
+            sucursal = body.get("sucursal")
+            if not vendedor or not sucursal:
+                return jsonify({"ok": False, "msg": "Falta el nombre del vendedor o la sucursal."}), 400
+            data_loader_pg.asignar_vendedor_home(vendedor, sucursal, _fecha(body.get("vigente_desde")), updated_by=quien)
+            return jsonify({"ok": True, "msg": f"{vendedor} asignado a {sucursal}."})
+
+        if accion == "quitar":
+            vendedor = (body.get("vendedor") or "").strip().upper()
+            if not vendedor:
+                return jsonify({"ok": False, "msg": "Falta el nombre del vendedor."}), 400
+            data_loader_pg.quitar_vendedor_home(vendedor)
+            return jsonify({"ok": True, "msg": f"{vendedor} sacado del equipo — su venta pasa a 'Otros'."})
+
+        if accion == "reemplazar":
+            viejo    = (body.get("nombre_viejo") or "").strip().upper()
+            nuevo    = (body.get("nombre_nuevo") or "").strip().upper()
+            sucursal = body.get("sucursal")
+            if not viejo or not nuevo or not sucursal:
+                return jsonify({"ok": False, "msg": "Falta el vendedor que se va, el que entra, o la sucursal."}), 400
+            data_loader_pg.reemplazar_vendedor(viejo, nuevo, sucursal, _fecha(body.get("vigente_desde")), updated_by=quien)
+            return jsonify({"ok": True, "msg": f"{nuevo} reemplaza a {viejo} en {sucursal} (metas/NE ya transferidas)."})
+
+        return jsonify({"ok": False, "msg": "Accion no reconocida."}), 400
     except Exception as e:
         return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
 
