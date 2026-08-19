@@ -1,7 +1,9 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
 from functools import wraps
+import io
 import os
 import sys
+import pandas as pd
 import data_loader
 import data_loader_inventario
 import data_loader_obligatorios
@@ -43,10 +45,10 @@ if USAR_POSTGRES_COMERCIAL:
 # ══════════════════════════════════════════════════════
 GERENTES = {
     "dsepulveda@casamusa.cl": {"password": "Admin2026",         "nombre": "Administrador", "admin": True},
-    "emusa@casamusa.cl":      {"password": "GGeneral2026",      "nombre": "G. General"},
+    "emusa@casamusa.cl":      {"password": "GGeneral2026",      "nombre": "G. General", "admin": True},
     "fmusa@casamusa.cl":      {"password": "Importaciones2026", "nombre": "Importaciones"},
     "malvarado@casamusa.cl":  {"password": "Finanzas2026",      "nombre": "Finanzas"},
-    "jsantana@casamusa.cl":   {"password": "Comercial2026",     "nombre": "Comercial"},
+    "jsantana@casamusa.cl":   {"password": "Comercial2026",     "nombre": "Comercial", "admin": True},
     "naguilera@casamusa.cl":  {"password": "ECI2026",           "nombre": "ECI", "admin": True},
     "gcarrasco@casamusa.cl":  {"password": "MT2026",            "nombre": "MT", "sucursal": "MT"},
     "sarjona@casamusa.cl":    {"password": "LC2026",            "nombre": "LC", "sucursal": "LC"},
@@ -795,6 +797,84 @@ def admin_actualizar():
         return jsonify({"ok": False, "msg": f"Error: {str(e)}"}), 500
 
 
+# ══════════════════════════════════════════════════════
+#  SUBIR VENTAS POR WEB (directo a Postgres, sin depender de esta
+#  maquina) -- pensado para que el Gerente Comercial/G. General suban
+#  el export mensual de SAP desde cualquier lugar, arrastrando el
+#  archivo en el navegador. No toca el Excel/cache local en absoluto
+#  (por diseño -- ver CLAUDE.md): Postgres queda como la fuente real
+#  de lo subido por esta via.
+# ══════════════════════════════════════════════════════
+COLUMNAS_SAP_REQUERIDAS = [
+    "DOC_SAP", "FOLIO", "TIPO_DOC", "FECHA_CONTA", "FECHA_DOC",
+    "CODIGO_CLIENTE", "NOMBRE_CLIENTE", "PROCEDENCIA", "SUCURSAL",
+    "CODIGO_CM", "ID_PROCEDENCIA", "CODIGO_PROVEEDOR", "DESCRIPCION",
+    "MARCA", "UNIDAD_MEDIDA", "FAMILIA", "SUBFAMILIA", "GRUPO",
+    "CANTIDAD", "COSTO_CUP", "COSTO_TOTAL", "PRECIO_UNITARIO", "TOTAL",
+    "UTILIDAD_BRUTA", "MG_BRUTO", "VENDEDOR", "COND_PAGO", "EMPRESA",
+    "PROVEEDOR_POR_DEFECTO", "LIQUIDAR", "ESTATUS_SKU",
+]
+
+
+@app.route("/subir_ventas")
+@admin_requerido
+def subir_ventas():
+    return render_template("subir_ventas.html",
+                           active="subir_ventas",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/subir_ventas", methods=["POST"])
+@admin_requerido
+def api_subir_ventas():
+    if not USAR_POSTGRES_COMERCIAL:
+        return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_COMERCIAL=1)."}), 400
+
+    archivo = request.files.get("archivo")
+    if not archivo or not archivo.filename:
+        return jsonify({"ok": False, "msg": "No se recibio ningun archivo."}), 400
+    if not archivo.filename.lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "msg": "El archivo debe ser .xlsx (export directo de SAP, sin convertir)."}), 400
+
+    try:
+        df = pd.read_excel(io.BytesIO(archivo.read()))
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"No se pudo leer el Excel: {e}"}), 400
+
+    if "TIPO VENTA" in df.columns:
+        df = df.rename(columns={"TIPO VENTA": "TIPO_VENTA"})
+    faltantes = [c for c in COLUMNAS_SAP_REQUERIDAS if c not in df.columns]
+    if faltantes:
+        return jsonify({
+            "ok": False,
+            "msg": f"El archivo no tiene el formato esperado del export de SAP. Faltan columnas: {', '.join(faltantes)}",
+        }), 400
+    if len(df) == 0:
+        return jsonify({"ok": False, "msg": "El archivo esta vacio (0 filas)."}), 400
+
+    try:
+        df = data_loader._normalizar_df(df)
+        df = data_loader._aplicar_sucursal_logica(df)
+        fechas = df["FECHA_CONTA"].dt.date.unique().tolist()
+        data_loader_pg.sincronizar_ventas_pg(df, fechas)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error al procesar/subir el archivo: {e}"}), 500
+
+    n_filas   = len(df)
+    vta_total = round(float(df["TOTAL"].sum()), 0)
+    f_min, f_max = min(fechas), max(fechas)
+    rango = f_min.strftime("%d/%m/%Y") if f_min == f_max else f"{f_min.strftime('%d/%m/%Y')} - {f_max.strftime('%d/%m/%Y')}"
+    filas_fmt = f"{n_filas:,}".replace(",", ".")
+    vta_fmt   = data_loader.fmt_clp(vta_total)
+    return jsonify({
+        "ok": True,
+        "filas": n_filas,
+        "vta": vta_total,
+        "rango": rango,
+        "msg": f"OK: {filas_fmt} filas cargadas ({vta_fmt}), {rango}.",
+    })
+
+
 @app.route("/admin/actualizar_inventario", methods=["POST"])
 @admin_requerido
 def admin_actualizar_inventario():
@@ -981,11 +1061,12 @@ def api_vta_mg_mensual():
 #  ARRANQUE
 # ══════════════════════════════════════════════════════
 if __name__ == "__main__":
+    puerto = int(os.environ.get("PORT", 5000))
     print("")
     print("  ╔══════════════════════════════════════╗")
     print("  ║   CASAMUSA — Dashboard de Gerencia   ║")
     print("  ╚══════════════════════════════════════╝")
     print("")
-    print("  Abre tu navegador en: http://localhost:5000")
+    print(f"  Abre tu navegador en: http://localhost:{puerto}")
     print("")
-    app.run(debug=False, host="0.0.0.0", port=5000)
+    app.run(debug=False, host="0.0.0.0", port=puerto)

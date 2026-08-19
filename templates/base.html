@@ -565,6 +565,13 @@
     <a href="/productos" class="nav-item {% if active == 'productos' %}active{% endif %}">
       <span class="nav-icon">🔩</span><span class="nav-label"> Por Producto</span>
     </a>
+
+    {% if es_admin %}
+    <div class="nav-section-title">Administración</div>
+    <a href="/subir_ventas" class="nav-item {% if active == 'subir_ventas' %}active{% endif %}">
+      <span class="nav-icon">⬆️</span><span class="nav-label"> Subir Ventas</span>
+    </a>
+    {% endif %}
     {% endblock %}
 
   </div>
