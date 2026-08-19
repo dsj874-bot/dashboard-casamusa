@@ -525,7 +525,7 @@ def get_proyeccion_pg(filtros=None):
                 f"""SELECT sucursal_logica, vendedor_rpt,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS vta_mes,
                       coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS mg_mes,
-                      count(*) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s) AS nro_docs,
+                      count(DISTINCT (doc_sap, folio)) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s) AS nro_docs,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS vta_ant
                     FROM v_ventas
                     WHERE (

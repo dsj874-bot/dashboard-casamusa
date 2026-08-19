@@ -1068,12 +1068,27 @@ def get_proyeccion(filtros=None):
     df_mes = df26[df26["MES"] == mes_actual]
     df_ant = df25[(df25["MES"] == mes_actual) & (df25["DIA"] <= dia_actual)]
 
-    # Agregar venta, margen y conteo de documentos
+    # Agregar venta, margen y conteo de documentos. nro_docs cuenta
+    # DOC_SAP+FOLIO distintos, no filas -- un documento (boleta/factura)
+    # trae una fila por producto vendido, asi que contar filas ("TOTAL",
+    # "count") infla el numero varias veces (ej. 458 filas vs 176
+    # documentos reales para un vendedor real en un mes real).
+    # OJO: no concatenar DOC_SAP+FOLIO como string para contarlos --
+    # FOLIO es float64 (algunas filas sin folio real fuerzan la columna
+    # a float), y ese camino junta documentos distintos por error (bug
+    # real encontrado: 2410 "documentos" via string vs 2529 reales
+    # comparando las columnas directas). drop_duplicates() sobre las
+    # columnas crudas no tiene ese problema; agrupar por sucursal+
+    # vendedor son ~50 grupos, no miles de valores, asi que .apply()
+    # aqui es rapido (no es el caso de CLIENTE/DESCRIPCION mas arriba).
     agg_mes = df_mes.groupby(["SUCURSAL_LOGICA", "VENDEDOR_RPT"]).agg(
         vta_mes=("TOTAL",         "sum"),
         mg_mes =("UTILIDAD_BRUTA","sum"),
-        nro_docs=("TOTAL",        "count"),
     ).reset_index()
+    nro_docs_serie = df_mes.groupby(["SUCURSAL_LOGICA", "VENDEDOR_RPT"]).apply(
+        lambda g: g[["DOC_SAP", "FOLIO"]].drop_duplicates().shape[0]
+    ).rename("nro_docs")
+    agg_mes = agg_mes.merge(nro_docs_serie, on=["SUCURSAL_LOGICA", "VENDEDOR_RPT"])
 
     agg_ant = df_ant.groupby(["SUCURSAL_LOGICA", "VENDEDOR_RPT"]).agg(
         vta_ant=("TOTAL","sum"),
