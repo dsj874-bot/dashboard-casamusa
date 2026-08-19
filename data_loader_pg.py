@@ -217,7 +217,7 @@ def get_resumen_pg(filtro_sucursal=None):
                       coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS utilidad_mes,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS venta_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS venta_mes_ant
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano IN (2025, 2026) {frag_suc}""",
                 params,
             )
@@ -259,7 +259,7 @@ def get_ventas_por_mes_pg(filtro_sucursal=None):
                 f"""SELECT mes,
                       coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025), 0) AS v25
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano IN (2025, 2026) {frag_suc}
                     GROUP BY mes""",
                 params,
@@ -312,7 +312,7 @@ def get_ventas_por_campo_pg(campo, orden_map=None, top_n=None, filtro_sucursal=N
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
                       coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS util_mes,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_prev
-                    FROM ventas
+                    FROM v_ventas
                     WHERE {campo_col} IS NOT NULL {frag_suc}
                     GROUP BY {campo_col}""",
                 params,
@@ -437,7 +437,7 @@ def get_filtros_proyeccion_pg(filtro_sucursal=None):
                       array_agg(DISTINCT marca)            FILTER (WHERE marca IS NOT NULL) AS marcas,
                       array_agg(DISTINCT subfamilia)       FILTER (WHERE subfamilia IS NOT NULL) AS subfamilias,
                       array_agg(DISTINCT procedencia)      FILTER (WHERE procedencia IS NOT NULL) AS procedencias
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano = 2026 {frag_suc}""",
                 params,
             )
@@ -479,7 +479,7 @@ def get_proyeccion_pg(filtros=None):
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano IN (2025, 2026) {frag_filtros}""",
                 params,
             )
@@ -527,7 +527,7 @@ def get_proyeccion_pg(filtros=None):
                       coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS mg_mes,
                       count(*) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s) AS nro_docs,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS vta_ant
-                    FROM ventas
+                    FROM v_ventas
                     WHERE (
                       (ano = 2026 AND mes = %(mes_actual)s)
                       OR (ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s)
@@ -627,7 +627,7 @@ def get_seguimiento_metas_pg(filtros=None):
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano IN (2025, 2026) {frag_filtros}""",
                 params,
             )
@@ -683,7 +683,7 @@ def get_seguimiento_metas_pg(filtros=None):
             # filtros del panel via frag_filtros).
             cur.execute(
                 f"""SELECT sucursal_logica, vendedor_rpt, coalesce(sum(total), 0) AS vta
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano = 2026 AND mes = %(mes_actual)s {frag_filtros}
                     GROUP BY sucursal_logica, vendedor_rpt""",
                 params,
@@ -743,7 +743,7 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None):
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano IN (2025, 2026) {frag_suc}""",
                 params,
             )
@@ -790,7 +790,7 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None):
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS acum_25,
                       count(*) FILTER (WHERE ano = 2026) AS n26
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano IN (2025, 2026) AND sucursal_logica IS NOT NULL {frag_suc}
                     GROUP BY sucursal_logica""",
                 params,
@@ -799,7 +799,7 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None):
 
             cur.execute(
                 f"""SELECT sucursal_logica, ano, mes, coalesce(sum(total), 0) AS v
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano IN (2025, 2026) AND sucursal_logica IS NOT NULL {frag_suc}
                     GROUP BY sucursal_logica, ano, mes""",
                 params,
@@ -808,7 +808,7 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None):
 
             cur.execute(
                 f"""SELECT ano, mes, coalesce(sum(total), 0) AS v
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano IN (2025, 2026) {frag_suc}
                     GROUP BY ano, mes""",
                 params,
@@ -881,7 +881,7 @@ def get_filtros_vta_acum_pg(filtro_sucursal=None):
                       array_agg(DISTINCT procedencia)    FILTER (WHERE procedencia IS NOT NULL AND trim(procedencia) != '') AS procedencia,
                       array_agg(DISTINCT cond_pago)      FILTER (WHERE cond_pago IS NOT NULL AND trim(cond_pago) != '') AS cond_pago,
                       array_agg(DISTINCT sucursal_logica) FILTER (WHERE sucursal_logica IS NOT NULL) AS sucursal
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano = 2026 {frag_suc}""",
                 params,
             )
@@ -930,7 +930,7 @@ def get_vta_acum_pg(filtros=None):
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano IN (2025, 2026) {frag_filtros}""",
                 params,
             )
@@ -971,7 +971,7 @@ def get_vta_acum_pg(filtros=None):
                       ), 0) AS vta25_ytd,
                       coalesce(sum(total) FILTER (WHERE ano = 2025), 0) AS vta25_full,
                       count(*) FILTER (WHERE ano = 2026) AS n26
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano IN (2025, 2026) AND {col_grupo} IS NOT NULL {frag_filtros}
                     GROUP BY {col_grupo}""",
                 params,
@@ -1048,7 +1048,7 @@ def get_vta_mes_mg_acum_pg(filtros=None):
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s), 0) AS v_mes_ant
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano IN (2025, 2026) {frag_filtros}""",
                 params,
             )
@@ -1075,20 +1075,20 @@ def get_vta_mes_mg_acum_pg(filtros=None):
                 "ano_anterior":        2025,
             }
 
-            cur.execute(f"SELECT DISTINCT mes FROM ventas WHERE ano = 2026 {frag_filtros}", params)
+            cur.execute(f"SELECT DISTINCT mes FROM v_ventas WHERE ano = 2026 {frag_filtros}", params)
             meses_con_datos = sorted(row["mes"] for row in cur.fetchall())
             nombres_meses = [MESES.get(m, str(m)) for m in meses_con_datos]
 
             cur.execute(
                 f"""SELECT mes, coalesce(sum(total), 0) AS v
-                    FROM ventas WHERE ano = 2026 {frag_filtros} GROUP BY mes""",
+                    FROM v_ventas WHERE ano = 2026 {frag_filtros} GROUP BY mes""",
                 params,
             )
             total_por_mes = {row["mes"]: round(float(row["v"]), 0) for row in cur.fetchall()}
 
             cur.execute(
                 f"""SELECT {col_grupo} AS cat, mes, coalesce(sum(total), 0) AS v
-                    FROM ventas WHERE ano = 2026 AND {col_grupo} IS NOT NULL {frag_filtros}
+                    FROM v_ventas WHERE ano = 2026 AND {col_grupo} IS NOT NULL {frag_filtros}
                     GROUP BY {col_grupo}, mes""",
                 params,
             )
@@ -1097,14 +1097,14 @@ def get_vta_mes_mg_acum_pg(filtros=None):
             cur.execute(
                 f"""SELECT {col_grupo} AS cat,
                       coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
-                    FROM ventas WHERE ano = 2026 AND {col_grupo} IS NOT NULL {frag_filtros}
+                    FROM v_ventas WHERE ano = 2026 AND {col_grupo} IS NOT NULL {frag_filtros}
                     GROUP BY {col_grupo} ORDER BY vta DESC""",
                 params,
             )
             grp_total_rows = cur.fetchall()
 
             cur.execute(
-                f"SELECT coalesce(sum(total), 0) AS t, coalesce(sum(utilidad_bruta), 0) AS m FROM ventas WHERE ano = 2026 {frag_filtros}",
+                f"SELECT coalesce(sum(total), 0) AS t, coalesce(sum(utilidad_bruta), 0) AS m FROM v_ventas WHERE ano = 2026 {frag_filtros}",
                 params,
             )
             tot_row = cur.fetchone()
@@ -1172,7 +1172,7 @@ def get_vta_mg_mensual_pg(filtros=None):
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s), 0) AS v_mes_ant
-                    FROM ventas
+                    FROM v_ventas
                     WHERE ano IN (2025, 2026) {frag_filtros}""",
                 params,
             )
@@ -1199,14 +1199,14 @@ def get_vta_mg_mensual_pg(filtros=None):
                 "ano_anterior":        2025,
             }
 
-            cur.execute(f"SELECT DISTINCT mes FROM ventas WHERE ano = 2026 {frag_filtros}", params)
+            cur.execute(f"SELECT DISTINCT mes FROM v_ventas WHERE ano = 2026 {frag_filtros}", params)
             meses_con_datos = sorted(row["mes"] for row in cur.fetchall())
             nombres_meses = [MESES.get(m, str(m)) for m in meses_con_datos]
 
             cur.execute(
                 f"""SELECT {col_grupo} AS cat, mes,
                       coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
-                    FROM ventas WHERE ano = 2026 AND {col_grupo} IS NOT NULL {frag_filtros}
+                    FROM v_ventas WHERE ano = 2026 AND {col_grupo} IS NOT NULL {frag_filtros}
                     GROUP BY {col_grupo}, mes""",
                 params,
             )
@@ -1215,7 +1215,7 @@ def get_vta_mg_mensual_pg(filtros=None):
             cur.execute(
                 f"""SELECT {col_grupo} AS cat,
                       coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
-                    FROM ventas WHERE ano = 2026 AND {col_grupo} IS NOT NULL {frag_filtros}
+                    FROM v_ventas WHERE ano = 2026 AND {col_grupo} IS NOT NULL {frag_filtros}
                     GROUP BY {col_grupo} ORDER BY vta DESC""",
                 params,
             )
@@ -1224,13 +1224,13 @@ def get_vta_mg_mensual_pg(filtros=None):
             cur.execute(
                 f"""SELECT mes,
                       coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
-                    FROM ventas WHERE ano = 2026 {frag_filtros} GROUP BY mes""",
+                    FROM v_ventas WHERE ano = 2026 {frag_filtros} GROUP BY mes""",
                 params,
             )
             tot_mes = {row["mes"]: (float(row["vta"]), float(row["mg"])) for row in cur.fetchall()}
 
             cur.execute(
-                f"SELECT coalesce(sum(total), 0) AS t, coalesce(sum(utilidad_bruta), 0) AS m FROM ventas WHERE ano = 2026 {frag_filtros}",
+                f"SELECT coalesce(sum(total), 0) AS t, coalesce(sum(utilidad_bruta), 0) AS m FROM v_ventas WHERE ano = 2026 {frag_filtros}",
                 params,
             )
             tot_row = cur.fetchone()
@@ -1283,6 +1283,59 @@ def get_vta_mg_mensual_pg(filtros=None):
         "filas_acum":      filas_acum,
         "categoria_label": CATEGORIAS_VTA.get(categoria, ("Marca",))[0],
     }
+
+
+def asignar_vendedor_home(vendedor, sucursal, vigente_desde=None, updated_by="admin"):
+    """Asigna o cambia la sucursal 'home' de un vendedor en vendedor_home.
+    Como sucursal_logica/vendedor_rpt se calculan al consultar (ver
+    v_ventas, migrations/003_vendedor_home.sql), esto reacomoda TODA la
+    historia de venta del vendedor al instante -- no hace falta
+    resincronizar ni una fila de ventas.
+
+    vigente_desde (opcional): fecha desde la cual aplica esta sucursal
+    -- uso para traspasos (alguien que vendia por la bodega compartida
+    SI-STK sin sucursal propia y luego empezo a vender por el codigo
+    propio de otra sucursal); antes de esa fecha, sus ventas por SI-STK
+    caen al default en vez de reatribuirse a el."""
+    db.execute(
+        """INSERT INTO vendedor_home (vendedor, sucursal, vigente_desde, updated_by)
+           VALUES (%(vendedor)s, %(sucursal)s, %(desde)s, %(by)s)
+           ON CONFLICT (vendedor) DO UPDATE SET
+             sucursal = excluded.sucursal,
+             vigente_desde = excluded.vigente_desde,
+             updated_at = now(),
+             updated_by = excluded.updated_by""",
+        {"vendedor": vendedor, "sucursal": sucursal, "desde": vigente_desde, "by": updated_by},
+    )
+
+
+def quitar_vendedor_home(vendedor):
+    """Saca a un vendedor de vendedor_home -- toda su venta (pasada y
+    futura, si sigue apareciendo con ese nombre en el SAP) cae en
+    'OTROS' via v_ventas. Mismo efecto que un vendedor que dejo la
+    empresa (ver CLAUDE.md, casos EMA SEPULVEDA TUREN / IGOR MOYA)."""
+    db.execute("DELETE FROM vendedor_home WHERE vendedor = %s", (vendedor,))
+
+
+def reemplazar_vendedor(nombre_viejo, nombre_nuevo, sucursal, vigente_desde=None, updated_by="admin"):
+    """Reemplazo de personal en el mismo puesto (ej. alguien deja la
+    empresa y otra persona toma su cartera): nombre_viejo deja de tener
+    sucursal home (su historia cae en 'OTROS' automaticamente),
+    nombre_nuevo se asigna como home de `sucursal`, y las metas/NE x
+    Facturar que tenia asignadas nombre_viejo pasan a nombre_nuevo
+    (mismo puesto, mismo objetivo/negocio pendiente). No toca ninguna
+    fila de ventas.
+
+    Paso manual aparte (no automatizado aqui, es un archivo local, no
+    Postgres): correr generar_plantilla_ne.py despues de actualizar
+    data_loader.VEND_HOME si se quiere que la PLANTILLA de
+    NE_x_Facturar.xlsx (la que edita el gerente comercial) tambien
+    muestre el nombre nuevo en vez de solo la fila ya renombrada en
+    Postgres."""
+    quitar_vendedor_home(nombre_viejo)
+    asignar_vendedor_home(nombre_nuevo, sucursal, vigente_desde, updated_by)
+    db.execute("UPDATE metas SET vendedor = %s WHERE vendedor = %s", (nombre_nuevo, nombre_viejo))
+    db.execute("UPDATE ne_x_facturar SET vendedor = %s, updated_at = now() WHERE vendedor = %s", (nombre_nuevo, nombre_viejo))
 
 
 def confirmar_fecha_pg(fecha, updated_by="actualizar_diario"):

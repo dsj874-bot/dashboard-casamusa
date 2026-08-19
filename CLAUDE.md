@@ -185,6 +185,53 @@ SAP maneja sucursales físicas. La función `_aplicar_sucursal_logica()`:
   (~$33M en SI-STK/2025, cae en OTROS/SE) — ya no trabaja en la empresa,
   se dejó así a propósito, no "corregir".
 
+### En Postgres: cambiar de sucursal / agregar / sacar vendedores (Fase 1)
+`_aplicar_sucursal_logica()` de arriba es la version Excel/pandas — sigue
+existiendo tal cual, sin cambios, como "verdad" independiente para el
+diff de `scripts/validar_fase1_comercial.py`. **Pero el dashboard real
+(local y Vercel) corre sobre Postgres, y ahi el mecanismo es distinto
+a proposito**, para que reasignar a alguien sea una fila, no una
+resincronizacion de historia:
+
+- `vendedor_home` (tabla, migrations/003_vendedor_home.sql): equivalente
+  a `VEND_HOME`/`VEND_HOME_DESDE`, pero en Postgres — `(vendedor
+  PRIMARY KEY, sucursal, vigente_desde)`.
+- `v_ventas` (vista sobre `ventas`): calcula `sucursal_logica`/
+  `vendedor_rpt` AL CONSULTAR, uniendo contra `vendedor_home` — replica
+  exactamente la logica de `_aplicar_sucursal_logica()` (SI-STK,
+  traspasos). Las columnas fisicas `ventas.sucursal_logica`/
+  `vendedor_rpt` siguen existiendo (las escribe `sincronizar_ventas_pg`
+  al insertar) pero **ya no las lee ningun reporte** — son vestigiales,
+  no hace falta mantenerlas sincronizadas. Todas las funciones de
+  `data_loader_pg.py` leen de `v_ventas`, no de `ventas`, EXCEPTO
+  `_fecha_datos_pg()` (no usa esas columnas) y `sincronizar_ventas_pg()`
+  (hace el DELETE/INSERT real, tiene que ser sobre la tabla).
+- Para reasignar/agregar/sacar un vendedor, usar (todo en
+  `data_loader_pg.py`, no hace falta tocar codigo ni resincronizar
+  ventas):
+  - `asignar_vendedor_home(vendedor, sucursal, vigente_desde=None)` —
+    asigna o cambia su sucursal home. `vigente_desde` solo si es un
+    traspaso (ej. caso Gisella) y no debe reatribuirse retroactivamente.
+  - `quitar_vendedor_home(vendedor)` — se va de la empresa: su historia
+    completa cae en "OTROS" desde ese momento (mismo efecto que Ema/
+    Igor Moya, pero sin tocar una sola fila de `ventas`).
+  - `reemplazar_vendedor(nombre_viejo, nombre_nuevo, sucursal,
+    vigente_desde=None)` — combina las dos anteriores + renombra las
+    filas de `metas`/`ne_x_facturar` de nombre_viejo a nombre_nuevo
+    (mismo puesto, mismas metas/NE pendientes). Este es el caso real de
+    Igor Moya → Marcelo Gatica (hecho a mano antes de que existiera
+    esta funcion — ver commits `c7632eb`/`bf...` para la migracion
+    completa).
+- `VEND_HOME` (Python) y `vendedor_home` (Postgres) NO estan
+  sincronizados automaticamente entre si — son independientes a
+  proposito (Postgres no debe depender de Excel ni viceversa). Si se
+  reasigna alguien solo en Postgres (el caso normal, ya que ahi vive el
+  dashboard real), `scripts/validar_fase1_comercial.py` va a marcar
+  diferencias la proxima vez que se corra — es la señal de que
+  `VEND_HOME` en `data_loader.py` tambien deberia actualizarse (o de
+  que la diferencia es esperada y el script debe ignorarse para ese
+  caso puntual).
+
 ## Reporte genérico por campo
 `get_ventas_por_campo(campo, orden_map=None, top_n=None)` es la función
 base detrás de Sucursal/Vendedor/Canal/Familia/Marca/Procedencia/
