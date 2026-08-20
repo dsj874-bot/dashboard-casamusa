@@ -26,7 +26,7 @@ def cargar_productos(df):
     print("Cargando dimension productos desde Inventario...")
     cols = ["CODIGO", "REFERENCIA", "DESCRIPCION", "U_M", "FAMILIA", "SUBFAMILIA",
             "GRUPO", "MARCA", "ID_PROCEDENCIA", "EMBALAJE", "MULTIPLO", "CUP",
-            "CLAS_SI", "CLAS_LC", "CLAS_MR", "CLAS_MT", "CLAS_CSD"]
+            "CLAS_SI", "CLAS_LC", "CLAS_MR", "CLAS_MT", "CLAS_CSD", "PEDIDO_TOTAL"]
     for c in cols:
         if c not in df.columns:
             df[c] = None
@@ -42,8 +42,9 @@ def cargar_productos(df):
     # valor que ya estaba en Postgres en vez de borrarlo.
     sql = """
         insert into productos (codigo, referencia, descripcion, um, familia, subfamilia,
-            grupo, marca, id_procedencia, embalaje, multiplo, cup, clas_si, clas_lc, clas_mr, clas_mt, clas_csd)
-        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            grupo, marca, id_procedencia, embalaje, multiplo, cup, clas_si, clas_lc, clas_mr, clas_mt, clas_csd,
+            pedido_total)
+        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         on conflict (codigo) do update set
             referencia=excluded.referencia, descripcion=excluded.descripcion, um=excluded.um,
             familia=coalesce(excluded.familia, productos.familia),
@@ -51,7 +52,8 @@ def cargar_productos(df):
             grupo=coalesce(excluded.grupo, productos.grupo),
             marca=excluded.marca, id_procedencia=excluded.id_procedencia, embalaje=excluded.embalaje,
             multiplo=excluded.multiplo, cup=excluded.cup, clas_si=excluded.clas_si, clas_lc=excluded.clas_lc,
-            clas_mr=excluded.clas_mr, clas_mt=excluded.clas_mt, clas_csd=excluded.clas_csd, updated_at=now()
+            clas_mr=excluded.clas_mr, clas_mt=excluded.clas_mt, clas_csd=excluded.clas_csd,
+            pedido_total=excluded.pedido_total, updated_at=now()
     """
     with db.get_connection() as conn:
         with conn.cursor() as cur:

@@ -825,7 +825,14 @@ def exportar_plan_compras_excel(familia=None, meses_objetivo_default=None):
     (no hay codigo que pedir hoy). Devuelve un BytesIO listo para
     mandar como descarga.
     """
-    resultado = get_plan_compra_reposicion(familia, meses_objetivo_default)
+    return _construir_excel_plan_compras(get_plan_compra_reposicion(familia, meses_objetivo_default))
+
+
+def _construir_excel_plan_compras(resultado):
+    """Formato del Excel de Plan de Compras, separado de
+    exportar_plan_compras_excel() para que data_loader_obligatorios_pg.py
+    pueda reusarlo con el resultado calculado desde Postgres, sin
+    duplicar el armado de columnas."""
     filas = [
         {
             "Familia":            p["familia"],

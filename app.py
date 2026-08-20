@@ -513,6 +513,8 @@ def api_inventario_plan_compras():
     try:
         familia = request.args.get("familia", "") or None
         meses = request.args.get("meses", type=float)
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_obligatorios_pg.get_plan_compra_reposicion_pg(familia, meses))
         return jsonify(data_loader_obligatorios.get_plan_compra_reposicion(familia, meses))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -523,6 +525,8 @@ def api_inventario_plan_compras():
 def api_inventario_plan_compras_resumen_valor():
     try:
         familia = request.args.get("familia", "") or None
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_obligatorios_pg.get_resumen_valor_compra_pg(familia))
         return jsonify(data_loader_obligatorios.get_resumen_valor_compra(familia))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -534,7 +538,10 @@ def api_inventario_plan_compras_exportar():
     try:
         familia = request.args.get("familia", "") or None
         meses = request.args.get("meses", type=float)
-        buffer = data_loader_obligatorios.exportar_plan_compras_excel(familia, meses)
+        if USAR_POSTGRES_INVENTARIO:
+            buffer = data_loader_obligatorios_pg.exportar_plan_compras_excel_pg(familia, meses)
+        else:
+            buffer = data_loader_obligatorios.exportar_plan_compras_excel(familia, meses)
         nombre = f"Plan_de_Compra_{familia or 'Todas'}.xlsx".replace(" ", "_")
         return send_file(
             buffer,

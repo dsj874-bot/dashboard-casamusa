@@ -338,3 +338,128 @@ def get_distribucion_desde_san_isidro_pg(familia=None):
 
 def exportar_distribucion_excel_pg(familia=None):
     return do._construir_excel_distribucion(get_distribucion_desde_san_isidro_pg(familia))
+
+
+def _cargar_productos_extra_pg(cur, codigos):
+    """embalaje/pedido_total/cup por codigo -- todo lo que Plan de
+    Compra necesita de productos ademas de lo que ya trae
+    _cargar_stock_pg (que es por codigo+bodega, no por codigo solo)."""
+    if not codigos:
+        return {}
+    cur.execute(
+        "select codigo, embalaje, pedido_total, cup from productos where codigo = any(%(codigos)s)",
+        {"codigos": list(codigos)},
+    )
+    return {r["codigo"]: r for r in cur.fetchall()}
+
+
+def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
+    meses_default = meses_objetivo_default if meses_objetivo_default is not None else do.MESES_OBJETIVO_COMPRA
+
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            obligatorios = _cargar_obligatorios_pg(cur, familia)
+
+            codigos_necesarios = set()
+            for fila in obligatorios:
+                codigos_necesarios.add(fila["codigo_obligatorio"])
+                if fila["codigo_equivalente"] is not None:
+                    codigos_necesarios.add(fila["codigo_equivalente"])
+
+            bodegas = [n for n, _, _, _ in do.SUCURSALES_CRITICAS] + ["Todas"]
+            datos = _cargar_stock_pg(cur, codigos_necesarios, bodegas)
+            productos_extra = _cargar_productos_extra_pg(cur, codigos_necesarios)
+
+    productos = []
+    for fila in obligatorios:
+        cod_obl = fila["codigo_obligatorio"]
+        cod_equiv = fila["codigo_equivalente"]
+
+        # Siempre se compra Nacional -- ver docstring de
+        # get_plan_compra_reposicion en data_loader_obligatorios.py.
+        es_obligatorio_nacional = str(fila["procedencia_obligatoria"] or "").strip().lower() == "nacional"
+        cod_a_comprar = cod_equiv if cod_equiv else (cod_obl if es_obligatorio_nacional else None)
+
+        if cod_a_comprar is None:
+            productos.append({
+                "familia":            fila["familia"],
+                "subfamilia":         fila["subfamilia"],
+                "grupo":              fila["grupo"],
+                "descripcion":        fila["descripcion"],
+                "codigo_a_comprar":   None,
+                "embalaje":           None,
+                "cantidad_a_comprar": None,
+                "sin_opcion_nacional": True,
+            })
+            continue
+
+        extra_comprar = productos_extra.get(cod_a_comprar)
+
+        venta_consolidada = _venta_combinada_pg(datos, cod_obl, cod_equiv, "Todas")
+        stock_total = sum(
+            _stock_combinado_pg(datos, cod_obl, cod_equiv, nombre)
+            for nombre, _, _, _ in do.SUCURSALES_CRITICAS
+        )
+
+        meses_col = fila["meses_objetivo"]
+        meses_objetivo = float(meses_col) if meses_col is not None else meses_default
+
+        colchon_lead_time = (venta_consolidada / do.DIAS_HABILES_MES) * do.LEAD_TIME_DIAS_NACIONAL
+
+        pedido_total = (
+            float(extra_comprar["pedido_total"])
+            if (extra_comprar and extra_comprar["pedido_total"] is not None) else 0.0
+        )
+
+        objetivo_empresa = (meses_objetivo * venta_consolidada) + colchon_lead_time
+        necesario = max(0.0, objetivo_empresa - stock_total - pedido_total)
+
+        embalaje = int(extra_comprar["embalaje"]) if (extra_comprar and extra_comprar["embalaje"]) else 1
+        cantidad_a_comprar = math.ceil(necesario / embalaje) * embalaje if necesario > 0 else 0
+
+        productos.append({
+            "familia":            fila["familia"],
+            "subfamilia":         fila["subfamilia"],
+            "grupo":              fila["grupo"],
+            "descripcion":        fila["descripcion"],
+            "codigo_a_comprar":   int(cod_a_comprar),
+            "embalaje":           embalaje,
+            "cantidad_a_comprar": cantidad_a_comprar,
+            "sin_opcion_nacional": False,
+        })
+
+    productos.sort(key=lambda p: -(p["cantidad_a_comprar"] or 0))
+
+    return {
+        "productos": productos,
+        "resumen": {
+            "total_obligatorios":   len(productos),
+            "con_necesidad_compra": sum(1 for p in productos if (p["cantidad_a_comprar"] or 0) > 0),
+            "sin_opcion_nacional":  sum(1 for p in productos if p["sin_opcion_nacional"]),
+        },
+    }
+
+
+def get_resumen_valor_compra_pg(familia=None):
+    niveles = []
+    for meses in do.NIVELES_COMPARACION_MESES:
+        resultado = get_plan_compra_reposicion_pg(familia, meses)
+        candidatos = [
+            p for p in resultado["productos"]
+            if not p["sin_opcion_nacional"] and (p["cantidad_a_comprar"] or 0) > 0
+        ]
+        codigos = {p["codigo_a_comprar"] for p in candidatos}
+        with db.conexion_pool() as conn:
+            with conn.cursor() as cur:
+                extra = _cargar_productos_extra_pg(cur, codigos)
+        valor_total = sum(
+            p["cantidad_a_comprar"] * float(extra[p["codigo_a_comprar"]]["cup"] or 0)
+            for p in candidatos
+        )
+        niveles.append({"meses": meses, "valor": round(valor_total, 0)})
+
+    return {"niveles": niveles}
+
+
+def exportar_plan_compras_excel_pg(familia=None, meses_objetivo_default=None):
+    return do._construir_excel_plan_compras(get_plan_compra_reposicion_pg(familia, meses_objetivo_default))

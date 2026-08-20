@@ -48,8 +48,15 @@ def _diff_dict(nombre, viejo, nuevo, ruta=""):
 def _clave_fila(r):
     if "codigo" in r:
         return r["codigo"]
+    if "codigo_a_comprar" in r:
+        # Los productos "sin_opcion_nacional" tienen codigo_a_comprar=None
+        # (no hay codigo Nacional que comprar) -- la descripcion sirve de
+        # llave de todos modos, para no caer en el fallback str(r) fragil.
+        return r["codigo_a_comprar"] if r["codigo_a_comprar"] is not None else r.get("descripcion")
     if "nombre" in r:
         return r["nombre"]
+    if "meses" in r:
+        return r["meses"]
     return str(r)
 
 
@@ -112,6 +119,38 @@ def main():
             f"get_distribucion_desde_san_isidro ({familia})",
             do.get_distribucion_desde_san_isidro(familia),
             dopg.get_distribucion_desde_san_isidro_pg(familia),
+        )
+
+    print("Comparando get_plan_compra_reposicion()...")
+    check(
+        "get_plan_compra_reposicion (todas las familias, default)",
+        do.get_plan_compra_reposicion(),
+        dopg.get_plan_compra_reposicion_pg(),
+    )
+    for meses in do.NIVELES_COMPARACION_MESES:
+        check(
+            f"get_plan_compra_reposicion (todas, {meses} meses)",
+            do.get_plan_compra_reposicion(None, meses),
+            dopg.get_plan_compra_reposicion_pg(None, meses),
+        )
+    for familia in do.get_familias_obligatorios():
+        check(
+            f"get_plan_compra_reposicion ({familia})",
+            do.get_plan_compra_reposicion(familia),
+            dopg.get_plan_compra_reposicion_pg(familia),
+        )
+
+    print("Comparando get_resumen_valor_compra()...")
+    check(
+        "get_resumen_valor_compra (todas las familias)",
+        do.get_resumen_valor_compra(),
+        dopg.get_resumen_valor_compra_pg(),
+    )
+    for familia in do.get_familias_obligatorios():
+        check(
+            f"get_resumen_valor_compra ({familia})",
+            do.get_resumen_valor_compra(familia),
+            dopg.get_resumen_valor_compra_pg(familia),
         )
 
     print()
