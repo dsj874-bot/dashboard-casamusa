@@ -280,6 +280,16 @@ function renderTodo(d) {
         </tr>
       `;
     }
+    if (p.excluido_compra) {
+      return `
+        <tr class="fila-producto-compra" ${attrs}>
+          <td>${p.descripcion}</td>
+          <td class="text-right">${p.codigo_a_comprar}</td>
+          <td class="text-right">${fmtUnid(p.embalaje)}</td>
+          <td class="text-right sin-opcion" title="Marcado como 'no se compra' en Productos No Comprar">No se compra</td>
+        </tr>
+      `;
+    }
     const sinNecesidad = p.cantidad_a_comprar <= 0;
     return `
       <tr class="fila-producto-compra" ${attrs}>

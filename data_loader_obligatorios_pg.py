@@ -14,6 +14,7 @@ import math
 import db
 import data_loader_inventario as dli
 import data_loader_obligatorios as do
+import data_loader_exclusion_compra as dec
 
 
 def get_familias_obligatorios_pg():
@@ -370,6 +371,8 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
             datos = _cargar_stock_pg(cur, codigos_necesarios, bodegas)
             productos_extra = _cargar_productos_extra_pg(cur, codigos_necesarios)
 
+    codigos_excluidos = dec.codigos_excluidos_compra()
+
     productos = []
     for fila in obligatorios:
         cod_obl = fila["codigo_obligatorio"]
@@ -390,6 +393,7 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
                 "embalaje":           None,
                 "cantidad_a_comprar": None,
                 "sin_opcion_nacional": True,
+                "excluido_compra":    False,
             })
             continue
 
@@ -417,6 +421,14 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
         embalaje = int(extra_comprar["embalaje"]) if (extra_comprar and extra_comprar["embalaje"]) else 1
         cantidad_a_comprar = math.ceil(necesario / embalaje) * embalaje if necesario > 0 else 0
 
+        # Excluido de compra (ver /gestionar_productos_compra): el
+        # producto sigue con su calculo normal para todo lo demas,
+        # pero nunca se sugiere comprarlo -- se fuerza a 0 aca, al
+        # final, sin tocar el resto del calculo.
+        excluido_compra = cod_a_comprar in codigos_excluidos
+        if excluido_compra:
+            cantidad_a_comprar = 0
+
         productos.append({
             "familia":            fila["familia"],
             "subfamilia":         fila["subfamilia"],
@@ -426,6 +438,7 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
             "embalaje":           embalaje,
             "cantidad_a_comprar": cantidad_a_comprar,
             "sin_opcion_nacional": False,
+            "excluido_compra":    excluido_compra,
         })
 
     productos.sort(key=lambda p: -(p["cantidad_a_comprar"] or 0))
@@ -436,6 +449,7 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
             "total_obligatorios":   len(productos),
             "con_necesidad_compra": sum(1 for p in productos if (p["cantidad_a_comprar"] or 0) > 0),
             "sin_opcion_nacional":  sum(1 for p in productos if p["sin_opcion_nacional"]),
+            "excluidos_compra":     sum(1 for p in productos if p["excluido_compra"]),
         },
     }
 

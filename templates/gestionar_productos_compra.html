@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}Productos No Comprar{% endblock %}
+{% block page_title %}Productos No Comprar{% endblock %}
+{% block page_subtitle %}Marca productos que nunca se deben sugerir en Plan de Compra (Obligatorios y Segunda Línea){% endblock %}
+
+{% block sidebar_nav %}{% include "_inventario_sidebar.html" %}{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .gpc-wrap { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+
+  .accion-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 12px;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .accion-card h3 { font-size: 15px; margin: 0; }
+  .accion-card p.desc { font-size: 12.5px; color: var(--muted2); margin: 0; }
+
+  .campo { display: flex; flex-direction: column; gap: 5px; }
+  .campo label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+  .campo input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+
+  .resultados-busqueda { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+  .resultado-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+  }
+  .resultado-item .info { display: flex; flex-direction: column; gap: 2px; }
+  .resultado-item .codigo { font-weight: 700; color: var(--text); }
+  .resultado-item .desc { color: var(--muted2); }
+  .resultado-item .familia { color: var(--muted); font-size: 11px; }
+  .resultado-item.ya-marcado { opacity: 0.5; }
+
+  .btn-mini {
+    padding: 6px 12px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-mini:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-mini.quitar { background: var(--red); }
+
+  .tabla-excluidos { width: 100%; border-collapse: collapse; }
+  .tabla-excluidos th, .tabla-excluidos td { padding: 8px 10px; font-size: 12.5px; text-align: left; border-bottom: 1px solid var(--border); }
+  .tabla-excluidos th { color: var(--muted); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.4px; }
+  .tabla-excluidos .motivo { color: var(--muted2); font-size: 11.5px; }
+  .tabla-excluidos .meta { color: var(--muted); font-size: 11px; }
+
+  .resultado { display: none; font-size: 12.5px; border-radius: 8px; padding: 8px 12px; }
+  .resultado.mostrar { display: block; }
+  .resultado.ok { background: rgba(34,163,71,0.12); border: 1px solid var(--accent); color: var(--text); }
+  .resultado.error { background: rgba(239,68,68,0.1); border: 1px solid var(--red); color: var(--red-light); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="gpc-wrap">
+
+  <div class="accion-card">
+    <h3>🔍 Marcar un producto como "no se compra"</h3>
+    <p class="desc">Busca por código o descripción. El producto sigue apareciendo en Alertas y Distribución con su stock real — solo deja de sugerirse en Plan de Compra (Obligatorios y Segunda Línea).</p>
+    <div class="campo">
+      <label>Buscar producto</label>
+      <input type="text" id="buscar-input" placeholder="Ej: conduit fuerte, o un código">
+    </div>
+    <div class="resultados-busqueda" id="resultados-busqueda"></div>
+    <span class="resultado" id="buscar-resultado"></span>
+  </div>
+
+  <div class="accion-card">
+    <h3>🚫 Productos marcados actualmente</h3>
+    <p class="desc" id="total-excluidos">Cargando...</p>
+    <div style="overflow-x:auto;">
+      <table class="tabla-excluidos">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Producto</th>
+            <th>Motivo</th>
+            <th>Marcado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tabla-excluidos-body">
+          <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px;">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let EXCLUIDOS = [];
+  let CODIGOS_EXCLUIDOS = new Set();
+
+  function mostrarResultado(id, ok, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.className = 'resultado mostrar ' + (ok ? 'ok' : 'error');
+    setTimeout(() => el.classList.remove('mostrar'), 4000);
+  }
+
+  async function cargarExcluidos() {
+    const r = await fetch('/api/gestionar_productos_compra/datos');
+    const d = await r.json();
+    if (!d.ok) return;
+    EXCLUIDOS = d.excluidos;
+    CODIGOS_EXCLUIDOS = new Set(EXCLUIDOS.map(e => e.codigo));
+    pintarExcluidos();
+  }
+
+  function pintarExcluidos() {
+    document.getElementById('total-excluidos').textContent =
+      EXCLUIDOS.length === 0 ? 'Ningún producto marcado todavía.' : `${EXCLUIDOS.length} producto(s) marcado(s).`;
+
+    const body = document.getElementById('tabla-excluidos-body');
+    if (EXCLUIDOS.length === 0) {
+      body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px;">Ninguno.</td></tr>';
+      return;
+    }
+    body.innerHTML = EXCLUIDOS.map(e => `
+      <tr>
+        <td class="fw-bold">${e.codigo}</td>
+        <td>${e.descripcion}${e.familia ? `<div class="meta">${e.familia}${e.subfamilia ? ' / ' + e.subfamilia : ''}</div>` : ''}</td>
+        <td class="motivo">${e.motivo || '—'}</td>
+        <td class="meta">${e.updated_at || '—'}${e.updated_by ? `<br>${e.updated_by}` : ''}</td>
+        <td><button class="btn-mini quitar" data-codigo="${e.codigo}">Quitar</button></td>
+      </tr>
+    `).join('');
+
+    body.querySelectorAll('.btn-mini.quitar').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          const r = await fetch('/api/gestionar_productos_compra', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accion: 'quitar', codigo: btn.dataset.codigo }),
+          });
+          const d = await r.json();
+          if (d.ok) {
+            await cargarExcluidos();
+            renderResultadosBusqueda(_ultimaBusqueda);
+          } else {
+            mostrarResultado('buscar-resultado', false, d.msg);
+            btn.disabled = false;
+          }
+        } catch (e) {
+          mostrarResultado('buscar-resultado', false, 'Error de conexión.');
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  let _ultimaBusqueda = [];
+  let _debounce = null;
+
+  document.getElementById('buscar-input').addEventListener('input', (e) => {
+    clearTimeout(_debounce);
+    const q = e.target.value.trim();
+    if (!q) {
+      document.getElementById('resultados-busqueda').innerHTML = '';
+      _ultimaBusqueda = [];
+      return;
+    }
+    _debounce = setTimeout(() => buscar(q), 300);
+  });
+
+  async function buscar(q) {
+    try {
+      const r = await fetch(`/api/gestionar_productos_compra/buscar?q=${encodeURIComponent(q)}`);
+      const d = await r.json();
+      if (!d.ok) return;
+      _ultimaBusqueda = d.resultados;
+      renderResultadosBusqueda(_ultimaBusqueda);
+    } catch (e) {
+      console.error('Error de búsqueda:', e);
+    }
+  }
+
+  function renderResultadosBusqueda(resultados) {
+    const cont = document.getElementById('resultados-busqueda');
+    if (!resultados || resultados.length === 0) {
+      cont.innerHTML = document.getElementById('buscar-input').value.trim()
+        ? '<div style="color:var(--muted);font-size:12.5px;padding:8px;">Sin resultados.</div>'
+        : '';
+      return;
+    }
+    cont.innerHTML = resultados.map(p => {
+      const yaMarcado = CODIGOS_EXCLUIDOS.has(p.codigo);
+      return `
+        <div class="resultado-item ${yaMarcado ? 'ya-marcado' : ''}">
+          <div class="info">
+            <span class="codigo">${p.codigo}</span>
+            <span class="desc">${p.descripcion}</span>
+            <span class="familia">${p.familia || ''}${p.subfamilia ? ' / ' + p.subfamilia : ''}</span>
+          </div>
+          <button class="btn-mini" data-codigo="${p.codigo}" data-desc="${p.descripcion.replace(/"/g, '&quot;')}" ${yaMarcado ? 'disabled' : ''}>
+            ${yaMarcado ? 'Ya marcado' : 'No comprar'}
+          </button>
+        </div>
+      `;
+    }).join('');
+
+    cont.querySelectorAll('.btn-mini:not(:disabled)').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const motivo = prompt(`Motivo (opcional) para no comprar "${btn.dataset.desc}":`, '');
+        if (motivo === null) return; // cancelado
+        btn.disabled = true;
+        btn.textContent = 'Guardando...';
+        try {
+          const r = await fetch('/api/gestionar_productos_compra', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accion: 'agregar', codigo: btn.dataset.codigo, motivo: motivo || null }),
+          });
+          const d = await r.json();
+          mostrarResultado('buscar-resultado', d.ok, d.msg);
+          if (d.ok) {
+            await cargarExcluidos();
+            renderResultadosBusqueda(_ultimaBusqueda);
+          }
+        } catch (e) {
+          mostrarResultado('buscar-resultado', false, 'Error de conexión.');
+        }
+      });
+    });
+  }
+
+  cargarExcluidos();
+</script>
+{% endblock %}

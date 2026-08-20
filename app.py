@@ -9,6 +9,7 @@ import data_loader
 import data_loader_inventario
 import data_loader_obligatorios
 import data_loader_segunda_linea
+import data_loader_exclusion_compra
 import data_loader_adquisiciones
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -1175,6 +1176,66 @@ def api_gestionar_vendedores():
                 return jsonify({"ok": False, "msg": "Falta el vendedor que se va, el que entra, o la sucursal."}), 400
             data_loader_pg.reemplazar_vendedor(viejo, nuevo, sucursal, _fecha(body.get("vigente_desde")), updated_by=quien)
             return jsonify({"ok": True, "msg": f"{nuevo} reemplaza a {viejo} en {sucursal} (metas/NE ya transferidas)."})
+
+        return jsonify({"ok": False, "msg": "Accion no reconocida."}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+# ══════════════════════════════════════════════════════
+#  GESTIONAR PRODUCTOS COMPRA -- marcar productos como "no se compra"
+#  (afecta solo Plan de Compra, Obligatorios y Segunda Linea; el
+#  producto sigue visible en Alertas/Distribucion con su stock real).
+#  Reemplaza tener que pedir un filtro SQL nuevo cada vez.
+# ══════════════════════════════════════════════════════
+@app.route("/gestionar_productos_compra")
+@admin_requerido
+def gestionar_productos_compra():
+    return render_template("gestionar_productos_compra.html",
+                           active="gestionar_productos_compra",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/gestionar_productos_compra/datos")
+@admin_requerido
+def api_gestionar_productos_compra_datos():
+    try:
+        return jsonify({"ok": True, "excluidos": data_loader_exclusion_compra.get_productos_no_comprar()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+@app.route("/api/gestionar_productos_compra/buscar")
+@admin_requerido
+def api_gestionar_productos_compra_buscar():
+    try:
+        q = request.args.get("q", "")
+        return jsonify({"ok": True, "resultados": data_loader_exclusion_compra.buscar_productos(q)})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+@app.route("/api/gestionar_productos_compra", methods=["POST"])
+@admin_requerido
+def api_gestionar_productos_compra():
+    body = request.get_json(silent=True) or {}
+    accion = body.get("accion")
+    quien = session.get("usuario", "admin")
+
+    try:
+        if accion == "agregar":
+            codigo = body.get("codigo")
+            if not codigo:
+                return jsonify({"ok": False, "msg": "Falta el código del producto."}), 400
+            data_loader_exclusion_compra.agregar_no_comprar(int(codigo), motivo=body.get("motivo") or None, updated_by=quien)
+            return jsonify({"ok": True, "msg": f"Código {codigo} marcado como 'no se compra'."})
+
+        if accion == "quitar":
+            codigo = body.get("codigo")
+            if not codigo:
+                return jsonify({"ok": False, "msg": "Falta el código del producto."}), 400
+            data_loader_exclusion_compra.quitar_no_comprar(int(codigo))
+            return jsonify({"ok": True, "msg": f"Código {codigo} vuelve a considerarse para compra."})
 
         return jsonify({"ok": False, "msg": "Accion no reconocida."}), 400
     except Exception as e:

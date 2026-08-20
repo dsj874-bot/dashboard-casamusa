@@ -22,6 +22,7 @@ import db
 import data_loader_inventario as dli
 import data_loader_obligatorios as do
 import data_loader_obligatorios_pg as dopg
+import data_loader_exclusion_compra as dec
 
 # Umbrales propios, mas laxos que los de Obligatorios (15/25 dias) --
 # estos productos no son "no puede faltar", son "conviene abastecer si
@@ -354,6 +355,8 @@ def get_plan_compra_segunda_linea(familia=None, meses_objetivo_default=None):
             bodegas = [n for n, _, _, _ in do.SUCURSALES_CRITICAS] + ["Todas"]
             datos = dopg._cargar_stock_pg(cur, codigos, bodegas)
 
+    codigos_excluidos = dec.codigos_excluidos_compra()
+
     productos = []
     for c in candidatos:
         cod = c["codigo"]
@@ -373,6 +376,13 @@ def get_plan_compra_segunda_linea(familia=None, meses_objetivo_default=None):
         embalaje = int(c["embalaje"]) if c["embalaje"] else 1
         cantidad_a_comprar = math.ceil(necesario / embalaje) * embalaje if necesario > 0 else 0
 
+        # Excluido de compra (ver /gestionar_productos_compra): sigue
+        # con su calculo normal para todo lo demas, pero nunca se
+        # sugiere comprarlo.
+        excluido_compra = cod in codigos_excluidos
+        if excluido_compra:
+            cantidad_a_comprar = 0
+
         productos.append({
             "familia":            c["familia"],
             "subfamilia":         c["subfamilia"],
@@ -382,6 +392,7 @@ def get_plan_compra_segunda_linea(familia=None, meses_objetivo_default=None):
             "embalaje":           embalaje,
             "cantidad_a_comprar": cantidad_a_comprar,
             "sin_opcion_nacional": False,  # siempre False: no hay eleccion Nacional/Importado en Segunda Linea
+            "excluido_compra":    excluido_compra,
         })
 
     productos.sort(key=lambda p: -(p["cantidad_a_comprar"] or 0))
@@ -390,6 +401,7 @@ def get_plan_compra_segunda_linea(familia=None, meses_objetivo_default=None):
         "productos": productos,
         "resumen": {
             "total_candidatos":     len(productos),
+            "excluidos_compra":     sum(1 for p in productos if p["excluido_compra"]),
             "con_necesidad_compra": sum(1 for p in productos if (p["cantidad_a_comprar"] or 0) > 0),
         },
     }
