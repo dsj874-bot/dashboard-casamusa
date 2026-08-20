@@ -27,6 +27,17 @@
   <span class="nav-icon">🚚</span><span class="nav-label"> Distribución desde CD</span>
 </a>
 
+<div class="nav-section-title">Segunda Línea</div>
+<a href="/inventario/alertas_segunda_linea" class="nav-item {% if active == 'inventario_alertas_2l' %}active{% endif %}">
+  <span class="nav-icon">🚨</span><span class="nav-label"> Alertas Quiebre</span>
+</a>
+<a href="/inventario/compras_segunda_linea" class="nav-item {% if active == 'inventario_compras_2l' %}active{% endif %}">
+  <span class="nav-icon">🛒</span><span class="nav-label"> Plan de Compra</span>
+</a>
+<a href="/inventario/distribucion_segunda_linea" class="nav-item {% if active == 'inventario_distribucion_2l' %}active{% endif %}">
+  <span class="nav-icon">🚚</span><span class="nav-label"> Distribución desde CD</span>
+</a>
+
 {% if es_admin %}
 <div class="nav-section-title">Administración</div>
 <a href="/subir_inventario" class="nav-item {% if active == 'subir_inventario' %}active{% endif %}">

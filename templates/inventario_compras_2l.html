@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+
+{% block title %}Inventario — Plan de Compra Segunda Línea{% endblock %}
+{% block page_title %}Inventario — Plan de Compra (Segunda Línea){% endblock %}
+{% block page_subtitle %}Cuánto comprar para llegar a 1 mes de cobertura, como máximo{% endblock %}
+
+{% block sidebar_nav %}{% include "_inventario_sidebar.html" %}{% endblock %}
+
+{% block boton_actualizar %}
+{% if es_admin %}
+<button id="btn-actualizar-inv" class="btn-filter" style="padding:8px 14px;font-size:12px;"
+        title="Busca un archivo AAMMDD_Inventario.xlsx en data/inventario/ y reemplaza el inventario completo">
+  🔄 Actualizar Inventario
+</button>
+{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .filtros-marca {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .filtro-item label {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .filtro-item select {
+    min-width: 220px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    cursor: pointer;
+  }
+
+  .fila-subfamilia-header { cursor: pointer; background: var(--surface2); }
+  .fila-subfamilia-header:hover { background: var(--surface3, var(--surface2)); }
+  .fila-subfamilia-header.expandida .icono-expandir { transform: rotate(90deg); }
+  .icono-expandir { display: inline-block; width: 14px; transition: transform .15s; }
+
+  .fila-grupo-header { display: none; cursor: pointer; background: var(--surface); }
+  .fila-grupo-header.visible { display: table-row; }
+  .fila-grupo-header:hover { background: var(--surface2); }
+  .fila-grupo-header td:first-child { padding-left: 32px; }
+  .fila-grupo-header.expandida .icono-expandir { transform: rotate(90deg); }
+
+  .fila-producto-compra { display: none; }
+  .fila-producto-compra.visible { display: table-row; }
+  .fila-producto-compra[data-parent-grupo] td:first-child { padding-left: 56px; }
+
+  .cantidad-comprar { font-size: 16px; font-weight: 700; color: #22a347; }
+  .sin-necesidad { color: var(--muted); font-weight: 400; }
+
+  .comparativo-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    text-align: center;
+    min-width: 90px;
+    cursor: pointer;
+  }
+  .comparativo-card:hover { background: var(--surface2); }
+  .comparativo-card.activo { border-color: #22a347; box-shadow: inset 0 0 0 1px #22a347; }
+  .comparativo-card .comparativo-meses { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .comparativo-card .comparativo-valor { font-size: 13px; font-weight: 700; color: var(--text); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid" id="kpi-grid" style="margin-bottom:20px;">
+  <div class="kpi-card">
+    <div class="kpi-label">Productos Segunda Línea</div>
+    <div class="kpi-value" id="kpi-total">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Requieren Compra Ahora</div>
+    <div class="kpi-value" id="kpi-necesidad" style="color:#22a347">—</div>
+  </div>
+</div>
+
+<div class="filtros-marca">
+  <div class="filtro-item">
+    <label>Familia</label>
+    <select id="f-familia"></select>
+  </div>
+  <div class="filtro-item">
+    <label>Meses de Inventario Objetivo</label>
+    <select id="f-meses" title="Tope de 1 mes para productos de Segunda Línea">
+      <option value="0.5">0,5 mes</option>
+      <option value="1" selected>1 mes (default / máximo)</option>
+    </select>
+  </div>
+  <div class="filtro-item" id="comparativo-meses" style="display:flex;gap:10px;">
+  </div>
+</div>
+
+<div class="table-card" style="margin-bottom:20px;">
+  <div class="table-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <div class="table-header-title">Cantidad a Comprar</div>
+    <button id="btn-exportar-excel" class="btn-filter" style="padding:8px 14px;font-size:12px;">
+      📥 Exportar Excel
+    </button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Producto</th>
+          <th class="text-right">Código</th>
+          <th class="text-right">Embalaje</th>
+          <th class="text-right">Cantidad a Comprar</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-body">
+        <tr><td colspan="4" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const btnActualizarInv = document.getElementById('btn-actualizar-inv');
+if (btnActualizarInv) {
+  btnActualizarInv.addEventListener('click', async function () {
+    const btn = this;
+    const textoOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Actualizando...';
+    try {
+      const r = await fetch('/admin/actualizar_inventario', { method: 'POST' });
+      const d = await r.json();
+      alert(d.msg);
+      if (d.ok) location.reload();
+    } catch (e) {
+      alert('Error al actualizar: ' + e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = textoOriginal;
+    }
+  });
+}
+
+const fmtUnid = v => Math.round(v).toLocaleString("es-CL");
+
+document.getElementById("btn-exportar-excel").addEventListener("click", () => {
+  const familia = document.getElementById("f-familia").value;
+  const meses = document.getElementById("f-meses").value;
+  window.location.href = `/api/inventario/segunda_linea/compras/exportar?familia=${encodeURIComponent(familia)}&meses=${encodeURIComponent(meses)}`;
+});
+
+function cargarDatos() {
+  const familia = document.getElementById("f-familia").value;
+  const meses = document.getElementById("f-meses").value;
+
+  document.getElementById("tabla-body").innerHTML =
+    '<tr><td colspan="4" style="text-align:center;color:#475569;padding:24px;">Cargando...</td></tr>';
+
+  fetch(`/api/inventario/segunda_linea/compras?familia=${encodeURIComponent(familia)}&meses=${encodeURIComponent(meses)}`)
+    .then(r => r.json())
+    .then(renderTodo)
+    .catch(err => console.error("Error plan de compras segunda linea:", err));
+
+  cargarComparativo();
+}
+
+const fmtValor = v => "$" + Math.round(v).toLocaleString("es-CL");
+
+function cargarComparativo() {
+  const familia = document.getElementById("f-familia").value;
+  fetch(`/api/inventario/segunda_linea/compras/resumen_valor?familia=${encodeURIComponent(familia)}`)
+    .then(r => r.json())
+    .then(renderComparativo)
+    .catch(err => console.error("Error resumen valor compra:", err));
+}
+
+function renderComparativo(d) {
+  const mesesActual = document.getElementById("f-meses").value;
+  const cont = document.getElementById("comparativo-meses");
+  cont.innerHTML = d.niveles.map(n => {
+    const mesesTxt = n.meses.toString().replace(".", ",");
+    const activo = String(n.meses) === mesesActual ? "activo" : "";
+    return `
+      <div class="comparativo-card ${activo}" data-meses="${n.meses}" title="Click para aplicar este nivel de meses">
+        <div class="comparativo-meses">${mesesTxt} mes${n.meses > 1 ? "es" : ""}</div>
+        <div class="comparativo-valor">${fmtValor(n.valor)}</div>
+      </div>
+    `;
+  }).join("");
+
+  cont.querySelectorAll(".comparativo-card").forEach(card => {
+    card.addEventListener("click", () => {
+      const meses = card.dataset.meses;
+      const select = document.getElementById("f-meses");
+      if ([...select.options].some(o => o.value === meses)) {
+        select.value = meses;
+        cargarDatos();
+      }
+    });
+  });
+}
+
+function renderTodo(d) {
+  document.getElementById("kpi-total").textContent      = fmtUnid(d.resumen.total_candidatos);
+  document.getElementById("kpi-necesidad").textContent   = fmtUnid(d.resumen.con_necesidad_compra);
+
+  if (d.productos.length === 0) {
+    document.getElementById("tabla-body").innerHTML =
+      `<tr><td colspan="4" style="text-align:center;color:#475569;padding:32px;">No hay productos de segunda línea para esta familia.</td></tr>`;
+    return;
+  }
+
+  let html = "";
+  const grupos = [];
+  const indice = {};
+  d.productos.forEach(p => {
+    if (!(p.subfamilia in indice)) {
+      indice[p.subfamilia] = grupos.length;
+      grupos.push({ subfamilia: p.subfamilia, productos: [], productosSueltos: [], subgrupos: null, indiceSub: {} });
+    }
+    const g = grupos[indice[p.subfamilia]];
+    g.productos.push(p);
+    if (p.grupo) {
+      if (!g.subgrupos) g.subgrupos = [];
+      if (!(p.grupo in g.indiceSub)) {
+        g.indiceSub[p.grupo] = g.subgrupos.length;
+        g.subgrupos.push({ grupo: p.grupo, productos: [] });
+      }
+      g.subgrupos[g.indiceSub[p.grupo]].productos.push(p);
+    } else {
+      g.productosSueltos.push(p);
+    }
+  });
+
+  function claveOrdenGrupo(nombreGrupo) {
+    const m = /^(\d+)/.exec(nombreGrupo);
+    return m ? parseInt(m[1], 10) : Infinity;
+  }
+  grupos.forEach(g => {
+    if (g.subgrupos) {
+      g.subgrupos.sort((a, b) => claveOrdenGrupo(a.grupo) - claveOrdenGrupo(b.grupo));
+    }
+  });
+
+  function filaProducto(p, attrs) {
+    const sinNecesidad = p.cantidad_a_comprar <= 0;
+    return `
+      <tr class="fila-producto-compra" ${attrs}>
+        <td>${p.descripcion}</td>
+        <td class="text-right">${p.codigo_a_comprar}</td>
+        <td class="text-right">${fmtUnid(p.embalaje)}</td>
+        <td class="text-right ${sinNecesidad ? 'sin-necesidad' : 'cantidad-comprar'}">
+          ${sinNecesidad ? 'Sin necesidad' : fmtUnid(p.cantidad_a_comprar)}
+        </td>
+      </tr>
+    `;
+  }
+
+  grupos.forEach((g, gi) => {
+    const conNecesidad = g.productos.filter(p => p.cantidad_a_comprar > 0).length;
+    html += `
+      <tr class="fila-subfamilia-header" data-gidx="${gi}">
+        <td colspan="4" class="fw-bold">
+          <span class="icono-expandir">▶</span> ${g.subfamilia}
+          <span style="color:${conNecesidad > 0 ? '#22a347' : 'var(--muted)'};font-weight:600;margin-left:8px;">
+            (${conNecesidad} de ${g.productos.length} requieren compra)
+          </span>
+        </td>
+      </tr>
+    `;
+    if (g.subgrupos) {
+      g.subgrupos.forEach((sg, hi) => {
+        const gid = `${gi}-${hi}`;
+        const conNecesidadSub = sg.productos.filter(p => p.cantidad_a_comprar > 0).length;
+        html += `
+          <tr class="fila-grupo-header" data-parent-sub="${gi}" data-gpidx="${gid}">
+            <td colspan="4" class="fw-bold">
+              <span class="icono-expandir">▶</span> ${sg.grupo}
+              <span style="color:${conNecesidadSub > 0 ? '#22a347' : 'var(--muted)'};font-weight:600;margin-left:8px;">
+                (${conNecesidadSub} de ${sg.productos.length} requieren compra)
+              </span>
+            </td>
+          </tr>
+        `;
+        sg.productos.forEach(p => {
+          html += filaProducto(p, `data-parent-grupo="${gid}"`);
+        });
+      });
+    }
+    g.productosSueltos.forEach(p => {
+      html += filaProducto(p, `data-parent="${gi}"`);
+    });
+  });
+
+  document.getElementById("tabla-body").innerHTML = html;
+
+  document.querySelectorAll(".fila-subfamilia-header").forEach(fila => {
+    fila.addEventListener("click", () => {
+      const idx = fila.dataset.gidx;
+      fila.classList.toggle("expandida");
+      const expandido = fila.classList.contains("expandida");
+      document.querySelectorAll(`.fila-producto-compra[data-parent="${idx}"]`).forEach(sub => {
+        sub.classList.toggle("visible", expandido);
+      });
+      document.querySelectorAll(`.fila-grupo-header[data-parent-sub="${idx}"]`).forEach(grp => {
+        grp.classList.toggle("visible", expandido);
+        if (!expandido) {
+          grp.classList.remove("expandida");
+          document.querySelectorAll(`.fila-producto-compra[data-parent-grupo="${grp.dataset.gpidx}"]`).forEach(sub => {
+            sub.classList.remove("visible");
+          });
+        }
+      });
+    });
+  });
+
+  document.querySelectorAll(".fila-grupo-header").forEach(fila => {
+    fila.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const idx = fila.dataset.gpidx;
+      fila.classList.toggle("expandida");
+      const expandido = fila.classList.contains("expandida");
+      document.querySelectorAll(`.fila-producto-compra[data-parent-grupo="${idx}"]`).forEach(sub => {
+        sub.classList.toggle("visible", expandido);
+      });
+    });
+  });
+}
+
+fetch("/api/inventario/segunda_linea/familias")
+  .then(r => r.json())
+  .then(familias => {
+    const sel = document.getElementById("f-familia");
+    sel.innerHTML = '<option value="">Todas</option>' +
+      familias.map(f => `<option value="${f}">${f}</option>`).join("");
+    cargarDatos();
+  })
+  .catch(err => console.error("Error lista de familias:", err));
+
+document.getElementById("f-familia").addEventListener("change", cargarDatos);
+document.getElementById("f-meses").addEventListener("change", cargarDatos);
+</script>
+{% endblock %}

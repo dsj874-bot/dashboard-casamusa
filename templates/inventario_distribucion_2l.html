@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block title %}Inventario — Distribución Segunda Línea{% endblock %}
+{% block page_title %}Inventario — Distribución desde San Isidro (Segunda Línea){% endblock %}
+{% block page_subtitle %}Cuánto despachar a cada sucursal sin desabastecer el CD{% endblock %}
+
+{% block sidebar_nav %}{% include "_inventario_sidebar.html" %}{% endblock %}
+
+{% block boton_actualizar %}
+{% if es_admin %}
+<button id="btn-actualizar-inv" class="btn-filter" style="padding:8px 14px;font-size:12px;"
+        title="Busca un archivo AAMMDD_Inventario.xlsx en data/inventario/ y reemplaza el inventario completo">
+  🔄 Actualizar Inventario
+</button>
+{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .filtros-marca {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .filtro-item label {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .filtro-item select {
+    min-width: 220px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    cursor: pointer;
+  }
+  .celda-envio { font-weight: 700; }
+  .celda-envio.cubierto { color: #22a347; }
+  .celda-envio.deficit { color: #ef4444; }
+  .celda-envio.sin-envio { color: var(--muted); font-weight: 400; }
+
+  .fila-subfamilia-header { cursor: pointer; background: var(--surface2); }
+  .fila-subfamilia-header:hover { background: var(--surface3, var(--surface2)); }
+  .icono-expandir { display: inline-block; width: 14px; transition: transform .15s; }
+  .fila-subfamilia-header.expandida .icono-expandir { transform: rotate(90deg); }
+
+  .fila-grupo-header { display: none; cursor: pointer; background: var(--surface); }
+  .fila-grupo-header.visible { display: table-row; }
+  .fila-grupo-header:hover { background: var(--surface2); }
+  .fila-grupo-header td:first-child { padding-left: 32px; }
+  .fila-grupo-header.expandida .icono-expandir { transform: rotate(90deg); }
+
+  .fila-producto-dist { display: none; }
+  .fila-producto-dist.visible { display: table-row; }
+  .fila-producto-dist td:first-child { padding-left: 32px; color: var(--muted2); font-size: 12.5px; }
+  .fila-producto-dist[data-parent-grupo] td:first-child { padding-left: 56px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid" id="kpi-grid" style="margin-bottom:20px;">
+  <div class="kpi-card">
+    <div class="kpi-label">Productos con Envío Pendiente</div>
+    <div class="kpi-value" id="kpi-total">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Unidades a Enviar (Total)</div>
+    <div class="kpi-value" id="kpi-unidades" style="color:#22a347">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Con Déficit (SI no alcanza)</div>
+    <div class="kpi-value" id="kpi-deficit" style="color:#ef4444">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Objetivo de Cobertura</div>
+    <div class="kpi-value" id="kpi-objetivo" style="font-size:22px;">—</div>
+  </div>
+</div>
+
+<div class="filtros-marca">
+  <div class="filtro-item">
+    <label>Familia</label>
+    <select id="f-familia"></select>
+  </div>
+</div>
+
+<div class="table-card" style="margin-bottom:20px;">
+  <div class="table-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <div class="table-header-title" id="tabla-titulo">Detalle de Distribución</div>
+    <button id="btn-exportar-excel" class="btn-filter" style="padding:8px 14px;font-size:12px;">
+      📥 Exportar Excel
+    </button>
+  </div>
+  <div class="table-wrap">
+    <table id="tabla-distribucion">
+      <thead>
+        <tr id="tabla-head-row">
+          <th>Producto</th>
+          <th>Código</th>
+          <th class="text-right">Stock San Isidro</th>
+          <th class="text-right">Disponible SI</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-body">
+        <tr><td style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const btnActualizarInv = document.getElementById('btn-actualizar-inv');
+if (btnActualizarInv) {
+  btnActualizarInv.addEventListener('click', async function () {
+    const btn = this;
+    const textoOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Actualizando...';
+    try {
+      const r = await fetch('/admin/actualizar_inventario', { method: 'POST' });
+      const d = await r.json();
+      alert(d.msg);
+      if (d.ok) location.reload();
+    } catch (e) {
+      alert('Error al actualizar: ' + e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = textoOriginal;
+    }
+  });
+}
+
+const fmtUnid = v => Math.round(v).toLocaleString("es-CL");
+const fmtDias = v => v === null || v === undefined ? "—" : v.toFixed(1) + " d";
+
+document.getElementById("btn-exportar-excel").addEventListener("click", () => {
+  const familia = document.getElementById("f-familia").value;
+  window.location.href = `/api/inventario/segunda_linea/distribucion/exportar?familia=${encodeURIComponent(familia)}`;
+});
+
+let _sucursales = [];
+
+function cargarDatos() {
+  const familia = document.getElementById("f-familia").value;
+
+  document.getElementById("tabla-body").innerHTML =
+    '<tr><td style="text-align:center;color:#475569;padding:24px;">Cargando...</td></tr>';
+
+  fetch(`/api/inventario/segunda_linea/distribucion?familia=${encodeURIComponent(familia)}`)
+    .then(r => r.json())
+    .then(renderTodo)
+    .catch(err => console.error("Error distribucion segunda linea:", err));
+}
+
+function renderTodo(d) {
+  document.getElementById("kpi-total").textContent = fmtUnid(d.resumen.total_productos);
+  document.getElementById("kpi-unidades").textContent = fmtUnid(d.resumen.total_unidades_a_enviar);
+  document.getElementById("kpi-deficit").textContent = fmtUnid(d.resumen.productos_con_deficit);
+  document.getElementById("kpi-objetivo").textContent = d.objetivo_dias + " días";
+
+  _sucursales = d.sucursales;
+
+  const headCells = ['<th>Producto</th>', '<th>Código</th>', '<th class="text-right">Stock San Isidro</th>', '<th class="text-right">Disponible SI</th>'];
+  _sucursales.forEach(s => headCells.push(`<th class="text-right">${s}</th>`));
+  document.getElementById("tabla-head-row").innerHTML = headCells.join("");
+
+  const colspanTotal = 4 + _sucursales.length;
+
+  if (d.productos.length === 0) {
+    document.getElementById("tabla-body").innerHTML =
+      `<tr><td colspan="${colspanTotal}" style="text-align:center;color:#475569;padding:32px;">No hay productos que requieran distribución para esta familia.</td></tr>`;
+    return;
+  }
+
+  function celdaEnvio(info) {
+    if (info.alcance_actual === null && info.necesidad === 0) {
+      return `<span class="celda-envio sin-envio" title="Sin dato de venta mensual para esta sucursal">—</span>`;
+    }
+    if (info.cantidad_a_enviar <= 0 && info.necesidad <= 0) {
+      return `<span class="celda-envio sin-envio">Sin necesidad</span>`;
+    }
+    const cls = info.cubierto ? "cubierto" : "deficit";
+    const titulo = `Alcance actual: ${fmtDias(info.alcance_actual)} | Necesita: ${fmtUnid(info.necesidad)} uds`;
+    return `<span class="celda-envio ${cls}" title="${titulo}">${fmtUnid(info.cantidad_a_enviar)}</span>`;
+  }
+
+  function tieneDeficit(p) {
+    return _sucursales.some(s => !p.envios[s].cubierto);
+  }
+
+  const grupos = [];
+  const indice = {};
+  d.productos.forEach(p => {
+    if (!(p.subfamilia in indice)) {
+      indice[p.subfamilia] = grupos.length;
+      grupos.push({ subfamilia: p.subfamilia, productos: [], productosSueltos: [], subgrupos: null, indiceSub: {} });
+    }
+    const g = grupos[indice[p.subfamilia]];
+    g.productos.push(p);
+    if (p.grupo) {
+      if (!g.subgrupos) g.subgrupos = [];
+      if (!(p.grupo in g.indiceSub)) {
+        g.indiceSub[p.grupo] = g.subgrupos.length;
+        g.subgrupos.push({ grupo: p.grupo, productos: [] });
+      }
+      g.subgrupos[g.indiceSub[p.grupo]].productos.push(p);
+    } else {
+      g.productosSueltos.push(p);
+    }
+  });
+
+  function claveOrdenGrupo(nombreGrupo) {
+    const m = /^(\d+)/.exec(nombreGrupo);
+    return m ? parseInt(m[1], 10) : Infinity;
+  }
+  grupos.forEach(g => {
+    if (g.subgrupos) {
+      g.subgrupos.sort((a, b) => claveOrdenGrupo(a.grupo) - claveOrdenGrupo(b.grupo));
+    }
+  });
+
+  function resumenGrupo(productos) {
+    const conDeficit = productos.filter(tieneDeficit).length;
+    const color = conDeficit > 0 ? '#ef4444' : '#22a347';
+    const texto = conDeficit > 0 ? `${conDeficit} con déficit` : "todos cubiertos";
+    return `<span style="color:${color};font-weight:600;margin-left:8px;">(${texto} de ${productos.length})</span>`;
+  }
+
+  function filaProducto(p, attrs) {
+    const celdas = _sucursales.map(s => `<td class="text-right">${celdaEnvio(p.envios[s])}</td>`).join("");
+    return `
+      <tr class="fila-producto-dist" ${attrs}>
+        <td>${p.descripcion}</td>
+        <td>${p.codigo}</td>
+        <td class="text-right text-muted">${fmtUnid(p.stock_san_isidro)}</td>
+        <td class="text-right text-muted">${fmtUnid(p.disponible_san_isidro)}</td>
+        ${celdas}
+      </tr>
+    `;
+  }
+
+  let html = "";
+  grupos.forEach((g, gi) => {
+    html += `
+      <tr class="fila-subfamilia-header" data-gidx="${gi}">
+        <td colspan="${colspanTotal}" class="fw-bold">
+          <span class="icono-expandir">▶</span> ${g.subfamilia}
+          ${resumenGrupo(g.productos)}
+        </td>
+      </tr>
+    `;
+    if (g.subgrupos) {
+      g.subgrupos.forEach((sg, hi) => {
+        const gid = `${gi}-${hi}`;
+        html += `
+          <tr class="fila-grupo-header" data-parent-sub="${gi}" data-gpidx="${gid}">
+            <td colspan="${colspanTotal}" class="fw-bold">
+              <span class="icono-expandir">▶</span> ${sg.grupo}
+              ${resumenGrupo(sg.productos)}
+            </td>
+          </tr>
+        `;
+        sg.productos.forEach(p => {
+          html += filaProducto(p, `data-parent-grupo="${gid}"`);
+        });
+      });
+    }
+    g.productosSueltos.forEach(p => {
+      html += filaProducto(p, `data-parent="${gi}"`);
+    });
+  });
+
+  if (grupos.length === 0) {
+    html = `<tr><td colspan="${colspanTotal}" style="text-align:center;color:#475569;padding:32px;">No hay productos que requieran distribución para esta familia.</td></tr>`;
+  }
+
+  document.getElementById("tabla-body").innerHTML = html;
+
+  document.querySelectorAll(".fila-subfamilia-header").forEach(fila => {
+    fila.addEventListener("click", () => {
+      const idx = fila.dataset.gidx;
+      fila.classList.toggle("expandida");
+      const expandido = fila.classList.contains("expandida");
+      document.querySelectorAll(`.fila-producto-dist[data-parent="${idx}"]`).forEach(sub => {
+        sub.classList.toggle("visible", expandido);
+      });
+      document.querySelectorAll(`.fila-grupo-header[data-parent-sub="${idx}"]`).forEach(grp => {
+        grp.classList.toggle("visible", expandido);
+        if (!expandido) {
+          grp.classList.remove("expandida");
+          document.querySelectorAll(`.fila-producto-dist[data-parent-grupo="${grp.dataset.gpidx}"]`).forEach(sub => {
+            sub.classList.remove("visible");
+          });
+        }
+      });
+    });
+  });
+
+  document.querySelectorAll(".fila-grupo-header").forEach(fila => {
+    fila.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const idx = fila.dataset.gpidx;
+      fila.classList.toggle("expandida");
+      const expandido = fila.classList.contains("expandida");
+      document.querySelectorAll(`.fila-producto-dist[data-parent-grupo="${idx}"]`).forEach(sub => {
+        sub.classList.toggle("visible", expandido);
+      });
+    });
+  });
+}
+
+fetch("/api/inventario/segunda_linea/familias")
+  .then(r => r.json())
+  .then(familias => {
+    const sel = document.getElementById("f-familia");
+    sel.innerHTML = '<option value="">Todas</option>' +
+      familias.map(f => `<option value="${f}">${f}</option>`).join("");
+    cargarDatos();
+  })
+  .catch(err => console.error("Error lista de familias:", err));
+
+document.getElementById("f-familia").addEventListener("change", cargarDatos);
+</script>
+{% endblock %}

@@ -8,6 +8,7 @@ import pandas as pd
 import data_loader
 import data_loader_inventario
 import data_loader_obligatorios
+import data_loader_segunda_linea
 import data_loader_adquisiciones
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -543,6 +544,137 @@ def api_inventario_plan_compras_exportar():
         else:
             buffer = data_loader_obligatorios.exportar_plan_compras_excel(familia, meses)
         nombre = f"Plan_de_Compra_{familia or 'Todas'}.xlsx".replace(" ", "_")
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=nombre,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ══════════════════════════════════════════════════════
+#  SEGUNDA LINEA -- productos AAA/M05 fuera de Obligatorios (ver
+#  data_loader_segunda_linea.py). Sin version Excel: se calcula 100%
+#  desde Postgres, no requiere ningun archivo nuevo.
+# ══════════════════════════════════════════════════════
+@app.route("/inventario/alertas_segunda_linea")
+@login_requerido
+def inventario_alertas_segunda_linea():
+    return render_template("inventario_alertas_2l.html",
+                           active="inventario_alertas_2l",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/inventario/distribucion_segunda_linea")
+@login_requerido
+def inventario_distribucion_segunda_linea():
+    return render_template("inventario_distribucion_2l.html",
+                           active="inventario_distribucion_2l",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/inventario/compras_segunda_linea")
+@login_requerido
+def inventario_compras_segunda_linea():
+    return render_template("inventario_compras_2l.html",
+                           active="inventario_compras_2l",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/inventario/segunda_linea/familias")
+@login_requerido
+def api_segunda_linea_familias():
+    try:
+        return jsonify(data_loader_segunda_linea.get_familias_segunda_linea())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/segunda_linea/alertas")
+@login_requerido
+def api_segunda_linea_alertas():
+    try:
+        familia = request.args.get("familia", "") or None
+        return jsonify(data_loader_segunda_linea.get_alertas_quiebre_segunda_linea(familia))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/segunda_linea/alertas/exportar")
+@login_requerido
+def api_segunda_linea_alertas_exportar():
+    try:
+        familia = request.args.get("familia", "") or None
+        buffer = data_loader_segunda_linea.exportar_alertas_excel(familia)
+        nombre = f"Alertas_Segunda_Linea_{familia or 'Todas'}.xlsx".replace(" ", "_")
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=nombre,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/segunda_linea/distribucion")
+@login_requerido
+def api_segunda_linea_distribucion():
+    try:
+        familia = request.args.get("familia", "") or None
+        return jsonify(data_loader_segunda_linea.get_distribucion_segunda_linea(familia))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/segunda_linea/distribucion/exportar")
+@login_requerido
+def api_segunda_linea_distribucion_exportar():
+    try:
+        familia = request.args.get("familia", "") or None
+        buffer = data_loader_segunda_linea.exportar_distribucion_excel(familia)
+        nombre = f"Distribucion_Segunda_Linea_{familia or 'Todas'}.xlsx".replace(" ", "_")
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=nombre,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/segunda_linea/compras")
+@login_requerido
+def api_segunda_linea_compras():
+    try:
+        familia = request.args.get("familia", "") or None
+        meses = request.args.get("meses", type=float)
+        return jsonify(data_loader_segunda_linea.get_plan_compra_segunda_linea(familia, meses))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/segunda_linea/compras/resumen_valor")
+@login_requerido
+def api_segunda_linea_compras_resumen_valor():
+    try:
+        familia = request.args.get("familia", "") or None
+        return jsonify(data_loader_segunda_linea.get_resumen_valor_compra_segunda_linea(familia))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inventario/segunda_linea/compras/exportar")
+@login_requerido
+def api_segunda_linea_compras_exportar():
+    try:
+        familia = request.args.get("familia", "") or None
+        meses = request.args.get("meses", type=float)
+        buffer = data_loader_segunda_linea.exportar_plan_compras_excel(familia, meses)
+        nombre = f"Plan_de_Compra_Segunda_Linea_{familia or 'Todas'}.xlsx".replace(" ", "_")
         return send_file(
             buffer,
             as_attachment=True,

@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+
+{% block title %}Inventario — Alertas Segunda Línea{% endblock %}
+{% block page_title %}Inventario — Alertas de Quiebre (Segunda Línea){% endblock %}
+{% block page_subtitle %}Productos AAA/M05 fuera de Obligatorios — se abastecen si el presupuesto alcanza{% endblock %}
+
+{% block sidebar_nav %}{% include "_inventario_sidebar.html" %}{% endblock %}
+
+{% block boton_actualizar %}
+{% if es_admin %}
+<button id="btn-actualizar-inv" class="btn-filter" style="padding:8px 14px;font-size:12px;"
+        title="Busca un archivo AAMMDD_Inventario.xlsx en data/inventario/ y reemplaza el inventario completo">
+  🔄 Actualizar Inventario
+</button>
+{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .filtros-marca {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .filtro-item label {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .filtro-item select {
+    min-width: 220px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    cursor: pointer;
+  }
+
+  #tabla-alertas { table-layout: fixed; }
+  #tabla-alertas th, #tabla-alertas td {
+    vertical-align: middle;
+  }
+  #tabla-alertas thead th {
+    text-align: center;
+  }
+  #tabla-alertas tbody td {
+    text-align: right;
+  }
+  #tabla-alertas col.col-producto { width: 260px; }
+  #tabla-alertas col.col-suc { width: 130px; }
+  #tabla-alertas tbody td:first-child { text-align: left; }
+
+  .fila-subfamilia-header { cursor: pointer; background: var(--surface2); }
+  .fila-subfamilia-header:hover { background: var(--surface3, var(--surface2)); }
+  .icono-expandir { display: inline-block; width: 14px; transition: transform .15s; }
+  .fila-subfamilia-header.expandida .icono-expandir { transform: rotate(90deg); }
+
+  .fila-grupo-header { display: none; cursor: pointer; background: var(--surface); }
+  .fila-grupo-header.visible { display: table-row; }
+  .fila-grupo-header:hover { background: var(--surface2); }
+  .fila-grupo-header td:first-child { padding-left: 32px; }
+  .fila-grupo-header.expandida .icono-expandir { transform: rotate(90deg); }
+
+  .fila-producto { display: none; }
+  .fila-producto.visible { display: table-row; }
+  .fila-producto td:first-child { padding-left: 32px; color: var(--muted2); font-size: 12.5px; }
+  .fila-producto[data-parent-grupo] td:first-child { padding-left: 56px; }
+
+  .celda-stock { border-radius: 8px; padding: 6px 4px; font-weight: 600; }
+  .celda-ok      { background: rgba(34,163,71,0.12); color: #22a347; }
+  .celda-alerta-temprana { background: rgba(234,179,8,0.16); color: #b45309; }
+  .celda-quiebre { background: rgba(239,68,68,0.14); color: #ef4444; }
+  .celda-quiebre-cd { background: rgba(239,68,68,0.28); color: #ef4444; box-shadow: inset 0 0 0 2px #ef4444; }
+  .badge-cd { font-size: 9px; font-weight: 700; background: #ef4444; color: #fff; border-radius: 4px; padding: 1px 5px; margin-left: 4px; vertical-align: middle; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid" id="kpi-grid" style="margin-bottom:20px;">
+  <div class="kpi-card">
+    <div class="kpi-label">Productos Segunda Línea</div>
+    <div class="kpi-value" id="kpi-total">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">En Quiebre Crítico (alguna sucursal)</div>
+    <div class="kpi-value" id="kpi-quiebre" style="color:#ef4444">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Alerta Temprana (a vigilar)</div>
+    <div class="kpi-value" id="kpi-alerta-temprana" style="color:#b45309">—</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">En Quiebre en CD (San Isidro)</div>
+    <div class="kpi-value" id="kpi-quiebre-cd" style="color:#ef4444">—</div>
+  </div>
+</div>
+
+<div class="filtros-marca">
+  <div class="filtro-item">
+    <label>Familia</label>
+    <select id="f-familia"></select>
+  </div>
+</div>
+
+<div class="table-card" style="margin-bottom:20px;">
+  <div class="table-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div class="table-header-title" id="tabla-titulo">Detalle por Producto</div>
+    <div style="display:flex;gap:14px;font-size:12px;color:var(--muted);align-items:center;">
+      <span><span class="celda-stock celda-quiebre" style="padding:2px 8px;">▉</span> Quiebre crítico (&lt; 7 días)</span>
+      <span><span class="celda-stock celda-alerta-temprana" style="padding:2px 8px;">▉</span> Alerta temprana (7 – 15 días)</span>
+      <span><span class="celda-stock celda-ok" style="padding:2px 8px;">▉</span> Ok (≥ 15 días)</span>
+      <button id="btn-exportar-excel" class="btn-filter" style="padding:8px 14px;font-size:12px;">
+        📥 Exportar Excel
+      </button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="tabla-alertas">
+      <colgroup id="tabla-colgroup"></colgroup>
+      <thead>
+        <tr id="tabla-head-row">
+          <th>Producto</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-body">
+        <tr><td style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const btnActualizarInv = document.getElementById('btn-actualizar-inv');
+if (btnActualizarInv) {
+  btnActualizarInv.addEventListener('click', async function () {
+    const btn = this;
+    const textoOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Actualizando...';
+    try {
+      const r = await fetch('/admin/actualizar_inventario', { method: 'POST' });
+      const d = await r.json();
+      alert(d.msg);
+      if (d.ok) location.reload();
+    } catch (e) {
+      alert('Error al actualizar: ' + e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = textoOriginal;
+    }
+  });
+}
+
+const fmtUnid = v => Math.round(v).toLocaleString("es-CL");
+const fmtAlcance = v => v.toLocaleString("es-CL", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " d";
+
+document.getElementById("btn-exportar-excel").addEventListener("click", () => {
+  const familia = document.getElementById("f-familia").value;
+  window.location.href = `/api/inventario/segunda_linea/alertas/exportar?familia=${encodeURIComponent(familia)}`;
+});
+
+function cargarDatos() {
+  const familia = document.getElementById("f-familia").value;
+
+  document.getElementById("tabla-body").innerHTML =
+    '<tr><td style="text-align:center;color:#475569;padding:24px;">Cargando...</td></tr>';
+
+  fetch(`/api/inventario/segunda_linea/alertas?familia=${encodeURIComponent(familia)}`)
+    .then(r => r.json())
+    .then(renderTodo)
+    .catch(err => console.error("Error alertas segunda linea:", err));
+}
+
+function renderTodo(d) {
+  document.getElementById("kpi-total").textContent           = fmtUnid(d.resumen.total_candidatos);
+  document.getElementById("kpi-quiebre").textContent         = fmtUnid(d.resumen.con_quiebre);
+  document.getElementById("kpi-alerta-temprana").textContent = fmtUnid(d.resumen.con_alerta_temprana);
+  document.getElementById("kpi-quiebre-cd").textContent      = fmtUnid(d.resumen.con_quiebre_cd);
+
+  document.getElementById("tabla-colgroup").innerHTML =
+    '<col class="col-producto">' + d.sucursales.map(() => '<col class="col-suc">').join("");
+
+  const headCells = ['<th>Producto</th>'];
+  d.sucursales.forEach(s => {
+    headCells.push(`<th>${s.nombre}${s.es_cd ? '<span class="badge-cd">CD</span>' : ''}</th>`);
+  });
+  document.getElementById("tabla-head-row").innerHTML = headCells.join("");
+
+  const grupos = [];
+  const indice = {};
+  d.productos.forEach(p => {
+    if (!(p.subfamilia in indice)) {
+      indice[p.subfamilia] = grupos.length;
+      grupos.push({ subfamilia: p.subfamilia, productos: [], productosSueltos: [], subgrupos: null, indiceSub: {} });
+    }
+    const g = grupos[indice[p.subfamilia]];
+    g.productos.push(p);
+    if (p.grupo) {
+      if (!g.subgrupos) g.subgrupos = [];
+      if (!(p.grupo in g.indiceSub)) {
+        g.indiceSub[p.grupo] = g.subgrupos.length;
+        g.subgrupos.push({ grupo: p.grupo, productos: [] });
+      }
+      g.subgrupos[g.indiceSub[p.grupo]].productos.push(p);
+    } else {
+      g.productosSueltos.push(p);
+    }
+  });
+
+  function claveOrdenGrupo(nombreGrupo) {
+    const m = /^(\d+)/.exec(nombreGrupo);
+    return m ? parseInt(m[1], 10) : Infinity;
+  }
+  grupos.forEach(g => {
+    if (g.subgrupos) {
+      g.subgrupos.sort((a, b) => claveOrdenGrupo(a.grupo) - claveOrdenGrupo(b.grupo));
+    }
+  });
+
+  function celda(info) {
+    let clase = "celda-ok";
+    if (info.nivel === "amarillo") clase = "celda-alerta-temprana";
+    if (info.nivel === "rojo") clase = info.es_cd ? "celda-quiebre-cd" : "celda-quiebre";
+    const principal = info.alcance !== null ? fmtAlcance(info.alcance) : fmtUnid(info.stock);
+    return `<span class="celda-stock ${clase}">${principal}</span>`;
+  }
+
+  function filaProducto(p, attrs) {
+    return `
+      <tr class="fila-producto" ${attrs}>
+        <td>${p.descripcion}</td>
+        ${d.sucursales.map(s => `<td>${celda(p.sucursales[s.nombre])}</td>`).join("")}
+      </tr>
+    `;
+  }
+
+  const colspanTotal = d.sucursales.length + 1;
+
+  let html = "";
+  function resumenGrupo(productos) {
+    const rojo = productos.filter(p => p.tiene_quiebre).length;
+    const amarillo = productos.filter(p => p.tiene_alerta_temprana && !p.tiene_quiebre).length;
+    const color = rojo > 0 ? '#ef4444' : (amarillo > 0 ? '#b45309' : '#22a347');
+    const partes = [];
+    if (rojo > 0) partes.push(`${rojo} en quiebre`);
+    if (amarillo > 0) partes.push(`${amarillo} alerta temprana`);
+    const texto = partes.length ? partes.join(", ") : "sin alertas";
+    return `<span style="color:${color};font-weight:600;margin-left:8px;">(${texto} de ${productos.length})</span>`;
+  }
+
+  grupos.forEach((g, gi) => {
+    html += `
+      <tr class="fila-subfamilia-header" data-gidx="${gi}">
+        <td colspan="${colspanTotal}" class="fw-bold">
+          <span class="icono-expandir">▶</span> ${g.subfamilia}
+          ${resumenGrupo(g.productos)}
+        </td>
+      </tr>
+    `;
+    if (g.subgrupos) {
+      g.subgrupos.forEach((sg, hi) => {
+        const gid = `${gi}-${hi}`;
+        html += `
+          <tr class="fila-grupo-header" data-parent-sub="${gi}" data-gpidx="${gid}">
+            <td colspan="${colspanTotal}" class="fw-bold">
+              <span class="icono-expandir">▶</span> ${sg.grupo}
+              ${resumenGrupo(sg.productos)}
+            </td>
+          </tr>
+        `;
+        sg.productos.forEach(p => {
+          html += filaProducto(p, `data-parent-grupo="${gid}"`);
+        });
+      });
+    }
+    g.productosSueltos.forEach(p => {
+      html += filaProducto(p, `data-parent="${gi}"`);
+    });
+  });
+
+  if (grupos.length === 0) {
+    html = `<tr><td colspan="${colspanTotal}" style="text-align:center;color:#475569;padding:32px;">No hay productos de segunda línea para esta familia.</td></tr>`;
+  }
+
+  document.getElementById("tabla-body").innerHTML = html;
+
+  document.querySelectorAll(".fila-subfamilia-header").forEach(fila => {
+    fila.addEventListener("click", () => {
+      const idx = fila.dataset.gidx;
+      fila.classList.toggle("expandida");
+      const expandido = fila.classList.contains("expandida");
+      document.querySelectorAll(`.fila-producto[data-parent="${idx}"]`).forEach(sub => {
+        sub.classList.toggle("visible", expandido);
+      });
+      document.querySelectorAll(`.fila-grupo-header[data-parent-sub="${idx}"]`).forEach(grp => {
+        grp.classList.toggle("visible", expandido);
+        if (!expandido) {
+          grp.classList.remove("expandida");
+          document.querySelectorAll(`.fila-producto[data-parent-grupo="${grp.dataset.gpidx}"]`).forEach(sub => {
+            sub.classList.remove("visible");
+          });
+        }
+      });
+    });
+  });
+
+  document.querySelectorAll(".fila-grupo-header").forEach(fila => {
+    fila.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const idx = fila.dataset.gpidx;
+      fila.classList.toggle("expandida");
+      const expandido = fila.classList.contains("expandida");
+      document.querySelectorAll(`.fila-producto[data-parent-grupo="${idx}"]`).forEach(sub => {
+        sub.classList.toggle("visible", expandido);
+      });
+    });
+  });
+}
+
+fetch("/api/inventario/segunda_linea/familias")
+  .then(r => r.json())
+  .then(familias => {
+    const sel = document.getElementById("f-familia");
+    sel.innerHTML = '<option value="">Todas</option>' +
+      familias.map(f => `<option value="${f}">${f}</option>`).join("");
+    cargarDatos();
+  })
+  .catch(err => console.error("Error lista de familias:", err));
+
+document.getElementById("f-familia").addEventListener("change", cargarDatos);
+</script>
+{% endblock %}
