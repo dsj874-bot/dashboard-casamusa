@@ -480,6 +480,8 @@ def inventario_distribucion():
 def api_inventario_distribucion():
     try:
         familia = request.args.get("familia", "") or None
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_obligatorios_pg.get_distribucion_desde_san_isidro_pg(familia))
         return jsonify(data_loader_obligatorios.get_distribucion_desde_san_isidro(familia))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -490,7 +492,10 @@ def api_inventario_distribucion():
 def api_inventario_distribucion_exportar():
     try:
         familia = request.args.get("familia", "") or None
-        buffer = data_loader_obligatorios.exportar_distribucion_excel(familia)
+        if USAR_POSTGRES_INVENTARIO:
+            buffer = data_loader_obligatorios_pg.exportar_distribucion_excel_pg(familia)
+        else:
+            buffer = data_loader_obligatorios.exportar_distribucion_excel(familia)
         nombre = f"Distribucion_San_Isidro_{familia or 'Todas'}.xlsx".replace(" ", "_")
         return send_file(
             buffer,

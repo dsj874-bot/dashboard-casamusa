@@ -101,6 +101,19 @@ def main():
             dopg.get_alertas_quiebre_critico_pg(familia),
         )
 
+    print("Comparando get_distribucion_desde_san_isidro()...")
+    check(
+        "get_distribucion_desde_san_isidro (todas las familias)",
+        do.get_distribucion_desde_san_isidro(),
+        dopg.get_distribucion_desde_san_isidro_pg(),
+    )
+    for familia in do.get_familias_obligatorios():
+        check(
+            f"get_distribucion_desde_san_isidro ({familia})",
+            do.get_distribucion_desde_san_isidro(familia),
+            dopg.get_distribucion_desde_san_isidro_pg(familia),
+        )
+
     print()
     if fallas:
         print(f"{len(fallas)} diferencias encontradas:")

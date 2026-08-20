@@ -584,7 +584,14 @@ def exportar_distribucion_excel(familia=None):
     necesita y si queda cubierta. Devuelve un BytesIO listo para
     mandar como descarga.
     """
-    resultado = get_distribucion_desde_san_isidro(familia)
+    return _construir_excel_distribucion(get_distribucion_desde_san_isidro(familia))
+
+
+def _construir_excel_distribucion(resultado):
+    """Formato del Excel de Distribucion, separado de
+    exportar_distribucion_excel() para que
+    data_loader_obligatorios_pg.py pueda reusarlo con el resultado
+    calculado desde Postgres, sin duplicar el armado de columnas."""
     nombres_sucursales = resultado["sucursales"]
 
     filas = []
