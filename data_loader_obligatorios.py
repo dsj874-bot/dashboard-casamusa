@@ -301,7 +301,14 @@ def exportar_alertas_excel(familia=None):
     Mismo criterio de familia que la pantalla. Devuelve un BytesIO
     listo para mandar como descarga.
     """
-    resultado = get_alertas_quiebre_critico(familia)
+    return _construir_excel_alertas(get_alertas_quiebre_critico(familia))
+
+
+def _construir_excel_alertas(resultado):
+    """Formato del Excel de Alertas, separado de exportar_alertas_excel()
+    para que data_loader_obligatorios_pg.py pueda reusarlo con el
+    resultado calculado desde Postgres, sin duplicar el armado de
+    columnas."""
     nombres_sucursales = [s["nombre"] for s in resultado["sucursales"]]
 
     filas = []

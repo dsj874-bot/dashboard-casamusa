@@ -34,6 +34,7 @@ if USAR_POSTGRES_COMERCIAL:
 USAR_POSTGRES_INVENTARIO = os.environ.get("USAR_POSTGRES_INVENTARIO", "1") == "1"
 if USAR_POSTGRES_INVENTARIO:
     import data_loader_inventario_pg
+    import data_loader_obligatorios_pg
 
 # ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
@@ -419,6 +420,8 @@ def inventario_alertas():
 @login_requerido
 def api_inventario_alertas_familias():
     try:
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_obligatorios_pg.get_familias_obligatorios_pg())
         return jsonify(data_loader_obligatorios.get_familias_obligatorios())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -429,6 +432,8 @@ def api_inventario_alertas_familias():
 def api_inventario_alertas_quiebre():
     try:
         familia = request.args.get("familia", "") or None
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_obligatorios_pg.get_alertas_quiebre_critico_pg(familia))
         return jsonify(data_loader_obligatorios.get_alertas_quiebre_critico(familia))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -439,7 +444,10 @@ def api_inventario_alertas_quiebre():
 def api_inventario_alertas_quiebre_exportar():
     try:
         familia = request.args.get("familia", "") or None
-        buffer = data_loader_obligatorios.exportar_alertas_excel(familia)
+        if USAR_POSTGRES_INVENTARIO:
+            buffer = data_loader_obligatorios_pg.exportar_alertas_excel_pg(familia)
+        else:
+            buffer = data_loader_obligatorios.exportar_alertas_excel(familia)
         nombre = f"Alertas_Quiebre_{familia or 'Todas'}.xlsx".replace(" ", "_")
         return send_file(
             buffer,
