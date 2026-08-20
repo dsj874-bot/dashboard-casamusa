@@ -86,6 +86,25 @@ def _leer_hoja_con_datos(path, columnas_esperadas):
     return xl.parse(xl.sheet_names[0])
 
 
+def fusionar_datos_duros(df):
+    """Cruza FAMILIA/SUBFAMILIA/GRUPO/VENTA MENSUAL * (de
+    Datos_Duros_Inventario.xlsx) sobre un df ya leido del export SAP,
+    por CODIGO -- opcional, si no existe el archivo simplemente no hay
+    apertura por Familia. Extraido de _leer_inventario() para
+    reutilizarlo tambien desde /api/subir_inventario (app.py), que lee
+    el export subido por la web y no pasa por el cache de disco."""
+    if os.path.exists(DATOS_DUROS_XLSX):
+        dd = _leer_hoja_con_datos(DATOS_DUROS_XLSX, columnas_esperadas=["CODIGO", "FAMILIA", "SUBFAMILIA"])
+        cols_venta = [c for c in dd.columns if c.startswith("VENTA MENSUAL")]
+        dd = dd[["CODIGO", "FAMILIA", "SUBFAMILIA", "GRUPO"] + cols_venta].drop_duplicates("CODIGO")
+        df = df.merge(dd, on="CODIGO", how="left")
+    else:
+        df["FAMILIA"] = None
+        df["SUBFAMILIA"] = None
+        df["GRUPO"] = None
+    return df
+
+
 def _leer_inventario():
     if not os.path.exists(INVENTARIO_XLSX):
         raise FileNotFoundError(f"No se encontro {INVENTARIO_XLSX}")
@@ -100,19 +119,7 @@ def _leer_inventario():
     if necesita_recargar:
         df = _leer_hoja_con_datos(INVENTARIO_XLSX, columnas_esperadas=["CODIGO", "CUP"])
         df["CUP"] = pd.to_numeric(df["CUP"], errors="coerce").fillna(0)
-
-        # Familia/Subfamilia/Grupo vienen de un archivo aparte
-        # (Datos_Duros_Inventario.xlsx), cruzado por CODIGO -- opcional,
-        # si no existe el archivo simplemente no hay apertura por Familia.
-        if mod_time_dd is not None:
-            dd = _leer_hoja_con_datos(DATOS_DUROS_XLSX, columnas_esperadas=["CODIGO", "FAMILIA", "SUBFAMILIA"])
-            cols_venta = [c for c in dd.columns if c.startswith("VENTA MENSUAL")]
-            dd = dd[["CODIGO", "FAMILIA", "SUBFAMILIA", "GRUPO"] + cols_venta].drop_duplicates("CODIGO")
-            df = df.merge(dd, on="CODIGO", how="left")
-        else:
-            df["FAMILIA"] = None
-            df["SUBFAMILIA"] = None
-            df["GRUPO"] = None
+        df = fusionar_datos_duros(df)
 
         _cache["df"]          = df
         _cache["mod_time"]    = mod_time

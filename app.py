@@ -30,6 +30,11 @@ USAR_POSTGRES_COMERCIAL = os.environ.get("USAR_POSTGRES_COMERCIAL", "1") == "1"
 if USAR_POSTGRES_COMERCIAL:
     import data_loader_pg
 
+# Mismo patron para el dominio Inventario (ver migrations/004_inventario.sql)
+USAR_POSTGRES_INVENTARIO = os.environ.get("USAR_POSTGRES_INVENTARIO", "1") == "1"
+if USAR_POSTGRES_INVENTARIO:
+    import data_loader_inventario_pg
+
 # ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
 #  Para agregar un gerente: agregar una línea aquí
@@ -532,6 +537,8 @@ def api_inventario_plan_compras_exportar():
 @login_requerido
 def api_inventario_resumen():
     try:
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_inventario_pg.get_resumen_inventario_pg())
         return jsonify(data_loader_inventario.get_resumen_inventario())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -541,6 +548,8 @@ def api_inventario_resumen():
 @login_requerido
 def api_inventario_bodegas():
     try:
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_inventario_pg.get_inventario_por_bodega_pg())
         return jsonify(data_loader_inventario.get_inventario_por_bodega())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -550,6 +559,8 @@ def api_inventario_bodegas():
 @login_requerido
 def api_inventario_clasificacion():
     try:
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_inventario_pg.get_inventario_por_clasificacion_pg())
         return jsonify(data_loader_inventario.get_inventario_por_clasificacion())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -559,6 +570,8 @@ def api_inventario_clasificacion():
 @login_requerido
 def api_inventario_procedencia():
     try:
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_inventario_pg.get_inventario_por_procedencia_pg())
         return jsonify(data_loader_inventario.get_inventario_por_procedencia())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -568,6 +581,8 @@ def api_inventario_procedencia():
 @login_requerido
 def api_inventario_familia():
     try:
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_inventario_pg.get_inventario_por_familia_pg())
         return jsonify(data_loader_inventario.get_inventario_por_familia())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -577,6 +592,8 @@ def api_inventario_familia():
 @login_requerido
 def api_inventario_bodegas_lista():
     try:
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_inventario_pg.get_bodegas_disponibles_pg())
         return jsonify(data_loader_inventario.get_bodegas_disponibles())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -588,6 +605,8 @@ def api_inventario_marca_subfamilia():
     try:
         bodega = request.args.get("bodega", "")
         procedencia = request.args.get("procedencia", "todas")
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_inventario_pg.get_inventario_por_marca_subfamilia_pg(bodega, procedencia))
         return jsonify(data_loader_inventario.get_inventario_por_marca_subfamilia(bodega, procedencia))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1018,6 +1037,73 @@ def admin_actualizar_inventario():
         return jsonify(resultado)
     except Exception as e:
         return jsonify({"ok": False, "msg": f"Error: {str(e)}"}), 500
+
+
+# ══════════════════════════════════════════════════════
+#  SUBIR INVENTARIO — self-service (reemplaza el flujo de dejar el
+#  archivo en data/inventario/ + boton "Actualizar datos")
+# ══════════════════════════════════════════════════════
+@app.route("/subir_inventario")
+@admin_requerido
+def subir_inventario():
+    return render_template("subir_inventario.html",
+                           active="subir_inventario",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/subir_inventario", methods=["POST"])
+@admin_requerido
+def api_subir_inventario():
+    if not USAR_POSTGRES_INVENTARIO:
+        return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_INVENTARIO=1)."}), 400
+
+    archivo = request.files.get("archivo")
+    if not archivo or not archivo.filename:
+        return jsonify({"ok": False, "msg": "No se recibio ningun archivo."}), 400
+    if not archivo.filename.lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "msg": "El archivo debe ser .xlsx (export directo de SAP, sin convertir)."}), 400
+
+    import tempfile
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            tmp.write(archivo.read())
+            tmp_path = tmp.name
+        df = data_loader_inventario._leer_hoja_con_datos(tmp_path, columnas_esperadas=["CODIGO", "CUP"])
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"No se pudo leer el Excel: {e}"}), 400
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    faltantes = [c for c in ("CODIGO", "CUP") if c not in df.columns]
+    if faltantes:
+        return jsonify({
+            "ok": False,
+            "msg": f"El archivo no tiene el formato esperado del export de SAP. Faltan columnas: {', '.join(faltantes)}",
+        }), 400
+    if len(df) == 0:
+        return jsonify({"ok": False, "msg": "El archivo esta vacio (0 filas)."}), 400
+
+    df["CUP"] = pd.to_numeric(df["CUP"], errors="coerce").fillna(0)
+    # Fusiona Datos_Duros_Inventario.xlsx si existe en este servidor (la
+    # maquina local lo tiene; Vercel no) -- si no existe, cargar_productos/
+    # cargar_stock conservan FAMILIA/SUBFAMILIA/GRUPO/venta_mensual que ya
+    # estaban en Postgres en vez de borrarlos (ver backfill_inventario.py).
+    df = data_loader_inventario.fusionar_datos_duros(df)
+
+    try:
+        data_loader_inventario_pg.sincronizar_inventario_pg(df)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error al procesar/subir el archivo: {e}"}), 500
+
+    n_filas = len(df)
+    filas_fmt = f"{n_filas:,}".replace(",", ".")
+    return jsonify({
+        "ok": True,
+        "filas": n_filas,
+        "msg": f"OK: inventario actualizado, {filas_fmt} productos.",
+    })
 
 
 # ══════════════════════════════════════════════════════
