@@ -80,13 +80,21 @@ def construir_stock_largo(df):
     # numero propio, no la suma de las 5 bodegas con columna propia) --
     # stock/transito de "Todas" se calculan sumando las bodegas reales en
     # SQL al consultar, no se duplican aqui.
-    if dli.VENTA_MENSUAL_TODAS in df.columns:
-        todas = pd.DataFrame({
-            "codigo": df["CODIGO"], "bodega": "Todas",
-            "stock": None, "transito": None,
-            "venta_mensual": df[dli.VENTA_MENSUAL_TODAS],
-        })
-        partes.append(todas)
+    #
+    # Se agrega SIEMPRE (con venta_mensual=None si falta la columna), no
+    # solo cuando la columna esta presente -- si se omitiera la fila
+    # entera cuando falta el dato, una subida web sin Datos_Duros
+    # (columna ausente) dejaria CERO filas "Todas" en la tabla tras el
+    # truncate de mas abajo, y el rescate de venta_mensual (ver
+    # cargar_stock) no tiene nada que rellenar porque la fila ni
+    # siquiera existe -- bug real que dejo venta_consolidada en 0 para
+    # todos los productos tras una subida sin ese archivo.
+    todas = pd.DataFrame({
+        "codigo": df["CODIGO"], "bodega": "Todas",
+        "stock": None, "transito": None,
+        "venta_mensual": df[dli.VENTA_MENSUAL_TODAS] if dli.VENTA_MENSUAL_TODAS in df.columns else None,
+    })
+    partes.append(todas)
 
     return pd.concat(partes, ignore_index=True)
 
@@ -120,7 +128,18 @@ def cargar_stock(df, archivo_origen="backfill_inicial", tamano_lote=5000, reinte
     with db.get_connection() as conn0:
         with conn0.cursor() as cur:
             cur.execute("select codigo, bodega, venta_mensual from inventario_stock where venta_mensual is not null")
-            venta_previa = {(codigo, bodega): venta for codigo, bodega, venta in cur.fetchall()}
+            # db.get_connection() usa row_factory=dict_row -- cada fila de
+            # fetchall() es un dict, no una tupla. Desempacar
+            # "for codigo, bodega, venta in fetchall()" iteraba las LLAVES
+            # del dict ("codigo","bodega","venta_mensual" como strings, no
+            # los valores reales), asi que venta_previa quedaba con una
+            # sola entrada basura y el rescate de abajo nunca encontraba
+            # nada -- bug real, no encontrado hasta ahora porque las 2
+            # validaciones (validar_inventario.py, validar_obligatorios.py)
+            # solo corren DESPUES de un backfill local con Datos_Duros
+            # mergeado (venta_mensual siempre presente, nunca dispara este
+            # camino).
+            venta_previa = {(r["codigo"], r["bodega"]): r["venta_mensual"] for r in cur.fetchall()}
     if venta_previa:
         faltantes = largo["venta_mensual"].isna()
         if faltantes.any():
