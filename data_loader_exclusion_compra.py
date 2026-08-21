@@ -3,8 +3,29 @@ Productos marcados como "no se compra" (productos_no_comprar) --
 afecta solo Plan de Compra (Obligatorios y Segunda Linea): el producto
 sigue visible con su stock real en Alertas/Distribucion, nunca se
 sugiere comprarlo. Pantalla self-service: /gestionar_productos_compra.
+
+Tambien centraliza los 2 prefijos de codigo que son reglas de negocio
+permanentes (no listas curadas), para que data_loader_segunda_linea.py
+y el buscador de esta pantalla no se desincronicen:
+- PREFIJOS_FUERA_SEGUNDA_LINEA: fuera de Segunda Linea completa
+  (Alertas, Distribucion y Compra) -- codigos que no son productos
+  reales para este proposito.
+- PREFIJOS_IMPORTADO_SIN_INJERENCIA: Importados sobre los que el
+  usuario no tiene injerencia de compra -- siguen visibles en
+  Alertas/Distribucion, solo se excluyen de Plan de Compra.
 """
 import db
+
+PREFIJOS_FUERA_SEGUNDA_LINEA = ("6",)
+PREFIJOS_IMPORTADO_SIN_INJERENCIA = ("3", "7")
+PREFIJOS_EXCLUIDOS_BUSCADOR = PREFIJOS_FUERA_SEGUNDA_LINEA + PREFIJOS_IMPORTADO_SIN_INJERENCIA
+
+
+def _condicion_prefijos_excluidos(prefijos):
+    """SQL "codigo::text not like 'X%' and not like 'Y%' ..." para una
+    tupla de prefijos -- evita repetir el patron a mano en cada
+    consulta."""
+    return " and ".join(f"codigo::text not like '{p}%%'" for p in prefijos)
 
 
 def get_productos_no_comprar():
@@ -63,13 +84,14 @@ def quitar_no_comprar(codigo):
 
 def get_familias_productos():
     """Familias disponibles para el filtro de /gestionar_productos_compra
-    -- mismo criterio de exclusion de codigos que empiezan con "6" que
-    el resto de la busqueda (ver buscar_productos)."""
+    -- mismo criterio de exclusion de prefijos que el resto de la
+    busqueda (ver buscar_productos): no tiene sentido mostrar
+    familias cuyos unicos productos ya estan fuera de consideracion."""
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(f"""
                 select distinct familia from productos
-                where familia is not null and codigo::text not like '6%%'
+                where familia is not null and {_condicion_prefijos_excluidos(PREFIJOS_EXCLUIDOS_BUSCADOR)}
                 order by familia
             """)
             return [r["familia"] for r in cur.fetchall()]
@@ -83,10 +105,11 @@ def buscar_productos(query=None, familia=None, limite=200):
     -- "conduit fuerte" debe encontrar "CONDUIT PVC 1" 32MM ... FUERTE
     3MTS", donde las palabras no quedan juntas.
 
-    Nunca incluye codigos que empiecen con "6" -- mismo criterio de
-    negocio ya usado en Segunda Linea (data_loader_segunda_linea.py),
-    pedido explicitamente para esta pantalla tambien: esos codigos no
-    son productos reales para comprar/excluir.
+    Nunca incluye codigos con los prefijos de PREFIJOS_EXCLUIDOS_BUSCADOR
+    (6, 3, 7) -- no tiene sentido ofrecer marcarlos "no comprar" a mano
+    cuando ya estan fuera de Segunda Linea (6) o ya se excluyen de
+    Plan de Compra por regla permanente (3, 7, ver
+    data_loader_segunda_linea.get_plan_compra_segunda_linea).
 
     Devuelve (filas, total) -- algunas familias tienen miles de
     productos (ej. Series Domiciliarias: 2.429), asi que el total real
@@ -96,7 +119,7 @@ def buscar_productos(query=None, familia=None, limite=200):
     if not query and not familia:
         return [], 0
 
-    condiciones = ["codigo::text not like '6%%'"]
+    condiciones = [_condicion_prefijos_excluidos(PREFIJOS_EXCLUIDOS_BUSCADOR)]
     params = {"lim": limite}
 
     if familia:

@@ -62,7 +62,7 @@ def _cargar_candidatos(cur, familia=None):
     hace falta (embalaje, pedido_total, cup, id_procedencia) sale de
     esta unica consulta a productos -- a diferencia de Obligatorios,
     aca no hace falta una segunda tabla/consulta."""
-    sql = """
+    sql = f"""
         select codigo, familia, subfamilia, grupo, descripcion,
                embalaje, pedido_total, cup, id_procedencia
         from productos
@@ -72,7 +72,7 @@ def _cargar_candidatos(cur, familia=None):
               union
               select codigo_equivalente from productos_obligatorios where codigo_equivalente is not null
           )
-          and codigo::text not like '6%%'
+          and {dec._condicion_prefijos_excluidos(dec.PREFIJOS_FUERA_SEGUNDA_LINEA)}
     """
     params = {}
     if familia:
@@ -90,7 +90,7 @@ def _procedencia(id_procedencia):
 def get_familias_segunda_linea():
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(f"""
                 select distinct familia from productos
                 where clas_csd in ('AAA', 'M05')
                   and codigo not in (
@@ -98,7 +98,7 @@ def get_familias_segunda_linea():
                       union
                       select codigo_equivalente from productos_obligatorios where codigo_equivalente is not null
                   )
-                  and codigo::text not like '6%%'
+                  and {dec._condicion_prefijos_excluidos(dec.PREFIJOS_FUERA_SEGUNDA_LINEA)}
                 order by familia
             """)
             return [r["familia"] for r in cur.fetchall()]
@@ -385,7 +385,7 @@ def get_plan_compra_segunda_linea(familia=None, meses_objetivo_default=None):
         # diferencia del digito 6, que se excluye de Segunda Linea
         # completa -- ver _cargar_candidatos).
         cod_str = str(cod)
-        excluido_compra = cod in codigos_excluidos or cod_str.startswith("3") or cod_str.startswith("7")
+        excluido_compra = cod in codigos_excluidos or cod_str.startswith(dec.PREFIJOS_IMPORTADO_SIN_INJERENCIA)
         if excluido_compra:
             cantidad_a_comprar = 0
 
