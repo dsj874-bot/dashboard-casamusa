@@ -92,6 +92,37 @@ def admin_requerido(f):
 
 
 # ══════════════════════════════════════════════════════
+#  ACCESO RESTRINGIDO: Inventario y Adquisiciones -- por ahora solo
+#  el usuario dueño del proyecto puede verlas (pedido explicito).
+#  Para agregar a alguien mas, sumarlo a este set -- no hace falta
+#  tocar ninguna ruta individual.
+# ══════════════════════════════════════════════════════
+USUARIOS_INVENTARIO_ADQUISICIONES = {"dsepulveda@casamusa.cl"}
+
+PREFIJOS_RESTRINGIDOS_INV_ADQ = (
+    "/inventario", "/api/inventario",
+    "/adquisiciones", "/api/adquisiciones",
+    "/subir_inventario", "/api/subir_inventario",
+    "/gestionar_productos_compra", "/api/gestionar_productos_compra",
+    "/gestionar_prioridad", "/api/gestionar_prioridad",
+    "/admin/actualizar_inventario",
+)
+
+
+@app.before_request
+def _restringir_inventario_adquisiciones():
+    if not request.path.startswith(PREFIJOS_RESTRINGIDOS_INV_ADQ):
+        return None
+    if "usuario" not in session:
+        return None  # el login_requerido/admin_requerido de la ruta se encarga del redirect a /login
+    if session["usuario"] in USUARIOS_INVENTARIO_ADQUISICIONES:
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "msg": "No tienes acceso a esta sección."}), 403
+    return redirect(url_for("inicio"))
+
+
+# ══════════════════════════════════════════════════════
 #  Variables disponibles en todos los templates
 # ══════════════════════════════════════════════════════
 @app.context_processor
@@ -169,7 +200,11 @@ AREAS = [
 @app.route("/inicio")
 @login_requerido
 def inicio():
-    return render_template("inicio.html", areas=AREAS, session_nombre=session.get("nombre"))
+    areas_visibles = [
+        a for a in AREAS
+        if a["slug"] not in ("inventario", "adquisiciones") or session.get("usuario") in USUARIOS_INVENTARIO_ADQUISICIONES
+    ]
+    return render_template("inicio.html", areas=areas_visibles, session_nombre=session.get("nombre"))
 
 
 def _area_en_construccion(slug):
