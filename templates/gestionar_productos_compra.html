@@ -27,7 +27,7 @@
 
   .campo { display: flex; flex-direction: column; gap: 5px; }
   .campo label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
-  .campo input {
+  .campo input, .campo select {
     background: var(--surface2);
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -35,6 +35,7 @@
     font-size: 13px;
     padding: 8px 10px;
   }
+  .fila-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
   .resultados-busqueda { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
   .resultado-item {
@@ -86,10 +87,18 @@
 
   <div class="accion-card">
     <h3>🔍 Marcar un producto como "no se compra"</h3>
-    <p class="desc">Busca por código o descripción. El producto sigue apareciendo en Alertas y Distribución con su stock real — solo deja de sugerirse en Plan de Compra (Obligatorios y Segunda Línea).</p>
-    <div class="campo">
-      <label>Buscar producto</label>
-      <input type="text" id="buscar-input" placeholder="Ej: conduit fuerte, o un código">
+    <p class="desc">Busca por código o descripción, y/o filtra por familia para ver todos sus productos. El producto sigue apareciendo en Alertas y Distribución con su stock real — solo deja de sugerirse en Plan de Compra (Obligatorios y Segunda Línea).</p>
+    <div class="fila-2">
+      <div class="campo">
+        <label>Familia (opcional)</label>
+        <select id="familia-select">
+          <option value="">Todas las familias</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>Buscar por código o descripción</label>
+        <input type="text" id="buscar-input" placeholder="Ej: conduit fuerte, o un código">
+      </div>
     </div>
     <div class="resultados-busqueda" id="resultados-busqueda"></div>
     <span class="resultado" id="buscar-resultado"></span>
@@ -185,23 +194,48 @@
   let _ultimaBusqueda = [];
   let _debounce = null;
 
-  document.getElementById('buscar-input').addEventListener('input', (e) => {
-    clearTimeout(_debounce);
-    const q = e.target.value.trim();
-    if (!q) {
+  function dispararBusqueda() {
+    const q = document.getElementById('buscar-input').value.trim();
+    const familia = document.getElementById('familia-select').value;
+    if (!q && !familia) {
       document.getElementById('resultados-busqueda').innerHTML = '';
       _ultimaBusqueda = [];
       return;
     }
-    _debounce = setTimeout(() => buscar(q), 300);
-  });
+    buscar(q, familia);
+  }
 
-  async function buscar(q) {
+  document.getElementById('buscar-input').addEventListener('input', () => {
+    clearTimeout(_debounce);
+    _debounce = setTimeout(dispararBusqueda, 300);
+  });
+  document.getElementById('familia-select').addEventListener('change', dispararBusqueda);
+
+  async function cargarFamilias() {
     try {
-      const r = await fetch(`/api/gestionar_productos_compra/buscar?q=${encodeURIComponent(q)}`);
+      const r = await fetch('/api/gestionar_productos_compra/familias');
+      const d = await r.json();
+      if (!d.ok) return;
+      const sel = document.getElementById('familia-select');
+      sel.innerHTML = '<option value="">Todas las familias</option>' +
+        d.familias.map(f => `<option value="${f}">${f}</option>`).join('');
+    } catch (e) {
+      console.error('Error cargando familias:', e);
+    }
+  }
+
+  let _totalBusqueda = 0;
+
+  async function buscar(q, familia) {
+    try {
+      const params = new URLSearchParams();
+      if (q) params.set('q', q);
+      if (familia) params.set('familia', familia);
+      const r = await fetch(`/api/gestionar_productos_compra/buscar?${params.toString()}`);
       const d = await r.json();
       if (!d.ok) return;
       _ultimaBusqueda = d.resultados;
+      _totalBusqueda = d.total;
       renderResultadosBusqueda(_ultimaBusqueda);
     } catch (e) {
       console.error('Error de búsqueda:', e);
@@ -210,13 +244,17 @@
 
   function renderResultadosBusqueda(resultados) {
     const cont = document.getElementById('resultados-busqueda');
+    const hayFiltro = document.getElementById('buscar-input').value.trim() || document.getElementById('familia-select').value;
     if (!resultados || resultados.length === 0) {
-      cont.innerHTML = document.getElementById('buscar-input').value.trim()
+      cont.innerHTML = hayFiltro
         ? '<div style="color:var(--muted);font-size:12.5px;padding:8px;">Sin resultados.</div>'
         : '';
       return;
     }
-    cont.innerHTML = resultados.map(p => {
+    const aviso = _totalBusqueda > resultados.length
+      ? `<div style="color:var(--amber);font-size:11.5px;padding:4px 8px;">Mostrando ${resultados.length} de ${_totalBusqueda} — escribe más para acotar la búsqueda.</div>`
+      : '';
+    cont.innerHTML = aviso + resultados.map(p => {
       const yaMarcado = CODIGOS_EXCLUIDOS.has(p.codigo);
       return `
         <div class="resultado-item ${yaMarcado ? 'ya-marcado' : ''}">
@@ -258,5 +296,6 @@
   }
 
   cargarExcluidos();
+  cargarFamilias();
 </script>
 {% endblock %}

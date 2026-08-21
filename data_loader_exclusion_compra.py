@@ -61,31 +61,66 @@ def quitar_no_comprar(codigo):
         conn.commit()
 
 
-def buscar_productos(query, limite=20):
-    """Busca productos por codigo (si query es numerico) o descripcion
-    -- para el buscador de /gestionar_productos_compra. Por palabra
-    (todas deben aparecer, en cualquier orden) en vez de substring
-    literal completo -- "conduit fuerte" debe encontrar "CONDUIT PVC
-    1" 32MM ... FUERTE 3MTS", donde las palabras no quedan juntas."""
-    query = (query or "").strip()
-    if not query:
-        return []
+def get_familias_productos():
+    """Familias disponibles para el filtro de /gestionar_productos_compra
+    -- mismo criterio de exclusion de codigos que empiezan con "6" que
+    el resto de la busqueda (ver buscar_productos)."""
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            if query.isdigit():
-                cur.execute(
-                    "select codigo, descripcion, familia, subfamilia from productos "
-                    "where codigo::text like %(q)s order by codigo limit %(lim)s",
-                    {"q": f"{query}%", "lim": limite},
-                )
-            else:
-                palabras = query.split()
-                condiciones = " and ".join(f"descripcion ilike %(p{i})s" for i in range(len(palabras)))
-                params = {f"p{i}": f"%{p}%" for i, p in enumerate(palabras)}
-                params["lim"] = limite
-                cur.execute(
-                    f"select codigo, descripcion, familia, subfamilia from productos "
-                    f"where {condiciones} order by descripcion limit %(lim)s",
-                    params,
-                )
-            return cur.fetchall()
+            cur.execute("""
+                select distinct familia from productos
+                where familia is not null and codigo::text not like '6%%'
+                order by familia
+            """)
+            return [r["familia"] for r in cur.fetchall()]
+
+
+def buscar_productos(query=None, familia=None, limite=200):
+    """Busca productos por codigo (si query es numerico) y/o
+    descripcion, opcionalmente filtrado por familia -- para el
+    buscador de /gestionar_productos_compra. Por palabra (todas deben
+    aparecer, en cualquier orden) en vez de substring literal completo
+    -- "conduit fuerte" debe encontrar "CONDUIT PVC 1" 32MM ... FUERTE
+    3MTS", donde las palabras no quedan juntas.
+
+    Nunca incluye codigos que empiecen con "6" -- mismo criterio de
+    negocio ya usado en Segunda Linea (data_loader_segunda_linea.py),
+    pedido explicitamente para esta pantalla tambien: esos codigos no
+    son productos reales para comprar/excluir.
+
+    Devuelve (filas, total) -- algunas familias tienen miles de
+    productos (ej. Series Domiciliarias: 2.429), asi que el total real
+    se informa aparte para que la pantalla avise "mostrando X de Y" en
+    vez de cortar en silencio."""
+    query = (query or "").strip()
+    if not query and not familia:
+        return [], 0
+
+    condiciones = ["codigo::text not like '6%%'"]
+    params = {"lim": limite}
+
+    if familia:
+        condiciones.append("familia = %(familia)s")
+        params["familia"] = familia
+
+    if query:
+        if query.isdigit():
+            condiciones.append("codigo::text like %(q)s")
+            params["q"] = f"{query}%"
+        else:
+            for i, palabra in enumerate(query.split()):
+                condiciones.append(f"descripcion ilike %(p{i})s")
+                params[f"p{i}"] = f"%{palabra}%"
+
+    where = " and ".join(condiciones)
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"select count(*) as n from productos where {where}", params)
+            total = cur.fetchone()["n"]
+            cur.execute(
+                f"select codigo, descripcion, familia, subfamilia from productos "
+                f"where {where} order by descripcion limit %(lim)s",
+                params,
+            )
+            filas = cur.fetchall()
+    return filas, total

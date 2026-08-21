@@ -1205,12 +1205,23 @@ def api_gestionar_productos_compra_datos():
         return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
 
 
+@app.route("/api/gestionar_productos_compra/familias")
+@admin_requerido
+def api_gestionar_productos_compra_familias():
+    try:
+        return jsonify({"ok": True, "familias": data_loader_exclusion_compra.get_familias_productos()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
 @app.route("/api/gestionar_productos_compra/buscar")
 @admin_requerido
 def api_gestionar_productos_compra_buscar():
     try:
         q = request.args.get("q", "")
-        return jsonify({"ok": True, "resultados": data_loader_exclusion_compra.buscar_productos(q)})
+        familia = request.args.get("familia", "") or None
+        resultados, total = data_loader_exclusion_compra.buscar_productos(q, familia)
+        return jsonify({"ok": True, "resultados": resultados, "total": total})
     except Exception as e:
         return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
 
