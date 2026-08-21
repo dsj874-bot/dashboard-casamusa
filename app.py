@@ -69,7 +69,13 @@ GERENTES = {
     "sarjona@casamusa.cl":    {"password": "LC2026",            "nombre": "LC", "sucursal": "LC"},
     "evalera@casamusa.cl":    {"password": "MR2026",            "nombre": "MR", "sucursal": "MR"},
     "jvillegas@casamusa.cl":  {"password": "Express2026",       "nombre": "Express", "sucursal": ["CH", "MP"]},
-    "eperez@casamusa.cl":     {"password": "Ecommerce2026",     "nombre": "E-commerce", "canal": CANALES_ECOMMERCE},
+    # sucursal_ne (distinto de "sucursal"): Elennys es vendedora propia
+    # bajo "CANAL DIGITAL" en vendedor_home, asi que su fila de NE x
+    # Facturar vive ahi -- pero NO se le puede poner "sucursal" a secas
+    # (eso restringiria TODOS sus reportes de Comercial a solo esa
+    # sucursal, rompiendo el filtro de canal que la deja ver e-commerce
+    # de toda la empresa). sucursal_ne solo se usa para /cargar_ne.
+    "eperez@casamusa.cl":     {"password": "Ecommerce2026",     "nombre": "E-commerce", "canal": CANALES_ECOMMERCE, "sucursal_ne": "CANAL DIGITAL"},
 }
 
 # ══════════════════════════════════════════════════════
@@ -119,7 +125,7 @@ def admin_o_jefe_sucursal_requerido(f):
         if session["usuario"] not in GERENTES:
             session.clear()
             return redirect(url_for("login"))
-        if not session.get("admin") and not session.get("sucursal"):
+        if not session.get("admin") and not session.get("sucursal") and not session.get("sucursal_ne"):
             return jsonify({"ok": False, "msg": "No tienes permiso para esta accion."}), 403
         return f(*args, **kwargs)
     return decorado
@@ -170,6 +176,10 @@ def inject_es_admin():
         "es_admin": session.get("admin", False),
         "sucursal_sesion": suc_label,
         "canal_sesion": canal_label,
+        # Jefe de Sucursal real, o un perfil sin sucursal general que
+        # de todos modos tiene su propia fila de NE (ej. Elennys/
+        # E-commerce bajo "CANAL DIGITAL") -- ver _sucursal_ne_forzada().
+        "puede_cargar_ne": bool(session.get("sucursal") or session.get("sucursal_ne")),
     }
 
 
@@ -184,6 +194,15 @@ def _canal_forzado():
     logueado (ej. E-commerce), o None si ve todos los canales sin
     restriccion. Mismo mecanismo que _sucursal_forzada()."""
     return session.get("canal")
+
+
+def _sucursal_ne_forzada():
+    """Sucursal a usar SOLO para NE x Facturar -- session["sucursal"]
+    para un Jefe de Sucursal real, o session["sucursal_ne"] para un
+    perfil sin sucursal general (ej. Elennys/E-commerce, cuya fila de
+    NE vive bajo "CANAL DIGITAL" en vendedor_home aunque sus reportes
+    de Comercial no esten restringidos por sucursal)."""
+    return session.get("sucursal") or session.get("sucursal_ne")
 
 
 # ══════════════════════════════════════════════════════
@@ -222,6 +241,7 @@ def login():
             session["admin"]    = gerente.get("admin", False)
             session["sucursal"] = gerente.get("sucursal")
             session["canal"]    = gerente.get("canal")
+            session["sucursal_ne"] = gerente.get("sucursal_ne")
             return redirect(url_for("inicio"))
         error = "Correo o contraseña incorrectos."
     return render_template("login.html", error=error)
@@ -1150,12 +1170,12 @@ def api_cargar_ne():
         return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_COMERCIAL=1)."}), 400
     try:
         if request.method == "GET":
-            return jsonify({"ok": True, "filas": data_loader_pg.get_ne_x_facturar_pg(filtro_sucursal=_sucursal_forzada())})
+            return jsonify({"ok": True, "filas": data_loader_pg.get_ne_x_facturar_pg(filtro_sucursal=_sucursal_ne_forzada())})
 
         body = request.get_json(silent=True) or {}
         filas = body.get("filas", [])
         n_guardadas = data_loader_pg.guardar_ne_x_facturar_pg(
-            filas, updated_by=session.get("usuario", "admin"), sucursales_permitidas=_sucursal_forzada(),
+            filas, updated_by=session.get("usuario", "admin"), sucursales_permitidas=_sucursal_ne_forzada(),
         )
         return jsonify({"ok": True, "msg": f"Guardado: {n_guardadas} filas de NE x Facturar."})
     except Exception as e:
