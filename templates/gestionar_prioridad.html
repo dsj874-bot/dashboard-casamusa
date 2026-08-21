@@ -1,0 +1,408 @@
+{% extends "base.html" %}
+
+{% block title %}Gestionar Prioridad{% endblock %}
+{% block page_title %}Gestionar Prioridad{% endblock %}
+{% block page_subtitle %}Promueve productos de Segunda Línea a Prioridad (Obligatorios), o sácalos{% endblock %}
+
+{% block sidebar_nav %}{% include "_inventario_sidebar.html" %}{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .gp-wrap { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+
+  .accion-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 12px;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .accion-card h3 { font-size: 15px; margin: 0; }
+  .accion-card p.desc { font-size: 12.5px; color: var(--muted2); margin: 0; }
+
+  .campo { display: flex; flex-direction: column; gap: 5px; }
+  .campo label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+  .campo input, .campo select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+  .fila-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  .resultados-busqueda { display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; }
+  .resultado-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+  }
+  .resultado-item .fila-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .resultado-item .info { display: flex; flex-direction: column; gap: 2px; }
+  .resultado-item .codigo { font-weight: 700; color: var(--text); }
+  .resultado-item .desc { color: var(--muted2); }
+  .resultado-item .meta { color: var(--muted); font-size: 11px; }
+
+  .form-promover {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+  }
+  .form-promover.abierto { display: flex; }
+
+  .equiv-resultados { display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; }
+  .equiv-item {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 5px 8px; border-radius: 6px; background: var(--surface); font-size: 11.5px; cursor: pointer;
+  }
+  .equiv-item:hover { background: var(--border); }
+  .equiv-elegido {
+    font-size: 12px; color: var(--accent); display: flex; align-items: center; gap: 8px;
+  }
+  .equiv-elegido .quitar-equiv { color: var(--red); cursor: pointer; font-size: 11px; }
+
+  .btn-mini {
+    padding: 6px 12px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-mini:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-mini.quitar { background: var(--red); }
+  .btn-mini.secundario { background: var(--surface2); border: 1px solid var(--border); color: var(--text); }
+
+  .tabla-prioridad { width: 100%; border-collapse: collapse; }
+  .tabla-prioridad th, .tabla-prioridad td { padding: 8px 10px; font-size: 12.5px; text-align: left; border-bottom: 1px solid var(--border); }
+  .tabla-prioridad th { color: var(--muted); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.4px; }
+  .tabla-prioridad .meta { color: var(--muted); font-size: 11px; }
+
+  .resultado { display: none; font-size: 12.5px; border-radius: 8px; padding: 8px 12px; }
+  .resultado.mostrar { display: block; }
+  .resultado.ok { background: rgba(34,163,71,0.12); border: 1px solid var(--accent); color: var(--text); }
+  .resultado.error { background: rgba(239,68,68,0.1); border: 1px solid var(--red); color: var(--red-light); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="gp-wrap">
+
+  <div class="accion-card">
+    <h3>⭐ Promover un producto a Prioridad</h3>
+    <p class="desc">Busca el producto (típicamente uno de Segunda Línea) por código o descripción, y/o filtra por familia. Familia, subfamilia y descripción se autocompletan solos.</p>
+    <div class="fila-2">
+      <div class="campo">
+        <label>Familia (opcional)</label>
+        <select id="familia-select"><option value="">Todas las familias</option></select>
+      </div>
+      <div class="campo">
+        <label>Buscar por código o descripción</label>
+        <input type="text" id="buscar-input" placeholder="Ej: contactor, o un código">
+      </div>
+    </div>
+    <div class="resultados-busqueda" id="resultados-busqueda"></div>
+    <span class="resultado" id="promover-resultado"></span>
+  </div>
+
+  <div class="accion-card">
+    <h3>📋 Productos actualmente en Prioridad</h3>
+    <p class="desc" id="total-prioridad">Cargando...</p>
+    <div class="campo">
+      <label>Filtrar la lista</label>
+      <input type="text" id="filtro-prioridad" placeholder="Filtra por código, descripción o familia">
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="tabla-prioridad">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Producto</th>
+            <th>Procedencia</th>
+            <th>Equivalente</th>
+            <th>Marcado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tabla-prioridad-body">
+          <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px;">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let PRIORIDAD = [];
+  let CODIGOS_PRIORIDAD = new Set();
+
+  function mostrarResultado(id, ok, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.className = 'resultado mostrar ' + (ok ? 'ok' : 'error');
+    setTimeout(() => el.classList.remove('mostrar'), 4000);
+  }
+
+  // ── Lista actual de Prioridad ──────────────────────
+  async function cargarPrioridad() {
+    const r = await fetch('/api/gestionar_prioridad/datos');
+    const d = await r.json();
+    if (!d.ok) return;
+    PRIORIDAD = d.prioridad;
+    CODIGOS_PRIORIDAD = new Set(PRIORIDAD.map(p => p.codigo));
+    pintarPrioridad();
+  }
+
+  function pintarPrioridad() {
+    document.getElementById('total-prioridad').textContent = `${PRIORIDAD.length} producto(s) en Prioridad.`;
+    const filtro = document.getElementById('filtro-prioridad').value.trim().toLowerCase();
+    const filas = filtro
+      ? PRIORIDAD.filter(p =>
+          String(p.codigo).includes(filtro) ||
+          (p.descripcion || '').toLowerCase().includes(filtro) ||
+          (p.familia || '').toLowerCase().includes(filtro))
+      : PRIORIDAD;
+
+    const body = document.getElementById('tabla-prioridad-body');
+    if (filas.length === 0) {
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px;">Sin resultados.</td></tr>';
+      return;
+    }
+    body.innerHTML = filas.map(p => `
+      <tr>
+        <td class="fw-bold">${p.codigo}</td>
+        <td>${p.descripcion}<div class="meta">${p.familia || ''}${p.subfamilia ? ' / ' + p.subfamilia : ''}</div></td>
+        <td>${p.procedencia || '—'}</td>
+        <td>${p.codigo_equivalente || '—'}</td>
+        <td class="meta">${p.updated_at || '—'}${p.updated_by ? `<br>${p.updated_by}` : ''}</td>
+        <td><button class="btn-mini quitar" data-codigo="${p.codigo}">Quitar</button></td>
+      </tr>
+    `).join('');
+
+    body.querySelectorAll('.btn-mini.quitar').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(`¿Sacar el código ${btn.dataset.codigo} de Prioridad?`)) return;
+        btn.disabled = true;
+        try {
+          const r = await fetch('/api/gestionar_prioridad', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accion: 'quitar', codigo: btn.dataset.codigo }),
+          });
+          const d = await r.json();
+          mostrarResultado('promover-resultado', d.ok, d.msg);
+          if (d.ok) {
+            await cargarPrioridad();
+            renderResultadosBusqueda(_ultimaBusqueda);
+          } else {
+            btn.disabled = false;
+          }
+        } catch (e) {
+          mostrarResultado('promover-resultado', false, 'Error de conexión.');
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  document.getElementById('filtro-prioridad').addEventListener('input', pintarPrioridad);
+
+  // ── Familias para el filtro de busqueda ────────────
+  async function cargarFamilias() {
+    try {
+      const r = await fetch('/api/gestionar_prioridad/familias');
+      const d = await r.json();
+      if (!d.ok) return;
+      const sel = document.getElementById('familia-select');
+      sel.innerHTML = '<option value="">Todas las familias</option>' +
+        d.familias.map(f => `<option value="${f}">${f}</option>`).join('');
+    } catch (e) {
+      console.error('Error cargando familias:', e);
+    }
+  }
+
+  // ── Buscador de productos a promover ───────────────
+  let _ultimaBusqueda = [];
+  let _totalBusqueda = 0;
+  let _debounce = null;
+
+  function dispararBusqueda() {
+    const q = document.getElementById('buscar-input').value.trim();
+    const familia = document.getElementById('familia-select').value;
+    if (!q && !familia) {
+      document.getElementById('resultados-busqueda').innerHTML = '';
+      _ultimaBusqueda = [];
+      return;
+    }
+    buscar(q, familia);
+  }
+
+  document.getElementById('buscar-input').addEventListener('input', () => {
+    clearTimeout(_debounce);
+    _debounce = setTimeout(dispararBusqueda, 300);
+  });
+  document.getElementById('familia-select').addEventListener('change', dispararBusqueda);
+
+  async function buscar(q, familia) {
+    try {
+      const params = new URLSearchParams();
+      if (q) params.set('q', q);
+      if (familia) params.set('familia', familia);
+      const r = await fetch(`/api/gestionar_prioridad/buscar?${params.toString()}`);
+      const d = await r.json();
+      if (!d.ok) return;
+      _ultimaBusqueda = d.resultados;
+      _totalBusqueda = d.total;
+      renderResultadosBusqueda(_ultimaBusqueda);
+    } catch (e) {
+      console.error('Error de búsqueda:', e);
+    }
+  }
+
+  function renderResultadosBusqueda(resultados) {
+    const cont = document.getElementById('resultados-busqueda');
+    const hayFiltro = document.getElementById('buscar-input').value.trim() || document.getElementById('familia-select').value;
+    if (!resultados || resultados.length === 0) {
+      cont.innerHTML = hayFiltro ? '<div style="color:var(--muted);font-size:12.5px;padding:8px;">Sin resultados.</div>' : '';
+      return;
+    }
+    const aviso = _totalBusqueda > resultados.length
+      ? `<div style="color:var(--amber);font-size:11.5px;padding:4px 8px;">Mostrando ${resultados.length} de ${_totalBusqueda} — escribe más para acotar la búsqueda.</div>`
+      : '';
+    cont.innerHTML = aviso + resultados.map(p => {
+      const yaPrioridad = CODIGOS_PRIORIDAD.has(p.codigo);
+      return `
+        <div class="resultado-item">
+          <div class="fila-top">
+            <div class="info">
+              <span class="codigo">${p.codigo}</span> — <span>${p.descripcion}</span>
+              <span class="meta">${p.familia || ''}${p.subfamilia ? ' / ' + p.subfamilia : ''} · ${p.procedencia}</span>
+            </div>
+            <button class="btn-mini ${yaPrioridad ? 'secundario' : ''}" data-codigo="${p.codigo}" data-procedencia="${p.procedencia}">
+              ${yaPrioridad ? 'Ya en Prioridad — editar' : 'Promover'}
+            </button>
+          </div>
+          <div class="form-promover" id="form-${p.codigo}">
+            <div class="fila-2">
+              <div class="campo">
+                <label>Procedencia</label>
+                <select class="input-procedencia" data-codigo="${p.codigo}">
+                  <option value="Nacional" ${p.procedencia === 'Nacional' ? 'selected' : ''}>Nacional</option>
+                  <option value="Importado" ${p.procedencia === 'Importado' ? 'selected' : ''}>Importado</option>
+                </select>
+              </div>
+              <div class="campo">
+                <label>Código equivalente (opcional)</label>
+                <input type="text" class="input-equiv-buscar" data-codigo="${p.codigo}" placeholder="Buscar por código o descripción">
+              </div>
+            </div>
+            <div class="equiv-resultados" data-codigo="${p.codigo}"></div>
+            <div class="equiv-elegido" data-codigo="${p.codigo}" style="display:none;"></div>
+            <button class="btn-mini btn-confirmar-promover" data-codigo="${p.codigo}">Confirmar</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    cont.querySelectorAll('.btn-mini[data-codigo]:not(.btn-confirmar-promover)').forEach(btn => {
+      if (btn.classList.contains('quitar')) return;
+      btn.addEventListener('click', () => {
+        const form = document.getElementById(`form-${btn.dataset.codigo}`);
+        form.classList.toggle('abierto');
+      });
+    });
+
+    let _equivDebounce = null;
+    cont.querySelectorAll('.input-equiv-buscar').forEach(input => {
+      input.addEventListener('input', () => {
+        clearTimeout(_equivDebounce);
+        const codigo = input.dataset.codigo;
+        const q = input.value.trim();
+        _equivDebounce = setTimeout(() => buscarEquivalente(codigo, q), 300);
+      });
+    });
+
+    cont.querySelectorAll('.btn-confirmar-promover').forEach(btn => {
+      btn.addEventListener('click', () => confirmarPromover(btn.dataset.codigo));
+    });
+  }
+
+  async function buscarEquivalente(codigo, q) {
+    const cont = document.querySelector(`.equiv-resultados[data-codigo="${codigo}"]`);
+    if (!q) { cont.innerHTML = ''; return; }
+    try {
+      const r = await fetch(`/api/gestionar_prioridad/buscar?q=${encodeURIComponent(q)}`);
+      const d = await r.json();
+      if (!d.ok) return;
+      cont.innerHTML = d.resultados.filter(p => String(p.codigo) !== String(codigo)).slice(0, 8).map(p => `
+        <div class="equiv-item" data-codigo="${p.codigo}" data-desc="${p.descripcion.replace(/"/g, '&quot;')}">
+          <span>${p.codigo} — ${p.descripcion}</span><span class="meta">${p.procedencia}</span>
+        </div>
+      `).join('');
+      cont.querySelectorAll('.equiv-item').forEach(item => {
+        item.addEventListener('click', () => elegirEquivalente(codigo, item.dataset.codigo, item.dataset.desc));
+      });
+    } catch (e) {
+      console.error('Error buscando equivalente:', e);
+    }
+  }
+
+  function elegirEquivalente(codigo, codigoEquiv, desc) {
+    const el = document.querySelector(`.equiv-elegido[data-codigo="${codigo}"]`);
+    el.style.display = 'flex';
+    el.innerHTML = `✓ Equivalente: ${codigoEquiv} — ${desc} <span class="quitar-equiv" data-codigo="${codigo}">✕ quitar</span>`;
+    el.dataset.equivalente = codigoEquiv;
+    document.querySelector(`.equiv-resultados[data-codigo="${codigo}"]`).innerHTML = '';
+    document.querySelector(`.input-equiv-buscar[data-codigo="${codigo}"]`).value = '';
+    el.querySelector('.quitar-equiv').addEventListener('click', () => {
+      el.style.display = 'none';
+      el.removeAttribute('data-equivalente');
+    });
+  }
+
+  async function confirmarPromover(codigo) {
+    const procedencia = document.querySelector(`.input-procedencia[data-codigo="${codigo}"]`).value;
+    const equivEl = document.querySelector(`.equiv-elegido[data-codigo="${codigo}"]`);
+    const codigoEquivalente = equivEl.dataset.equivalente || null;
+    const btn = document.querySelector(`.btn-confirmar-promover[data-codigo="${codigo}"]`);
+    btn.disabled = true;
+    btn.textContent = 'Guardando...';
+    try {
+      const r = await fetch('/api/gestionar_prioridad', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion: 'promover', codigo, procedencia, codigo_equivalente: codigoEquivalente }),
+      });
+      const d = await r.json();
+      mostrarResultado('promover-resultado', d.ok, d.msg);
+      if (d.ok) {
+        await cargarPrioridad();
+        renderResultadosBusqueda(_ultimaBusqueda);
+      }
+    } catch (e) {
+      mostrarResultado('promover-resultado', false, 'Error de conexión.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Confirmar';
+    }
+  }
+
+  cargarPrioridad();
+  cargarFamilias();
+</script>
+{% endblock %}

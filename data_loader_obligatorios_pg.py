@@ -477,3 +477,83 @@ def get_resumen_valor_compra_pg(familia=None):
 
 def exportar_plan_compras_excel_pg(familia=None, meses_objetivo_default=None):
     return do._construir_excel_plan_compras(get_plan_compra_reposicion_pg(familia, meses_objetivo_default))
+
+
+# ══════════════════════════════════════════════════════
+#  PRIORIDAD (self-service sobre productos_obligatorios) --
+#  /gestionar_prioridad: promover un producto (tipicamente de Segunda
+#  Linea) a la lista curada de Obligatorios, o quitarlo. Reemplaza
+#  tener que editar Productos_Obligatorios.xlsx a mano y re-correr el
+#  backfill para cualquier cambio.
+# ══════════════════════════════════════════════════════
+def get_lista_prioridad():
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                select codigo_obligatorio, familia, subfamilia, grupo, descripcion,
+                       procedencia_obligatoria, codigo_equivalente, meses_objetivo,
+                       updated_at, updated_by
+                from productos_obligatorios
+                order by familia, subfamilia, descripcion
+            """)
+            filas = cur.fetchall()
+    return [
+        {
+            "codigo":               f["codigo_obligatorio"],
+            "familia":              f["familia"],
+            "subfamilia":           f["subfamilia"],
+            "grupo":                f["grupo"],
+            "descripcion":          f["descripcion"],
+            "procedencia":          f["procedencia_obligatoria"],
+            "codigo_equivalente":   f["codigo_equivalente"],
+            "meses_objetivo":       float(f["meses_objetivo"]) if f["meses_objetivo"] is not None else None,
+            "updated_at":           f["updated_at"].strftime("%d/%m/%Y") if f["updated_at"] else None,
+            "updated_by":           f["updated_by"],
+        }
+        for f in filas
+    ]
+
+
+def promover_a_prioridad(codigo, procedencia_obligatoria, codigo_equivalente=None, updated_by=None):
+    """Agrega (o actualiza si ya existia) un producto a
+    productos_obligatorios -- familia/subfamilia/grupo/descripcion se
+    autocompletan desde productos, no hay que volver a escribirlos."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select codigo, familia, subfamilia, grupo, descripcion from productos where codigo = %s",
+                (codigo,),
+            )
+            p = cur.fetchone()
+    if not p:
+        raise ValueError(f"El código {codigo} no existe en productos.")
+
+    with db.get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                insert into productos_obligatorios
+                    (codigo_obligatorio, familia, subfamilia, grupo, descripcion,
+                     procedencia_obligatoria, codigo_equivalente, updated_by)
+                values (%s,%s,%s,%s,%s,%s,%s,%s)
+                on conflict (codigo_obligatorio) do update set
+                    familia=excluded.familia, subfamilia=excluded.subfamilia, grupo=excluded.grupo,
+                    descripcion=excluded.descripcion, procedencia_obligatoria=excluded.procedencia_obligatoria,
+                    codigo_equivalente=excluded.codigo_equivalente, updated_by=excluded.updated_by,
+                    updated_at=now()
+                """,
+                (codigo, p["familia"], p["subfamilia"], p["grupo"], p["descripcion"],
+                 procedencia_obligatoria, codigo_equivalente, updated_by),
+            )
+        conn.commit()
+
+
+def quitar_de_prioridad(codigo):
+    """Sacar un producto de Obligatorios -- si sigue siendo AAA/M05,
+    vuelve a aparecer solo en Segunda Linea (esa lista ya excluye por
+    consulta cualquier codigo que este en productos_obligatorios, asi
+    que no hace falta ningun paso extra aca)."""
+    with db.get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("delete from productos_obligatorios where codigo_obligatorio = %s", (codigo,))
+        conn.commit()

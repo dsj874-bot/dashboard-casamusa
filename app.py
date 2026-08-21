@@ -1253,6 +1253,105 @@ def api_gestionar_productos_compra():
         return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
 
 
+# ══════════════════════════════════════════════════════
+#  GESTIONAR PRIORIDAD -- promover un producto (tipicamente de
+#  Segunda Linea) a la lista curada de Obligatorios/Prioridad, o
+#  quitarlo (vuelve solo a Segunda Linea si sigue siendo AAA/M05).
+#  Reemplaza editar Productos_Obligatorios.xlsx a mano.
+# ══════════════════════════════════════════════════════
+@app.route("/gestionar_prioridad")
+@admin_requerido
+def gestionar_prioridad():
+    return render_template("gestionar_prioridad.html",
+                           active="gestionar_prioridad",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/gestionar_prioridad/datos")
+@admin_requerido
+def api_gestionar_prioridad_datos():
+    if not USAR_POSTGRES_INVENTARIO:
+        return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_INVENTARIO=1)."}), 400
+    try:
+        return jsonify({"ok": True, "prioridad": data_loader_obligatorios_pg.get_lista_prioridad()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+@app.route("/api/gestionar_prioridad/familias")
+@admin_requerido
+def api_gestionar_prioridad_familias():
+    try:
+        return jsonify({"ok": True, "familias": data_loader_exclusion_compra.get_familias_productos()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+@app.route("/api/gestionar_prioridad/buscar")
+@admin_requerido
+def api_gestionar_prioridad_buscar():
+    try:
+        q = request.args.get("q", "")
+        familia = request.args.get("familia", "") or None
+        # Solo excluye el digito 6 (no 3/7): promover un producto
+        # Importado a Prioridad con su equivalente Nacional es
+        # justamente la forma de resolverle su "sin injerencia de
+        # compra" (ver data_loader_segunda_linea.py).
+        resultados, total = data_loader_exclusion_compra.buscar_productos(
+            q, familia, prefijos_excluidos=data_loader_exclusion_compra.PREFIJOS_FUERA_SEGUNDA_LINEA,
+        )
+        resultados = [
+            {
+                "codigo":      r["codigo"],
+                "descripcion": r["descripcion"],
+                "familia":     r["familia"],
+                "subfamilia":  r["subfamilia"],
+                "procedencia": "Importado" if r["id_procedencia"] in data_loader_inventario.IDS_IMPORTADO else "Nacional",
+            }
+            for r in resultados
+        ]
+        return jsonify({"ok": True, "resultados": resultados, "total": total})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+@app.route("/api/gestionar_prioridad", methods=["POST"])
+@admin_requerido
+def api_gestionar_prioridad():
+    if not USAR_POSTGRES_INVENTARIO:
+        return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_INVENTARIO=1)."}), 400
+    body = request.get_json(silent=True) or {}
+    accion = body.get("accion")
+    quien = session.get("usuario", "admin")
+
+    try:
+        if accion == "promover":
+            codigo = body.get("codigo")
+            procedencia = body.get("procedencia")
+            if not codigo or not procedencia:
+                return jsonify({"ok": False, "msg": "Falta el código o la procedencia."}), 400
+            codigo_equivalente = body.get("codigo_equivalente") or None
+            data_loader_obligatorios_pg.promover_a_prioridad(
+                int(codigo), procedencia,
+                codigo_equivalente=int(codigo_equivalente) if codigo_equivalente else None,
+                updated_by=quien,
+            )
+            return jsonify({"ok": True, "msg": f"Código {codigo} promovido a Prioridad."})
+
+        if accion == "quitar":
+            codigo = body.get("codigo")
+            if not codigo:
+                return jsonify({"ok": False, "msg": "Falta el código del producto."}), 400
+            data_loader_obligatorios_pg.quitar_de_prioridad(int(codigo))
+            return jsonify({"ok": True, "msg": f"Código {codigo} sacado de Prioridad."})
+
+        return jsonify({"ok": False, "msg": "Accion no reconocida."}), 400
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
 @app.route("/admin/actualizar_inventario", methods=["POST"])
 @admin_requerido
 def admin_actualizar_inventario():

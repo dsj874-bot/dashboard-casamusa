@@ -97,7 +97,7 @@ def get_familias_productos():
             return [r["familia"] for r in cur.fetchall()]
 
 
-def buscar_productos(query=None, familia=None, limite=200):
+def buscar_productos(query=None, familia=None, limite=200, prefijos_excluidos=PREFIJOS_EXCLUIDOS_BUSCADOR):
     """Busca productos por codigo (si query es numerico) y/o
     descripcion, opcionalmente filtrado por familia -- para el
     buscador de /gestionar_productos_compra. Por palabra (todas deben
@@ -105,11 +105,14 @@ def buscar_productos(query=None, familia=None, limite=200):
     -- "conduit fuerte" debe encontrar "CONDUIT PVC 1" 32MM ... FUERTE
     3MTS", donde las palabras no quedan juntas.
 
-    Nunca incluye codigos con los prefijos de PREFIJOS_EXCLUIDOS_BUSCADOR
-    (6, 3, 7) -- no tiene sentido ofrecer marcarlos "no comprar" a mano
-    cuando ya estan fuera de Segunda Linea (6) o ya se excluyen de
-    Plan de Compra por regla permanente (3, 7, ver
-    data_loader_segunda_linea.get_plan_compra_segunda_linea).
+    Por defecto nunca incluye codigos con los prefijos de
+    PREFIJOS_EXCLUIDOS_BUSCADOR (6, 3, 7) -- no tiene sentido ofrecer
+    marcarlos "no comprar" a mano cuando ya estan fuera de Segunda
+    Linea (6) o ya se excluyen de Plan de Compra por regla permanente
+    (3, 7). Pasar prefijos_excluidos=PREFIJOS_FUERA_SEGUNDA_LINEA (solo
+    el 6) desde /gestionar_prioridad -- ahi promover un producto 3/7
+    a Prioridad con un codigo_equivalente Nacional es exactamente la
+    forma de resolverle su "sin injerencia de compra".
 
     Devuelve (filas, total) -- algunas familias tienen miles de
     productos (ej. Series Domiciliarias: 2.429), asi que el total real
@@ -119,7 +122,7 @@ def buscar_productos(query=None, familia=None, limite=200):
     if not query and not familia:
         return [], 0
 
-    condiciones = [_condicion_prefijos_excluidos(PREFIJOS_EXCLUIDOS_BUSCADOR)]
+    condiciones = [_condicion_prefijos_excluidos(prefijos_excluidos)]
     params = {"lim": limite}
 
     if familia:
@@ -141,7 +144,7 @@ def buscar_productos(query=None, familia=None, limite=200):
             cur.execute(f"select count(*) as n from productos where {where}", params)
             total = cur.fetchone()["n"]
             cur.execute(
-                f"select codigo, descripcion, familia, subfamilia from productos "
+                f"select codigo, descripcion, familia, subfamilia, id_procedencia from productos "
                 f"where {where} order by descripcion limit %(lim)s",
                 params,
             )
