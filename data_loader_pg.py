@@ -401,8 +401,13 @@ def get_ventas_por_campo_pg(campo, orden_map=None, top_n=None, filtro_sucursal=N
 
 
 def get_ventas_por_sucursal_pg(filtro_sucursal=None, filtro_canal=None):
-    orden = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
-    data = get_ventas_por_campo_pg("SUCURSAL_LOGICA", orden_map=orden, filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
+    # Sin orden_map -- get_ventas_por_campo_pg ordena por defecto de
+    # mayor a menor venta del mes (ver su "else: sort by -v_mes_actual"),
+    # que es justo lo que se quiere aca: la sucursal que mas vende
+    # arriba, no un orden fijo MT/LC/MR/.../CANAL DIGITAL que deja
+    # siempre al final a la que mas vende si no es una sucursal fisica
+    # tradicional (pedido explicito del usuario).
+    data = get_ventas_por_campo_pg("SUCURSAL_LOGICA", filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
     return {
         "sucursales":   [{**r, "sucursal": r["nombre"]} for r in data["items"]],
         "total":        data["total"],
@@ -601,9 +606,17 @@ def get_proyeccion_pg(filtros=None):
     total_proy_mes = round(v_mes_26 * factor_mes, 0)
     kpis["proy_lineal"] = total_proy_mes
 
-    orden_suc = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
+    # Sucursales ordenadas por venta total del mes (mayor a menor), no
+    # por un orden fijo MT/LC/MR/.../CANAL DIGITAL -- ese orden fijo
+    # deja siempre al final a la sucursal que mas vende si no es una
+    # sucursal fisica tradicional (pedido explicito del usuario, valido
+    # para todas las pantallas de reporte por sucursal).
+    venta_por_suc = {}
+    for x in filas:
+        venta_por_suc[x["sucursal"]] = venta_por_suc.get(x["sucursal"], 0.0) + x["vta_mes"]
+    orden_suc = {suc: -venta for suc, venta in venta_por_suc.items()}
     filas.sort(key=lambda x: (
-        orden_suc.get(x["sucursal"], 99),
+        orden_suc.get(x["sucursal"], 0),
         1 if x["is_otros"] else 0,
         -x["vta_mes"],
     ))
@@ -741,10 +754,15 @@ def get_seguimiento_metas_pg(filtros=None):
             "is_otros":  vend == "OTROS",
         }
 
-    orden_suc = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
+    # Sucursales ordenadas por venta total del mes (mayor a menor), no
+    # por un orden fijo -- mismo criterio que get_proyeccion_pg.
     lista = list(filas.values())
+    venta_por_suc = {}
+    for x in lista:
+        venta_por_suc[x["sucursal"]] = venta_por_suc.get(x["sucursal"], 0.0) + x["vta_mes"]
+    orden_suc = {suc: -venta for suc, venta in venta_por_suc.items()}
     lista.sort(key=lambda x: (
-        orden_suc.get(x["sucursal"], 99),
+        orden_suc.get(x["sucursal"], 0),
         1 if x["is_otros"] else 0,
         -(x["meta"] or 0),
     ))
@@ -850,10 +868,11 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None, filtro_canal=None):
             )
             totales_grid = {(f["ano"], f["mes"]): float(f["v"]) for f in cur.fetchall()}
 
-    orden_suc  = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
+    # Ordenadas por venta acumulada (mayor a menor), no por un orden
+    # fijo -- mismo criterio que get_proyeccion_pg.
     sucursales = sorted(
         (s for s, f in acumulados.items() if f["n26"] > 0),
-        key=lambda s: orden_suc.get(s, 99),
+        key=lambda s: -float(acumulados[s]["acum_26"]),
     )
 
     tabla_acum = []
