@@ -1296,9 +1296,11 @@ def api_gestionar_prioridad_buscar():
         # Solo excluye el digito 6 (no 3/7): promover un producto
         # Importado a Prioridad con su equivalente Nacional es
         # justamente la forma de resolverle su "sin injerencia de
-        # compra" (ver data_loader_segunda_linea.py).
+        # compra" (ver data_loader_segunda_linea.py). excluir_sm0=True
+        # porque no tiene sentido promover algo sin movimiento.
         resultados, total = data_loader_exclusion_compra.buscar_productos(
             q, familia, prefijos_excluidos=data_loader_exclusion_compra.PREFIJOS_FUERA_SEGUNDA_LINEA,
+            excluir_sm0=True,
         )
         resultados = [
             {

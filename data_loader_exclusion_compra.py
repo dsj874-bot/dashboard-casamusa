@@ -97,7 +97,8 @@ def get_familias_productos():
             return [r["familia"] for r in cur.fetchall()]
 
 
-def buscar_productos(query=None, familia=None, limite=200, prefijos_excluidos=PREFIJOS_EXCLUIDOS_BUSCADOR):
+def buscar_productos(query=None, familia=None, limite=200, prefijos_excluidos=PREFIJOS_EXCLUIDOS_BUSCADOR,
+                      excluir_sm0=False):
     """Busca productos por codigo (si query es numerico) y/o
     descripcion, opcionalmente filtrado por familia -- para el
     buscador de /gestionar_productos_compra. Por palabra (todas deben
@@ -114,6 +115,11 @@ def buscar_productos(query=None, familia=None, limite=200, prefijos_excluidos=PR
     a Prioridad con un codigo_equivalente Nacional es exactamente la
     forma de resolverle su "sin injerencia de compra".
 
+    excluir_sm0=True (usado desde /gestionar_prioridad) saca los
+    productos clasificados SM0 (sin movimiento, ver
+    data_loader_inventario.ORDEN_CLASIFICACION) -- no tiene sentido
+    promover a Prioridad algo que no se mueve.
+
     Devuelve (filas, total) -- algunas familias tienen miles de
     productos (ej. Series Domiciliarias: 2.429), asi que el total real
     se informa aparte para que la pantalla avise "mostrando X de Y" en
@@ -124,6 +130,9 @@ def buscar_productos(query=None, familia=None, limite=200, prefijos_excluidos=PR
 
     condiciones = [_condicion_prefijos_excluidos(prefijos_excluidos)]
     params = {"lim": limite}
+
+    if excluir_sm0:
+        condiciones.append("coalesce(clas_csd, 'SM0') != 'SM0'")
 
     if familia:
         condiciones.append("familia = %(familia)s")
