@@ -162,6 +162,27 @@ def _restringir_inventario_adquisiciones():
     return redirect(url_for("inicio"))
 
 
+# Seguimiento Metas/Ppto comparan venta real contra una meta/presupuesto
+# fijado por vendedor o sucursal COMPLETOS -- para un perfil restringido
+# solo por canal (ej. Elennys/E-commerce) eso compara "solo su venta de
+# e-commerce" contra la meta de TODO el vendedor, mostrando practicamente
+# siempre "100% atrasado" para cualquiera que no sea ella misma (y ella ni
+# siquiera tiene meta propia cargada) -- probado en la practica, no una
+# suposicion. Se oculta para cualquier cuenta con "canal" en sesion.
+PREFIJOS_RESTRINGIDOS_CANAL = ("/metas", "/api/metas", "/ppto", "/api/ppto")
+
+
+@app.before_request
+def _restringir_metas_ppto_canal():
+    if not request.path.startswith(PREFIJOS_RESTRINGIDOS_CANAL):
+        return None
+    if "usuario" not in session or not session.get("canal"):
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "msg": "No disponible para este perfil."}), 403
+    return redirect(url_for("inicio"))
+
+
 # ══════════════════════════════════════════════════════
 #  Variables disponibles en todos los templates
 # ══════════════════════════════════════════════════════

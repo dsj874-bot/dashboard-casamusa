@@ -527,12 +527,14 @@
     <a href="/proyeccion" class="nav-item {% if active == 'proyeccion' %}active{% endif %}">
       <span class="nav-icon">📈</span><span class="nav-label"> Proyección de Ventas</span>
     </a>
+    {% if not canal_sesion %}
     <a href="/metas" class="nav-item {% if active == 'metas' %}active{% endif %}">
       <span class="nav-icon">🎯</span><span class="nav-label"> Seguimiento Metas</span>
     </a>
     <a href="/ppto" class="nav-item {% if active == 'ppto' %}active{% endif %}">
       <span class="nav-icon">📊</span><span class="nav-label"> Seguimiento Ppto</span>
     </a>
+    {% endif %}
 
     <div class="nav-section-title">Análisis</div>
     <a href="/vta_acum" class="nav-item {% if active == 'vta_acum' %}active{% endif %}">
