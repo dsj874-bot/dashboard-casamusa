@@ -108,6 +108,24 @@ def admin_requerido(f):
 
 
 # ══════════════════════════════════════════════════════
+#  DECORADOR: admin, o Jefe de Sucursal (ej. NE x Facturar -- cada uno
+#  carga solo lo suyo, el filtrado real por sucursal lo hace cada ruta)
+# ══════════════════════════════════════════════════════
+def admin_o_jefe_sucursal_requerido(f):
+    @wraps(f)
+    def decorado(*args, **kwargs):
+        if "usuario" not in session:
+            return redirect(url_for("login"))
+        if session["usuario"] not in GERENTES:
+            session.clear()
+            return redirect(url_for("login"))
+        if not session.get("admin") and not session.get("sucursal"):
+            return jsonify({"ok": False, "msg": "No tienes permiso para esta accion."}), 403
+        return f(*args, **kwargs)
+    return decorado
+
+
+# ══════════════════════════════════════════════════════
 #  ACCESO RESTRINGIDO: Inventario y Adquisiciones -- por ahora solo
 #  el usuario dueño del proyecto puede verlas (pedido explicito).
 #  Para agregar a alguien mas, sumarlo a este set -- no hace falta
@@ -1118,7 +1136,7 @@ def api_subir_ventas():
 #  guarda directo en Postgres)
 # ══════════════════════════════════════════════════════
 @app.route("/cargar_ne")
-@admin_requerido
+@admin_o_jefe_sucursal_requerido
 def cargar_ne():
     return render_template("cargar_ne.html",
                            active="cargar_ne",
@@ -1126,18 +1144,20 @@ def cargar_ne():
 
 
 @app.route("/api/cargar_ne", methods=["GET", "POST"])
-@admin_requerido
+@admin_o_jefe_sucursal_requerido
 def api_cargar_ne():
     if not USAR_POSTGRES_COMERCIAL:
         return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_COMERCIAL=1)."}), 400
     try:
         if request.method == "GET":
-            return jsonify({"ok": True, "filas": data_loader_pg.get_ne_x_facturar_pg()})
+            return jsonify({"ok": True, "filas": data_loader_pg.get_ne_x_facturar_pg(filtro_sucursal=_sucursal_forzada())})
 
         body = request.get_json(silent=True) or {}
         filas = body.get("filas", [])
-        data_loader_pg.guardar_ne_x_facturar_pg(filas, updated_by=session.get("usuario", "admin"))
-        return jsonify({"ok": True, "msg": f"Guardado: {len(filas)} filas de NE x Facturar."})
+        n_guardadas = data_loader_pg.guardar_ne_x_facturar_pg(
+            filas, updated_by=session.get("usuario", "admin"), sucursales_permitidas=_sucursal_forzada(),
+        )
+        return jsonify({"ok": True, "msg": f"Guardado: {n_guardadas} filas de NE x Facturar."})
     except Exception as e:
         return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
 

@@ -1392,10 +1392,18 @@ def _roster_por_sucursal(cur):
     return {suc: sorted(vends) for suc, vends in sorted(por_suc.items(), key=lambda kv: orden_suc.get(kv[0], 99))}
 
 
-def get_ne_x_facturar_pg():
+def get_ne_x_facturar_pg(filtro_sucursal=None):
     """Roster completo (vendedor_home + una fila 'OTROS' por sucursal,
     igual que generar_plantilla_ne.py) con el monto NE actual -- 0 si
-    nunca se cargo nada para ese vendedor."""
+    nunca se cargo nada para ese vendedor.
+
+    filtro_sucursal (Jefe de Sucursal, ej. German=MT) reduce el roster
+    a solo esa sucursal -- cada Jefe carga sus propios NE, no ve ni
+    puede tocar los de otra sucursal."""
+    permitidas = None
+    if filtro_sucursal:
+        permitidas = set(filtro_sucursal) if isinstance(filtro_sucursal, (list, tuple, set)) else {filtro_sucursal}
+
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
             roster = _roster_por_sucursal(cur)
@@ -1404,14 +1412,24 @@ def get_ne_x_facturar_pg():
 
     filas = []
     for suc, vendedores in roster.items():
+        if permitidas is not None and suc not in permitidas:
+            continue
         for vend in vendedores:
             filas.append({"sucursal": suc, "vendedor": vend, "monto_ne": montos.get((suc, vend), 0.0)})
         filas.append({"sucursal": suc, "vendedor": "OTROS", "monto_ne": montos.get((suc, "OTROS"), 0.0)})
     return filas
 
 
-def guardar_ne_x_facturar_pg(filas, updated_by="admin"):
-    """filas: [{sucursal, vendedor, monto_ne}, ...] -- upsert completo."""
+def guardar_ne_x_facturar_pg(filas, updated_by="admin", sucursales_permitidas=None):
+    """filas: [{sucursal, vendedor, monto_ne}, ...] -- upsert completo.
+
+    sucursales_permitidas (Jefe de Sucursal) descarta -- del lado del
+    servidor, no solo en la pantalla -- cualquier fila que no sea de
+    su propia sucursal, aunque llegue en el request."""
+    if sucursales_permitidas is not None:
+        permitidas = set(sucursales_permitidas) if isinstance(sucursales_permitidas, (list, tuple, set)) else {sucursales_permitidas}
+        filas = [f for f in filas if f["sucursal"] in permitidas]
+
     sql = """INSERT INTO ne_x_facturar (sucursal, vendedor, monto_ne, updated_by)
              VALUES (%(sucursal)s, %(vendedor)s, %(monto_ne)s, %(by)s)
              ON CONFLICT (sucursal, vendedor) DO UPDATE SET
@@ -1424,6 +1442,7 @@ def guardar_ne_x_facturar_pg(filas, updated_by="admin"):
         with conn.cursor() as cur:
             cur.executemany(sql, params)
         conn.commit()
+    return len(filas)
 
 
 def get_metas_roster_pg(ano, mes):
