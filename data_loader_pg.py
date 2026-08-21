@@ -195,9 +195,24 @@ def _filtro_sucursal_sql(filtro_sucursal):
     return " AND sucursal_logica = ANY(%(suc)s)", valores
 
 
-def get_resumen_pg(filtro_sucursal=None):
+def _filtro_canal_sql(filtro_canal):
+    """Igual que _filtro_sucursal_sql pero para tipo_venta -- usado
+    para forzar el perfil de E-commerce (Elennys Perez) a solo sus
+    canales (ver CANALES_ECOMMERCE en app.py)."""
+    if not filtro_canal:
+        return "", None
+    valores = list(filtro_canal) if isinstance(filtro_canal, (list, tuple, set)) else [filtro_canal]
+    return " AND tipo_venta = ANY(%(canal)s)", valores
+
+
+def get_resumen_pg(filtro_sucursal=None, filtro_canal=None):
     frag_suc, suc = _filtro_sucursal_sql(filtro_sucursal)
-    params = {"suc": suc} if suc else {}
+    frag_canal, canal = _filtro_canal_sql(filtro_canal)
+    params = {}
+    if suc:
+        params["suc"] = suc
+    if canal:
+        params["canal"] = canal
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
@@ -218,7 +233,7 @@ def get_resumen_pg(filtro_sucursal=None):
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS venta_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS venta_mes_ant
                     FROM v_ventas
-                    WHERE ano IN (2025, 2026) {frag_suc}""",
+                    WHERE ano IN (2025, 2026) {frag_suc} {frag_canal}""",
                 params,
             )
             r = cur.fetchone()
@@ -249,9 +264,14 @@ def get_resumen_pg(filtro_sucursal=None):
     }
 
 
-def get_ventas_por_mes_pg(filtro_sucursal=None):
+def get_ventas_por_mes_pg(filtro_sucursal=None, filtro_canal=None):
     frag_suc, suc = _filtro_sucursal_sql(filtro_sucursal)
-    params = {"suc": suc} if suc else {}
+    frag_canal, canal = _filtro_canal_sql(filtro_canal)
+    params = {}
+    if suc:
+        params["suc"] = suc
+    if canal:
+        params["canal"] = canal
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
@@ -260,7 +280,7 @@ def get_ventas_por_mes_pg(filtro_sucursal=None):
                       coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025), 0) AS v25
                     FROM v_ventas
-                    WHERE ano IN (2025, 2026) {frag_suc}
+                    WHERE ano IN (2025, 2026) {frag_suc} {frag_canal}
                     GROUP BY mes""",
                 params,
             )
@@ -280,13 +300,18 @@ def get_ventas_por_mes_pg(filtro_sucursal=None):
     return {"meses": meses, "ano_actual": 2026, "ano_anterior": 2025}
 
 
-def get_ventas_por_campo_pg(campo, orden_map=None, top_n=None, filtro_sucursal=None):
+def get_ventas_por_campo_pg(campo, orden_map=None, top_n=None, filtro_sucursal=None, filtro_canal=None):
     if campo not in COLUMNAS_AGRUPABLES:
         raise ValueError(f"Columna no permitida para agrupar: {campo}")
     campo_col = COLUMNAS_AGRUPABLES[campo]
 
     frag_suc, suc = _filtro_sucursal_sql(filtro_sucursal)
-    params = {"suc": suc} if suc else {}
+    frag_canal, canal = _filtro_canal_sql(filtro_canal)
+    params = {}
+    if suc:
+        params["suc"] = suc
+    if canal:
+        params["canal"] = canal
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
@@ -313,7 +338,7 @@ def get_ventas_por_campo_pg(campo, orden_map=None, top_n=None, filtro_sucursal=N
                       coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS util_mes,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_prev
                     FROM v_ventas
-                    WHERE {campo_col} IS NOT NULL {frag_suc}
+                    WHERE {campo_col} IS NOT NULL {frag_suc} {frag_canal}
                     GROUP BY {campo_col}""",
                 params,
             )
@@ -375,9 +400,9 @@ def get_ventas_por_campo_pg(campo, orden_map=None, top_n=None, filtro_sucursal=N
     }
 
 
-def get_ventas_por_sucursal_pg(filtro_sucursal=None):
+def get_ventas_por_sucursal_pg(filtro_sucursal=None, filtro_canal=None):
     orden = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
-    data = get_ventas_por_campo_pg("SUCURSAL_LOGICA", orden_map=orden, filtro_sucursal=filtro_sucursal)
+    data = get_ventas_por_campo_pg("SUCURSAL_LOGICA", orden_map=orden, filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
     return {
         "sucursales":   [{**r, "sucursal": r["nombre"]} for r in data["items"]],
         "total":        data["total"],
@@ -388,26 +413,26 @@ def get_ventas_por_sucursal_pg(filtro_sucursal=None):
     }
 
 
-def get_ventas_por_vendedor_pg(filtro_sucursal=None):
+def get_ventas_por_vendedor_pg(filtro_sucursal=None, filtro_canal=None):
     # Se agrupa por VENDEDOR (nombre real SAP), no VENDEDOR_RPT -- ver
     # docstring de data_loader.get_ventas_por_vendedor.
-    return get_ventas_por_campo_pg("VENDEDOR", filtro_sucursal=filtro_sucursal)
+    return get_ventas_por_campo_pg("VENDEDOR", filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
 
 
-def get_ventas_por_canal_pg(filtro_sucursal=None):
-    return get_ventas_por_campo_pg("TIPO_VENTA", filtro_sucursal=filtro_sucursal)
+def get_ventas_por_canal_pg(filtro_sucursal=None, filtro_canal=None):
+    return get_ventas_por_campo_pg("TIPO_VENTA", filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
 
 
-def get_ventas_por_procedencia_pg(filtro_sucursal=None):
-    return get_ventas_por_campo_pg("PROCEDENCIA", filtro_sucursal=filtro_sucursal)
+def get_ventas_por_procedencia_pg(filtro_sucursal=None, filtro_canal=None):
+    return get_ventas_por_campo_pg("PROCEDENCIA", filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
 
 
-def get_ventas_por_cliente_pg(filtro_sucursal=None):
-    return get_ventas_por_campo_pg("NOMBRE_CLIENTE", top_n=15, filtro_sucursal=filtro_sucursal)
+def get_ventas_por_cliente_pg(filtro_sucursal=None, filtro_canal=None):
+    return get_ventas_por_campo_pg("NOMBRE_CLIENTE", top_n=15, filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
 
 
-def get_ventas_por_producto_pg(filtro_sucursal=None):
-    data = get_ventas_por_campo_pg("PRODUCTO_KEY", top_n=15, filtro_sucursal=filtro_sucursal)
+def get_ventas_por_producto_pg(filtro_sucursal=None, filtro_canal=None):
+    data = get_ventas_por_campo_pg("PRODUCTO_KEY", top_n=15, filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
     for r in data["items"]:
         codigo, _, descripcion = r["nombre"].partition("||")
         r["codigo"] = codigo
@@ -415,15 +440,20 @@ def get_ventas_por_producto_pg(filtro_sucursal=None):
     return data
 
 
-def get_ventas_por_familia_pg(agrupar_por="familia", filtro_sucursal=None):
+def get_ventas_por_familia_pg(agrupar_por="familia", filtro_sucursal=None, filtro_canal=None):
     campo = "MARCA" if agrupar_por == "marca" else "FAMILIA"
     top_n = 30 if campo == "MARCA" else None
-    return get_ventas_por_campo_pg(campo, top_n=top_n, filtro_sucursal=filtro_sucursal)
+    return get_ventas_por_campo_pg(campo, top_n=top_n, filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
 
 
-def get_filtros_proyeccion_pg(filtro_sucursal=None):
+def get_filtros_proyeccion_pg(filtro_sucursal=None, filtro_canal=None):
     frag_suc, suc = _filtro_sucursal_sql(filtro_sucursal)
-    params = {"suc": suc} if suc else {}
+    frag_canal, canal = _filtro_canal_sql(filtro_canal)
+    params = {}
+    if suc:
+        params["suc"] = suc
+    if canal:
+        params["canal"] = canal
     orden = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
 
     with db.conexion_pool() as conn:
@@ -438,7 +468,7 @@ def get_filtros_proyeccion_pg(filtro_sucursal=None):
                       array_agg(DISTINCT subfamilia)       FILTER (WHERE subfamilia IS NOT NULL) AS subfamilias,
                       array_agg(DISTINCT procedencia)      FILTER (WHERE procedencia IS NOT NULL) AS procedencias
                     FROM v_ventas
-                    WHERE ano = 2026 {frag_suc}""",
+                    WHERE ano = 2026 {frag_suc} {frag_canal}""",
                 params,
             )
             r = cur.fetchone()
@@ -722,9 +752,14 @@ def get_seguimiento_metas_pg(filtros=None):
     return {"kpis": kpis, "filas": lista}
 
 
-def get_seguimiento_ppto_pg(filtro_sucursal=None):
+def get_seguimiento_ppto_pg(filtro_sucursal=None, filtro_canal=None):
     frag_suc, suc = _filtro_sucursal_sql(filtro_sucursal)
-    params = {"suc": suc} if suc else {}
+    frag_canal, canal = _filtro_canal_sql(filtro_canal)
+    params = {}
+    if suc:
+        params["suc"] = suc
+    if canal:
+        params["canal"] = canal
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
@@ -744,7 +779,7 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None):
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
                     FROM v_ventas
-                    WHERE ano IN (2025, 2026) {frag_suc}""",
+                    WHERE ano IN (2025, 2026) {frag_suc} {frag_canal}""",
                 params,
             )
             r = cur.fetchone()
@@ -791,7 +826,7 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None):
                       ), 0) AS acum_25,
                       count(*) FILTER (WHERE ano = 2026) AS n26
                     FROM v_ventas
-                    WHERE ano IN (2025, 2026) AND sucursal_logica IS NOT NULL {frag_suc}
+                    WHERE ano IN (2025, 2026) AND sucursal_logica IS NOT NULL {frag_suc} {frag_canal}
                     GROUP BY sucursal_logica""",
                 params,
             )
@@ -800,7 +835,7 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None):
             cur.execute(
                 f"""SELECT sucursal_logica, ano, mes, coalesce(sum(total), 0) AS v
                     FROM v_ventas
-                    WHERE ano IN (2025, 2026) AND sucursal_logica IS NOT NULL {frag_suc}
+                    WHERE ano IN (2025, 2026) AND sucursal_logica IS NOT NULL {frag_suc} {frag_canal}
                     GROUP BY sucursal_logica, ano, mes""",
                 params,
             )
@@ -809,7 +844,7 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None):
             cur.execute(
                 f"""SELECT ano, mes, coalesce(sum(total), 0) AS v
                     FROM v_ventas
-                    WHERE ano IN (2025, 2026) {frag_suc}
+                    WHERE ano IN (2025, 2026) {frag_suc} {frag_canal}
                     GROUP BY ano, mes""",
                 params,
             )
@@ -866,9 +901,14 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None):
     }
 
 
-def get_filtros_vta_acum_pg(filtro_sucursal=None):
+def get_filtros_vta_acum_pg(filtro_sucursal=None, filtro_canal=None):
     frag_suc, suc = _filtro_sucursal_sql(filtro_sucursal)
-    params = {"suc": suc} if suc else {}
+    frag_canal, canal = _filtro_canal_sql(filtro_canal)
+    params = {}
+    if suc:
+        params["suc"] = suc
+    if canal:
+        params["canal"] = canal
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
@@ -882,7 +922,7 @@ def get_filtros_vta_acum_pg(filtro_sucursal=None):
                       array_agg(DISTINCT cond_pago)      FILTER (WHERE cond_pago IS NOT NULL AND trim(cond_pago) != '') AS cond_pago,
                       array_agg(DISTINCT sucursal_logica) FILTER (WHERE sucursal_logica IS NOT NULL) AS sucursal
                     FROM v_ventas
-                    WHERE ano = 2026 {frag_suc}""",
+                    WHERE ano = 2026 {frag_suc} {frag_canal}""",
                 params,
             )
             r = cur.fetchone()

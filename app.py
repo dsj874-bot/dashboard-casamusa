@@ -52,17 +52,24 @@ if USAR_POSTGRES_INVENTARIO:
 #  "sucursal" tambien puede ser una LISTA (ej. ["CH","MP"]) para perfiles
 #  que combinan varias sucursales bajo un mismo nombre (ej. "Express").
 # ══════════════════════════════════════════════════════
+# Canales de venta (tipo_venta) que conforman "E-commerce" para el
+# perfil de Elennys Perez -- definido a mano con el usuario, no se
+# deduce de ningun patron (ver tipo_venta real en ventas: NORMAL,
+# MERCADO LIBRE CM/SC, CASAMUSA.CL, VENTA ASISTIDA, SODIMAC/LEGRAND,
+# SPAZIO BTICINO, MKT PLACE). Deja fuera NORMAL y SPAZIO BTICINO.
+CANALES_ECOMMERCE = ["CASAMUSA.CL", "MERCADO LIBRE CM", "MERCADO LIBRE SC", "MKT PLACE", "VENTA ASISTIDA", "SODIMAC/LEGRAND"]
+
 GERENTES = {
     "dsepulveda@casamusa.cl": {"password": "Admin2026",         "nombre": "Administrador", "admin": True},
     "emusa@casamusa.cl":      {"password": "GGeneral2026",      "nombre": "G. General", "admin": True},
     "fmusa@casamusa.cl":      {"password": "Importaciones2026", "nombre": "Importaciones"},
     "malvarado@casamusa.cl":  {"password": "Finanzas2026",      "nombre": "Finanzas"},
     "jsantana@casamusa.cl":   {"password": "Comercial2026",     "nombre": "Comercial", "admin": True},
-    "naguilera@casamusa.cl":  {"password": "ECI2026",           "nombre": "ECI", "admin": True},
     "gcarrasco@casamusa.cl":  {"password": "MT2026",            "nombre": "MT", "sucursal": "MT"},
     "sarjona@casamusa.cl":    {"password": "LC2026",            "nombre": "LC", "sucursal": "LC"},
     "evalera@casamusa.cl":    {"password": "MR2026",            "nombre": "MR", "sucursal": "MR"},
     "jvillegas@casamusa.cl":  {"password": "Express2026",       "nombre": "Express", "sucursal": ["CH", "MP"]},
+    "eperez@casamusa.cl":     {"password": "Ecommerce2026",     "nombre": "E-commerce", "canal": CANALES_ECOMMERCE},
 }
 
 # ══════════════════════════════════════════════════════
@@ -72,6 +79,12 @@ def login_requerido(f):
     @wraps(f)
     def decorado(*args, **kwargs):
         if "usuario" not in session:
+            return redirect(url_for("login"))
+        if session["usuario"] not in GERENTES:
+            # Cuenta eliminada de GERENTES (ej. alguien que se fue de la
+            # empresa) -- cierra cualquier sesion ya abierta de inmediato,
+            # en vez de esperar a que la cookie expire sola.
+            session.clear()
             return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorado
@@ -84,6 +97,9 @@ def admin_requerido(f):
     @wraps(f)
     def decorado(*args, **kwargs):
         if "usuario" not in session:
+            return redirect(url_for("login"))
+        if session["usuario"] not in GERENTES:
+            session.clear()
             return redirect(url_for("login"))
         if not session.get("admin"):
             return jsonify({"ok": False, "msg": "No tienes permiso para esta accion."}), 403
@@ -131,13 +147,25 @@ def inject_es_admin():
     # Si son varias sucursales combinadas (ej. Express = ["CH","MP"]),
     # el badge muestra el nombre del perfil, no la lista cruda.
     suc_label = session.get("nombre") if isinstance(suc, list) else suc
-    return {"es_admin": session.get("admin", False), "sucursal_sesion": suc_label}
+    canal_label = session.get("nombre") if session.get("canal") else None
+    return {
+        "es_admin": session.get("admin", False),
+        "sucursal_sesion": suc_label,
+        "canal_sesion": canal_label,
+    }
 
 
 def _sucursal_forzada():
     """Sucursal a la que esta atado el usuario logueado (Jefe de Sucursal),
     o None si ve todo el dashboard sin restriccion."""
     return session.get("sucursal")
+
+
+def _canal_forzado():
+    """Canales de venta (tipo_venta) a los que esta atado el usuario
+    logueado (ej. E-commerce), o None si ve todos los canales sin
+    restriccion. Mismo mecanismo que _sucursal_forzada()."""
+    return session.get("canal")
 
 
 # ══════════════════════════════════════════════════════
@@ -175,6 +203,7 @@ def login():
             session["nombre"]   = gerente["nombre"]
             session["admin"]    = gerente.get("admin", False)
             session["sucursal"] = gerente.get("sucursal")
+            session["canal"]    = gerente.get("canal")
             return redirect(url_for("inicio"))
         error = "Correo o contraseña incorrectos."
     return render_template("login.html", error=error)
@@ -878,7 +907,7 @@ def vendedores():
 def api_ventas_por_vendedor():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_vendedor_pg(filtro_sucursal=_sucursal_forzada()))
+            return jsonify(data_loader_pg.get_ventas_por_vendedor_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
         return jsonify(data_loader.get_ventas_por_vendedor(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -897,7 +926,7 @@ def canal():
 def api_ventas_por_canal():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_canal_pg(filtro_sucursal=_sucursal_forzada()))
+            return jsonify(data_loader_pg.get_ventas_por_canal_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
         return jsonify(data_loader.get_ventas_por_canal(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -917,7 +946,7 @@ def api_ventas_por_familia():
     try:
         agrupar_por = request.args.get("agrupar_por", "familia")
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_familia_pg(agrupar_por, filtro_sucursal=_sucursal_forzada()))
+            return jsonify(data_loader_pg.get_ventas_por_familia_pg(agrupar_por, filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
         return jsonify(data_loader.get_ventas_por_familia(agrupar_por, filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -936,7 +965,7 @@ def procedencia():
 def api_ventas_por_procedencia():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_procedencia_pg(filtro_sucursal=_sucursal_forzada()))
+            return jsonify(data_loader_pg.get_ventas_por_procedencia_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
         return jsonify(data_loader.get_ventas_por_procedencia(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -955,7 +984,7 @@ def clientes():
 def api_ventas_por_cliente():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_cliente_pg(filtro_sucursal=_sucursal_forzada()))
+            return jsonify(data_loader_pg.get_ventas_por_cliente_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
         return jsonify(data_loader.get_ventas_por_cliente(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -974,7 +1003,7 @@ def productos():
 def api_ventas_por_producto():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_producto_pg(filtro_sucursal=_sucursal_forzada()))
+            return jsonify(data_loader_pg.get_ventas_por_producto_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
         return jsonify(data_loader.get_ventas_por_producto(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1474,7 +1503,7 @@ def api_subir_inventario():
 def api_resumen():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_resumen_pg(filtro_sucursal=_sucursal_forzada()))
+            return jsonify(data_loader_pg.get_resumen_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
         return jsonify(data_loader.get_resumen(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1485,7 +1514,7 @@ def api_resumen():
 def api_ventas_por_mes():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_mes_pg(filtro_sucursal=_sucursal_forzada()))
+            return jsonify(data_loader_pg.get_ventas_por_mes_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
         return jsonify(data_loader.get_ventas_por_mes(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1496,7 +1525,7 @@ def api_ventas_por_mes():
 def api_ventas_por_sucursal():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_sucursal_pg(filtro_sucursal=_sucursal_forzada()))
+            return jsonify(data_loader_pg.get_ventas_por_sucursal_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
         return jsonify(data_loader.get_ventas_por_sucursal(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1507,7 +1536,7 @@ def api_ventas_por_sucursal():
 def api_filtros_proyeccion():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_filtros_proyeccion_pg(filtro_sucursal=_sucursal_forzada()))
+            return jsonify(data_loader_pg.get_filtros_proyeccion_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
         return jsonify(data_loader.get_filtros_proyeccion(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1520,6 +1549,8 @@ def api_proyeccion():
         filtros = request.get_json(silent=True) or {}
         if _sucursal_forzada():
             filtros["sucursal"] = _sucursal_forzada()
+        if _canal_forzado():
+            filtros["tipo_venta"] = _canal_forzado()
         if USAR_POSTGRES_COMERCIAL:
             return jsonify(data_loader_pg.get_proyeccion_pg(filtros))
         return jsonify(data_loader.get_proyeccion(filtros))
@@ -1534,6 +1565,8 @@ def api_metas():
         filtros = request.get_json(silent=True) or {}
         if _sucursal_forzada():
             filtros["sucursal"] = _sucursal_forzada()
+        if _canal_forzado():
+            filtros["tipo_venta"] = _canal_forzado()
         if USAR_POSTGRES_COMERCIAL:
             return jsonify(data_loader_pg.get_seguimiento_metas_pg(filtros))
         return jsonify(data_loader.get_seguimiento_metas(filtros))
@@ -1554,7 +1587,7 @@ def ppto():
 def api_ppto():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_seguimiento_ppto_pg(filtro_sucursal=_sucursal_forzada()))
+            return jsonify(data_loader_pg.get_seguimiento_ppto_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
         return jsonify(data_loader.get_seguimiento_ppto(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1574,7 +1607,7 @@ def vta_acum():
 def api_filtros_vta_acum():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_filtros_vta_acum_pg(filtro_sucursal=_sucursal_forzada()))
+            return jsonify(data_loader_pg.get_filtros_vta_acum_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
         return jsonify(data_loader.get_filtros_vta_acum(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1587,6 +1620,8 @@ def api_vta_acum():
         filtros = request.get_json(silent=True) or {}
         if _sucursal_forzada():
             filtros["sucursal"] = _sucursal_forzada()
+        if _canal_forzado():
+            filtros["tipo_venta"] = _canal_forzado()
         if USAR_POSTGRES_COMERCIAL:
             return jsonify(data_loader_pg.get_vta_acum_pg(filtros))
         return jsonify(data_loader.get_vta_acum(filtros))
@@ -1609,6 +1644,8 @@ def api_vta_mes_mg():
         filtros = request.get_json(silent=True) or {}
         if _sucursal_forzada():
             filtros["sucursal"] = _sucursal_forzada()
+        if _canal_forzado():
+            filtros["tipo_venta"] = _canal_forzado()
         if USAR_POSTGRES_COMERCIAL:
             return jsonify(data_loader_pg.get_vta_mes_mg_acum_pg(filtros))
         return jsonify(data_loader.get_vta_mes_mg_acum(filtros))
@@ -1631,6 +1668,8 @@ def api_vta_mg_mensual():
         filtros = request.get_json(silent=True) or {}
         if _sucursal_forzada():
             filtros["sucursal"] = _sucursal_forzada()
+        if _canal_forzado():
+            filtros["tipo_venta"] = _canal_forzado()
         if USAR_POSTGRES_COMERCIAL:
             return jsonify(data_loader_pg.get_vta_mg_mensual_pg(filtros))
         return jsonify(data_loader.get_vta_mg_mensual(filtros))

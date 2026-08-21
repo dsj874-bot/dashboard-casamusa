@@ -590,6 +590,8 @@
       <div class="user-name">{{ session_nombre }}</div>
       {% if sucursal_sesion %}
       <div class="user-role">🏪 Sucursal {{ sucursal_sesion }}</div>
+      {% elif canal_sesion %}
+      <div class="user-role">🛒 Canal {{ canal_sesion }}</div>
       {% else %}
       <div class="user-role">🔒 Acceso Gerencial</div>
       {% endif %}
