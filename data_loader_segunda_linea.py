@@ -376,10 +376,16 @@ def get_plan_compra_segunda_linea(familia=None, meses_objetivo_default=None):
         embalaje = int(c["embalaje"]) if c["embalaje"] else 1
         cantidad_a_comprar = math.ceil(necesario / embalaje) * embalaje if necesario > 0 else 0
 
-        # Excluido de compra (ver /gestionar_productos_compra): sigue
-        # con su calculo normal para todo lo demas, pero nunca se
-        # sugiere comprarlo.
-        excluido_compra = cod in codigos_excluidos
+        # Excluido de compra: (a) marcado a mano en
+        # /gestionar_productos_compra, o (b) codigo Importado que
+        # empieza con 3 o 7 -- regla de negocio permanente (a
+        # diferencia de (a), no es una lista curada): esos productos
+        # no los compra el usuario, no tiene injerencia sobre ellos.
+        # Solo afecta Plan de Compra, no Alertas/Distribucion (a
+        # diferencia del digito 6, que se excluye de Segunda Linea
+        # completa -- ver _cargar_candidatos).
+        cod_str = str(cod)
+        excluido_compra = cod in codigos_excluidos or cod_str.startswith("3") or cod_str.startswith("7")
         if excluido_compra:
             cantidad_a_comprar = 0
 
