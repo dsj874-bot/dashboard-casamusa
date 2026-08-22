@@ -183,6 +183,22 @@ def _restringir_metas_ppto_canal():
     return redirect(url_for("inicio"))
 
 
+# Cualquier cuenta sin admin=True (Jefe de Sucursal, E-commerce,
+# Finanzas, Importaciones, etc) solo ve Comercial -- ni siquiera las
+# areas "en construccion" (Finanzas/Logistica/Bodega/Forecast/Tareas).
+# Adquisiciones e Inventario ya tienen su propia restriccion mas arriba.
+PREFIJOS_SOLO_GERENCIA = ("/finanzas", "/logistica", "/bodega", "/forecast", "/tareas")
+
+
+@app.before_request
+def _restringir_areas_no_comercial():
+    if not request.path.startswith(PREFIJOS_SOLO_GERENCIA):
+        return None
+    if "usuario" not in session or session.get("admin"):
+        return None
+    return redirect(url_for("inicio"))
+
+
 # ══════════════════════════════════════════════════════
 #  Variables disponibles en todos los templates
 # ══════════════════════════════════════════════════════
@@ -288,10 +304,16 @@ AREAS = [
 @app.route("/inicio")
 @login_requerido
 def inicio():
-    areas_visibles = [
-        a for a in AREAS
-        if a["slug"] not in ("inventario", "adquisiciones") or session.get("usuario") in USUARIOS_INVENTARIO_ADQUISICIONES
-    ]
+    if not session.get("admin"):
+        # No es "gerencia" (Jefe de Sucursal, E-commerce, Finanzas,
+        # Importaciones, etc) -- solo ve Comercial, ni siquiera como
+        # tile deshabilitado. Pedido explicito del usuario.
+        areas_visibles = [a for a in AREAS if a["slug"] == "comercial"]
+    else:
+        areas_visibles = [
+            a for a in AREAS
+            if a["slug"] not in ("inventario", "adquisiciones") or session.get("usuario") in USUARIOS_INVENTARIO_ADQUISICIONES
+        ]
     return render_template("inicio.html", areas=areas_visibles, session_nombre=session.get("nombre"))
 
 
