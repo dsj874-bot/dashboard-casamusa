@@ -624,7 +624,7 @@ def get_proyeccion_pg(filtros=None):
     return {"kpis": kpis, "filas": filas}
 
 
-def sincronizar_ventas_pg(df, fechas):
+def sincronizar_ventas_pg(df, fechas, tamano_lote=5000, reintentos=3):
     """Sincroniza en Postgres las filas de `df` que caen en `fechas`:
     delete-by-fecha + insert -- mismo criterio de dedupe por rango de
     fecha que usa el cache local (actualizar_desde_archivo_mensual) y
@@ -632,7 +632,17 @@ def sincronizar_ventas_pg(df, fechas):
 
     `df` debe traer SUCURSAL_LOGICA/VENDEDOR_RPT ya aplicado (ver el
     callback on_nuevo en data_loader.actualizar_desde_archivo_mensual,
-    que relee via get_df_2026() antes de llamar esto)."""
+    que relee via get_df_2026() antes de llamar esto).
+
+    Commit por lote + reintento con reconexion si un lote falla --
+    mismo patron que backfill_ventas() en backfill_fase1_comercial.py.
+    Antes esto era un solo commit al final de todo (delete + todos los
+    lotes en UNA transaccion larga): si el pooler de Supabase cortaba
+    la conexion a mitad de camino (le pasa con transacciones largas,
+    ver backfill_ventas), la excepcion sin manejar tumbaba la conexion
+    HTTP completa -- el navegador lo ve como "sin conexion", no como
+    un error normal con mensaje. Detectado en un intento real de subir
+    ventas desde /subir_ventas."""
     fechas = list(fechas)
     if not fechas:
         return
@@ -642,12 +652,30 @@ def sincronizar_ventas_pg(df, fechas):
     sql = f"insert into ventas ({cols_sql}) values ({placeholders})"
     filas = [tuple(valor_sql(getattr(r, c)) for c in VENTAS_DF_COLS) for r in df.itertuples(index=False)]
 
-    with db.conexion_pool() as conn:
-        with conn.cursor() as cur:
-            cur.execute("delete from ventas where fecha_conta = ANY(%s)", (fechas,))
-            for i in range(0, len(filas), 5000):
-                cur.executemany(sql, filas[i:i + 5000])
-        conn.commit()
+    conn = db.get_connection()
+    with conn.cursor() as cur:
+        cur.execute("delete from ventas where fecha_conta = ANY(%s)", (fechas,))
+    conn.commit()
+
+    try:
+        for i in range(0, len(filas), tamano_lote):
+            lote = filas[i:i + tamano_lote]
+            for intento in range(1, reintentos + 1):
+                try:
+                    with conn.cursor() as cur:
+                        cur.executemany(sql, lote)
+                    conn.commit()
+                    break
+                except Exception:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    if intento == reintentos:
+                        raise
+                    conn = db.get_connection()
+    finally:
+        conn.close()
 
 
 def get_seguimiento_metas_pg(filtros=None):
