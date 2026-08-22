@@ -183,10 +183,18 @@ def _restringir_metas_ppto_canal():
     return redirect(url_for("inicio"))
 
 
-# Cualquier cuenta sin admin=True (Jefe de Sucursal, E-commerce,
-# Finanzas, Importaciones, etc) solo ve Comercial -- ni siquiera las
-# areas "en construccion" (Finanzas/Logistica/Bodega/Forecast/Tareas).
-# Adquisiciones e Inventario ya tienen su propia restriccion mas arriba.
+# Gerencia (pedido explicito del usuario, NO es lo mismo que
+# admin=True -- fmusa y malvarado son gerencia pero no admin, y no hay
+# ninguna cuenta admin=True que no sea gerencia): estas 5 ven todas las
+# areas. Cualquier otra cuenta (Jefe de Sucursal, E-commerce, etc) solo
+# ve Comercial -- ni siquiera las areas "en construccion" (Finanzas/
+# Logistica/Bodega/Forecast/Tareas). Adquisiciones e Inventario ya
+# tienen su propia restriccion mas estricta (solo dsepulveda) mas arriba.
+USUARIOS_GERENCIA = {
+    "dsepulveda@casamusa.cl", "emusa@casamusa.cl", "fmusa@casamusa.cl",
+    "malvarado@casamusa.cl", "jsantana@casamusa.cl",
+}
+
 PREFIJOS_SOLO_GERENCIA = ("/finanzas", "/logistica", "/bodega", "/forecast", "/tareas")
 
 
@@ -194,7 +202,7 @@ PREFIJOS_SOLO_GERENCIA = ("/finanzas", "/logistica", "/bodega", "/forecast", "/t
 def _restringir_areas_no_comercial():
     if not request.path.startswith(PREFIJOS_SOLO_GERENCIA):
         return None
-    if "usuario" not in session or session.get("admin"):
+    if "usuario" not in session or session["usuario"] in USUARIOS_GERENCIA:
         return None
     return redirect(url_for("inicio"))
 
@@ -304,10 +312,10 @@ AREAS = [
 @app.route("/inicio")
 @login_requerido
 def inicio():
-    if not session.get("admin"):
-        # No es "gerencia" (Jefe de Sucursal, E-commerce, Finanzas,
-        # Importaciones, etc) -- solo ve Comercial, ni siquiera como
-        # tile deshabilitado. Pedido explicito del usuario.
+    if session.get("usuario") not in USUARIOS_GERENCIA:
+        # No es gerencia (Jefe de Sucursal, E-commerce, etc) -- solo ve
+        # Comercial, ni siquiera como tile deshabilitado. Pedido
+        # explicito del usuario.
         areas_visibles = [a for a in AREAS if a["slug"] == "comercial"]
     else:
         areas_visibles = [
