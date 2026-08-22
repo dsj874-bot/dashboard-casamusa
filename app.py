@@ -10,6 +10,7 @@ import data_loader_inventario
 import data_loader_obligatorios
 import data_loader_segunda_linea
 import data_loader_exclusion_compra
+import data_loader_nivel_servicio
 import data_loader_adquisiciones
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -835,6 +836,28 @@ def api_segunda_linea_compras_exportar():
             download_name=nombre,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ══════════════════════════════════════════════════════
+#  NIVEL DE SERVICIO -- mide si el stock actual alcanza para cubrir la
+#  demanda, general y por sucursal, sobre Productos Prioritarios (ver
+#  data_loader_nivel_servicio.py).
+# ══════════════════════════════════════════════════════
+@app.route("/inventario/nivel_servicio")
+@login_requerido
+def inventario_nivel_servicio():
+    return render_template("inventario_nivel_servicio.html",
+                           active="inventario_nivel_servicio",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/inventario/nivel_servicio")
+@login_requerido
+def api_inventario_nivel_servicio():
+    try:
+        return jsonify(data_loader_nivel_servicio.get_nivel_servicio_pg())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

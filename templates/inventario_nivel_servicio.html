@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block title %}Nivel de Servicio{% endblock %}
+{% block page_title %}Nivel de Servicio{% endblock %}
+{% block page_subtitle %}¿Alcanza el stock actual para cubrir la demanda? — Productos Prioritarios{% endblock %}
+
+{% block sidebar_nav %}{% include "_inventario_sidebar.html" %}{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  .ns-kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px; }
+  .ns-kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px;
+  }
+  .ns-kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin-bottom: 8px; }
+  .ns-kpi-value { font-size: 34px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .ns-kpi-sub { font-size: 12px; color: var(--muted2); margin-top: 4px; }
+  .ns-kpi-value.nivel-alto { color: #22a347; }
+  .ns-kpi-value.nivel-medio { color: #eab308; }
+  .ns-kpi-value.nivel-bajo { color: #ef4444; }
+
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; }
+  .chart-card-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .chart-card-sub { font-size: 12.5px; color: var(--muted2); margin-bottom: 16px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="ns-kpi-grid">
+  <div class="ns-kpi-card">
+    <div class="ns-kpi-label">Inventario Total (todas las sucursales)</div>
+    <div class="ns-kpi-value" id="kpi-inventario">—</div>
+    <div class="ns-kpi-sub">Valor de stock de todo el catálogo</div>
+  </div>
+  <div class="ns-kpi-card">
+    <div class="ns-kpi-label">Nivel de Servicio General</div>
+    <div class="ns-kpi-value" id="kpi-servicio">—</div>
+    <div class="ns-kpi-sub">Sobre Productos Prioritarios — % de la demanda que el stock actual cubre</div>
+  </div>
+</div>
+
+<div class="chart-card">
+  <div class="chart-card-title">Inventario vs. Nivel de Servicio, por sucursal</div>
+  <div class="chart-card-sub">Barras: valor de stock total ($, todo el catálogo). Línea: nivel de servicio (%, solo Prioritarios)</div>
+  <canvas id="chartSucursal" height="110"></canvas>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+Chart.defaults.color       = "#64748b";
+Chart.defaults.borderColor = "#1e2a3a";
+Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
+
+const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
+const fmtPct = v => v === null || v === undefined ? "—" : v.toFixed(1) + "%";
+
+function claseNivel(pct) {
+  if (pct === null || pct === undefined) return "";
+  if (pct >= 90) return "nivel-alto";
+  if (pct >= 75) return "nivel-medio";
+  return "nivel-bajo";
+}
+
+fetch("/api/inventario/nivel_servicio")
+  .then(r => r.json())
+  .then(d => {
+    document.getElementById("kpi-inventario").textContent = fmtCLP(d.general.valor_inventario);
+
+    const kpiServicio = document.getElementById("kpi-servicio");
+    kpiServicio.textContent = fmtPct(d.general.nivel_servicio);
+    kpiServicio.className = "ns-kpi-value " + claseNivel(d.general.nivel_servicio);
+
+    new Chart(document.getElementById("chartSucursal"), {
+      data: {
+        labels: d.por_sucursal.map(s => s.sucursal),
+        datasets: [
+          {
+            type: "bar",
+            label: "Inventario Total ($)",
+            data: d.por_sucursal.map(s => Math.round(s.valor_inventario / 1000000)),
+            backgroundColor: "rgba(100,116,139,0.45)",
+            borderColor: "#64748b",
+            borderWidth: 1,
+            borderRadius: 5,
+            yAxisID: "y",
+          },
+          {
+            type: "line",
+            label: "Nivel de Servicio (%)",
+            data: d.por_sucursal.map(s => s.nivel_servicio),
+            borderColor: "#22a347",
+            backgroundColor: "#22a347",
+            pointBackgroundColor: "#22a347",
+            pointRadius: 5,
+            borderWidth: 2,
+            tension: 0.2,
+            yAxisID: "y1",
+            spanGaps: true,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { position: "top" },
+          tooltip: {
+            callbacks: {
+              label: ctx => ctx.dataset.yAxisID === "y"
+                ? " Inventario: $" + ctx.raw.toLocaleString("es-CL") + " MM"
+                : " Nivel de Servicio: " + fmtPct(ctx.raw),
+            },
+          },
+        },
+        scales: {
+          y: {
+            position: "left",
+            ticks: { callback: v => "$" + v + " MM" },
+            grid: { color: "#1e2a3a" },
+            title: { display: true, text: "Inventario ($ MM)" },
+          },
+          y1: {
+            position: "right",
+            min: 0,
+            max: 100,
+            ticks: { callback: v => v + "%" },
+            grid: { display: false },
+            title: { display: true, text: "Nivel de Servicio (%)" },
+          },
+          x: { grid: { display: false } },
+        },
+      },
+    });
+  })
+  .catch(err => console.error("Error nivel de servicio:", err));
+</script>
+{% endblock %}
