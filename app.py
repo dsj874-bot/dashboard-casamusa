@@ -1141,6 +1141,19 @@ def admin_actualizar():
         resultado = data_loader.actualizar_desde_archivo_mensual(on_nuevo=on_nuevo)
         if resultado.get("pg_sync_error"):
             resultado["msg"] += f" (aviso: sync Postgres fallo: {resultado['pg_sync_error']})"
+
+        # Siempre, no solo cuando no hay archivo -- mismo fix que
+        # actualizar_diario.py: un archivo puede consolidarse bien y
+        # aun asi no traer fila para un dia sin actividad real (el
+        # export de SAP omite los dias en $0), dejando el corte de
+        # "Datos al" atrasado. confirmar_dia_sin_ventas() es
+        # idempotente, no tiene efecto si el archivo ya cubre el dia
+        # de ayer.
+        on_confirmado = data_loader_pg.confirmar_fecha_pg if USAR_POSTGRES_COMERCIAL else None
+        confirmacion = data_loader.confirmar_dia_sin_ventas(on_confirmado=on_confirmado)
+        if confirmacion.get("pg_sync_error"):
+            resultado["msg"] += f" (aviso: sync Postgres fecha_confirmada fallo: {confirmacion['pg_sync_error']})"
+
         return jsonify(resultado)
     except Exception as e:
         return jsonify({"ok": False, "msg": f"Error: {str(e)}"}), 500

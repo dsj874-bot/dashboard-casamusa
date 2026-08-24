@@ -55,11 +55,23 @@ def main():
     if resultado.get("pg_sync_error"):
         lineas.append(f"{datetime.now():%Y-%m-%d %H:%M:%S} - Aviso: sync Postgres (ventas) fallo: {resultado['pg_sync_error']}")
 
-    if not resultado.get("ok"):
-        confirmacion = data_loader.confirmar_dia_sin_ventas(on_confirmado=data_loader_pg.confirmar_fecha_pg)
-        lineas.append(f"{datetime.now():%Y-%m-%d %H:%M:%S} - {confirmacion.get('msg')}")
-        if confirmacion.get("pg_sync_error"):
-            lineas.append(f"{datetime.now():%Y-%m-%d %H:%M:%S} - Aviso: sync Postgres (fecha_confirmada) fallo: {confirmacion['pg_sync_error']}")
+    # Se llama SIEMPRE, no solo cuando no hay archivo -- un archivo si
+    # puede consolidarse bien (resultado["ok"]=True) y aun asi no traer
+    # ninguna fila para un dia sin actividad real (ej. domingo), porque
+    # el export de SAP simplemente omite los dias en $0 en vez de
+    # traerlos con venta 0. Sin esta llamada, el corte de "Datos al"
+    # quedaba pegado en el ultimo dia CON fila en el archivo, atrasando
+    # el corte aunque el domingo/feriado ya estuviera resuelto (bug real
+    # detectado 2026-08-24: llego archivo el lunes, pero el domingo sin
+    # venta nunca se confirmo, la pantalla mostraba el sabado como
+    # "Datos al" en vez del domingo). confirmar_dia_sin_ventas() es
+    # idempotente/monotono (solo avanza si corresponde), asi que
+    # llamarla siempre no tiene efecto cuando el archivo si trae el dia
+    # de ayer cubierto.
+    confirmacion = data_loader.confirmar_dia_sin_ventas(on_confirmado=data_loader_pg.confirmar_fecha_pg)
+    lineas.append(f"{datetime.now():%Y-%m-%d %H:%M:%S} - {confirmacion.get('msg')}")
+    if confirmacion.get("pg_sync_error"):
+        lineas.append(f"{datetime.now():%Y-%m-%d %H:%M:%S} - Aviso: sync Postgres (fecha_confirmada) fallo: {confirmacion['pg_sync_error']}")
 
     respaldo = _respaldar_datos()
     lineas.append(f"{datetime.now():%Y-%m-%d %H:%M:%S} - {respaldo.get('msg')}")
