@@ -518,6 +518,9 @@ def promover_a_prioridad(codigo, procedencia_obligatoria, codigo_equivalente=Non
     """Agrega (o actualiza si ya existia) un producto a
     productos_obligatorios -- familia/subfamilia/grupo/descripcion se
     autocompletan desde productos, no hay que volver a escribirlos."""
+    if str(codigo).startswith(dec.PREFIJOS_FUERA_SEGUNDA_LINEA):
+        raise ValueError(f"El código {codigo} empieza con un prefijo excluido (no son productos de reventa) y no puede promoverse a Prioridad.")
+
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
             cur.execute(

@@ -821,8 +821,8 @@ la tabla también necesita su propio `min-width: 0` (ver clase
 `.proy-contenido`) — si no, una tabla ancha empuja TODA la página a
 scrollear horizontal en vez de quedar contenida en su propio wrapper.
 
-## Tabs BIWISER pendientes de replicar
-Los reportes siguen la estructura del sistema BIWISER interno:
+## Tabs BIWIZER pendientes de replicar
+Los reportes siguen la estructura del sistema BIWIZER interno:
 - Evolutivo por Tipo de Venta
 - Evolutivo por Categoría
 - Cobertura/Alcance
