@@ -621,12 +621,11 @@
     </div>
     <div class="topbar-right">
       {% block boton_actualizar %}
-      {% if es_admin %}
-      <button id="btn-actualizar" class="btn-filter" style="padding:8px 14px;font-size:12px;"
-              title="Busca un archivo YYMM_Vtas.xlsx (ej. 2607_Vtas.xlsx) en la carpeta data/ y agrega los dias nuevos">
-        🔄 Actualizar datos
+      <button id="btn-descargar-excel" class="btn-filter" style="padding:8px 14px;font-size:12px;"
+              onclick="descargarExcel()"
+              title="Descarga la(s) tabla(s) que estás viendo en esta pantalla como archivo Excel">
+        📥 Descargar Excel
       </button>
-      {% endif %}
       {% endblock %}
       <div class="fecha-badge" id="fecha-hoy"></div>
     </div>
@@ -645,28 +644,6 @@
   });
   document.getElementById('fecha-hoy').textContent = fecha.charAt(0).toUpperCase() + fecha.slice(1);
 
-  // Actualizar datos (consolida YYMM_Vtas.xlsx desde data/) — solo admin
-  const btnActualizar = document.getElementById('btn-actualizar');
-  if (btnActualizar) {
-    btnActualizar.addEventListener('click', async function () {
-      const btn = this;
-      const textoOriginal = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = 'Actualizando...';
-      try {
-        const r = await fetch('/admin/actualizar', { method: 'POST' });
-        const d = await r.json();
-        alert(d.msg);
-        if (d.ok) location.reload();
-      } catch (e) {
-        alert('Error al actualizar: ' + e);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = textoOriginal;
-      }
-    });
-  }
-
   // Colapsar/expandir barra lateral (icono-only), estado guardado en el navegador
   const btnToggleSidebar = document.getElementById('sidebar-toggle');
   function aplicarEstadoSidebar(colapsado) {
@@ -680,6 +657,57 @@
     localStorage.setItem('sidebarCollapsed', nuevoEstado ? '1' : '0');
     aplicarEstadoSidebar(nuevoEstado);
   });
+
+  // Descargar Excel — exporta la(s) tabla(s) que estan visibles en la
+  // pantalla actual (una hoja por tabla), sin depender de la estructura
+  // particular de cada pagina. Libreria SheetJS cargada solo al primer
+  // clic (no en cada carga de pagina).
+  let _xlsxCargado = false;
+  function _cargarXLSX() {
+    return new Promise((resolve, reject) => {
+      if (_xlsxCargado || window.XLSX) { _xlsxCargado = true; resolve(); return; }
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = () => { _xlsxCargado = true; resolve(); };
+      s.onerror = () => reject(new Error('No se pudo cargar la libreria de Excel'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function descargarExcel() {
+    const btn = document.getElementById('btn-descargar-excel');
+    const textoOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Generando...';
+    try {
+      await _cargarXLSX();
+      const tablas = Array.from(document.querySelectorAll('.content table'))
+        .filter(t => t.offsetParent !== null && t.querySelectorAll('tr').length > 0);
+      if (tablas.length === 0) {
+        alert('No hay ninguna tabla visible para descargar.');
+        return;
+      }
+      const wb = XLSX.utils.book_new();
+      const nombresUsados = {};
+      tablas.forEach((tabla, i) => {
+        let nombre = (tabla.id || ('Datos_' + (i + 1))).replace(/^tbl-?|^tabla-?/i, '') || ('Datos_' + (i + 1));
+        nombre = nombre.substring(0, 28) || ('Datos_' + (i + 1));
+        if (nombresUsados[nombre]) { nombresUsados[nombre]++; nombre = nombre.substring(0, 25) + '_' + nombresUsados[nombre]; }
+        else { nombresUsados[nombre] = 1; }
+        const ws = XLSX.utils.table_to_sheet(tabla, { raw: false });
+        XLSX.utils.book_append_sheet(wb, ws, nombre);
+      });
+      const titulo = (document.querySelector('.topbar-title')?.textContent || 'reporte').trim();
+      const fecha = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `${titulo.replace(/[^\w\-]+/g, '_')}_${fecha}.xlsx`);
+    } catch (e) {
+      console.error('Error generando Excel:', e);
+      alert('No se pudo generar el Excel: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = textoOriginal;
+    }
+  }
 </script>
 
 {% block extra_scripts %}{% endblock %}
