@@ -45,10 +45,14 @@ FILTROS_VTA_COL = {
     "sucursal":    "sucursal_logica",
     "vendedor":    "vendedor",
     "familia":     "familia",
+    "marca":       "marca",
     "subfamilia":  "subfamilia",
+    "cliente":     "nombre_cliente",
+    "descripcion_producto": "descripcion",
     "tipo_venta":  "tipo_venta",
     "procedencia": "procedencia",
     "cond_pago":   "cond_pago",
+    "distribuidor": "proveedor_por_defecto",
 }
 
 
@@ -963,10 +967,14 @@ def get_filtros_vta_acum_pg(filtro_sucursal=None, filtro_canal=None):
                 f"""SELECT
                       array_agg(DISTINCT vendedor)       FILTER (WHERE vendedor IS NOT NULL AND trim(vendedor) != '') AS vendedor,
                       array_agg(DISTINCT familia)        FILTER (WHERE familia IS NOT NULL AND trim(familia) != '') AS familia,
+                      array_agg(DISTINCT marca)          FILTER (WHERE marca IS NOT NULL AND trim(marca) != '') AS marca,
                       array_agg(DISTINCT subfamilia)     FILTER (WHERE subfamilia IS NOT NULL AND trim(subfamilia) != '') AS subfamilia,
+                      array_agg(DISTINCT nombre_cliente) FILTER (WHERE nombre_cliente IS NOT NULL AND trim(nombre_cliente) != '') AS cliente,
+                      array_agg(DISTINCT descripcion)    FILTER (WHERE descripcion IS NOT NULL AND trim(descripcion) != '') AS descripcion_producto,
                       array_agg(DISTINCT tipo_venta)     FILTER (WHERE tipo_venta IS NOT NULL AND trim(tipo_venta) != '') AS tipo_venta,
                       array_agg(DISTINCT procedencia)    FILTER (WHERE procedencia IS NOT NULL AND trim(procedencia) != '') AS procedencia,
                       array_agg(DISTINCT cond_pago)      FILTER (WHERE cond_pago IS NOT NULL AND trim(cond_pago) != '') AS cond_pago,
+                      array_agg(DISTINCT proveedor_por_defecto) FILTER (WHERE proveedor_por_defecto IS NOT NULL AND trim(proveedor_por_defecto) != '') AS distribuidor,
                       array_agg(DISTINCT sucursal_logica) FILTER (WHERE sucursal_logica IS NOT NULL) AS sucursal
                     FROM v_ventas
                     WHERE ano = 2026 {frag_suc} {frag_canal}""",
@@ -978,10 +986,14 @@ def get_filtros_vta_acum_pg(filtro_sucursal=None, filtro_canal=None):
     filtros_ok = {
         "vendedor":    sorted(r["vendedor"] or []),
         "familia":     sorted(r["familia"] or []),
+        "marca":       sorted(r["marca"] or []),
         "subfamilia":  sorted(r["subfamilia"] or []),
+        "cliente":     sorted(r["cliente"] or []),
+        "descripcion_producto": sorted(r["descripcion_producto"] or []),
         "tipo_venta":  sorted(r["tipo_venta"] or []),
         "procedencia": sorted(r["procedencia"] or []),
         "cond_pago":   sorted(r["cond_pago"] or []),
+        "distribuidor": sorted(r["distribuidor"] or []),
         "sucursal":    sorted(r["sucursal"] or [], key=lambda s: orden.get(s, 99)),
     }
     return {
@@ -1368,6 +1380,138 @@ def get_vta_mg_mensual_pg(filtros=None):
         "filas_mensual":   filas_mensual,
         "total_acum":      total_acum,
         "filas_acum":      filas_acum,
+        "categoria_label": CATEGORIAS_VTA.get(categoria, ("Marca",))[0],
+    }
+
+
+def get_vta_mg_pg(filtros=None):
+    """Equivalente Postgres de get_vta_mg() en data_loader.py."""
+    f = filtros or {}
+    frag_filtros, params = _filtros_vta_sql(f)
+    categoria = f.get("categoria", "marca")
+    col_grupo = _col_grupo_pg(categoria)
+
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            fecha_datos = _fecha_datos_pg(cur)
+            mes_actual = fecha_datos.month
+            dia_actual = fecha_datos.day
+            mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
+            params.update({"mes_actual": mes_actual, "dia_actual": dia_actual, "mes_anterior": mes_anterior})
+
+            inicio_ano    = date(2026, 1, 1)
+            doy           = (fecha_datos - inicio_ano).days + 1
+            meses_elapsed = doy * 12 / 365.0
+
+            cur.execute(
+                f"""SELECT
+                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v_ano_26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS v_ano_25,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
+                    FROM v_ventas
+                    WHERE ano IN (2025, 2026) {frag_filtros}""",
+                params,
+            )
+            r = cur.fetchone()
+            v_ano_26  = float(r["v_ano_26"])
+            v_ano_25  = float(r["v_ano_25"])
+            v_mes_26  = float(r["v_mes_26"])
+            v_mes_25  = float(r["v_mes_25"])
+            v_mes_ant = float(r["v_mes_ant"])
+
+            kpis = {
+                "v_ano_actual":        round(v_ano_26, 0),
+                "v_ano_anterior":      round(v_ano_25, 0),
+                "var_ano":             var_pct(v_ano_26, v_ano_25),
+                "v_mes_actual":        round(v_mes_26, 0),
+                "v_mes_ant_ano":       round(v_mes_25, 0),
+                "var_mes_ano":         var_pct(v_mes_26, v_mes_25),
+                "v_mes_ant_mes":       round(v_mes_ant, 0),
+                "var_mes_mes":         var_pct(v_mes_26, v_mes_ant),
+                "fecha_datos":         fecha_datos.strftime("%d/%m/%Y"),
+                "mes_nombre":          MESES.get(mes_actual, ""),
+                "mes_anterior_nombre": MESES.get(mes_anterior, ""),
+                "ano_actual":          2026,
+                "ano_anterior":        2025,
+            }
+
+            cur.execute(
+                f"""SELECT {col_grupo} AS cat,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS vta,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS vta25_ytd,
+                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026), 0) AS mg,
+                      coalesce(sum(utilidad_bruta) FILTER (
+                          WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS mg25_ytd,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS vta_mes,
+                      coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS vta_mes_ant,
+                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS mg_mes,
+                      count(*) FILTER (WHERE ano = 2026) AS n26
+                    FROM v_ventas
+                    WHERE ano IN (2025, 2026) AND {col_grupo} IS NOT NULL {frag_filtros}
+                    GROUP BY {col_grupo}""",
+                params,
+            )
+            filas_raw = cur.fetchall()
+
+    total_26        = sum(float(fr["vta"])         for fr in filas_raw)
+    vta_acum_ant_tot = sum(float(fr["vta25_ytd"])  for fr in filas_raw)
+    mg_acum_tot      = sum(float(fr["mg"])         for fr in filas_raw)
+    mg_acum_ant_tot  = sum(float(fr["mg25_ytd"])   for fr in filas_raw)
+    mg_mes_tot       = sum(float(fr["mg_mes"])     for fr in filas_raw)
+
+    def _fila(cat, vta, vta_ant, mg, mg_ant, v_mes, v_mes_ant, m_mes):
+        prom        = round(vta    / meses_elapsed, 0) if meses_elapsed > 0 else 0
+        prom_ant    = round(vta_ant/ meses_elapsed, 0) if meses_elapsed > 0 else 0
+        mg_prom     = round(mg     / meses_elapsed, 0) if meses_elapsed > 0 else 0
+        mg_prom_ant = round(mg_ant / meses_elapsed, 0) if meses_elapsed > 0 else 0
+        return {
+            "categoria":     str(cat),
+            "vta_mes":       round(v_mes, 0),
+            "vta_mes_ant":   round(v_mes_ant, 0),
+            "vta_acum":      round(vta, 0),
+            "vta_acum_ant":  round(vta_ant, 0),
+            "pct_crec":      var_pct(vta, vta_ant),
+            "pct_mkt_share": round(vta / total_26 * 100, 1) if total_26 > 0 else 0,
+            "pct_mg_acum":   round(mg / vta * 100, 1) if vta else 0.0,
+            "vta_prom":      prom,
+            "vta_prom_ant":  prom_ant,
+            "mg_mes":        round(m_mes, 0),
+            "pct_mg":        round(m_mes / v_mes * 100, 1) if v_mes else 0.0,
+            "mg_acum":       round(mg, 0),
+            "mg_prom":       mg_prom,
+            "mg_prom_ant":   mg_prom_ant,
+            "pct_crec_mg":   var_pct(mg, mg_ant),
+        }
+
+    filas_data = sorted((fr for fr in filas_raw if fr["n26"] > 0), key=lambda fr: -float(fr["vta"]))
+    filas = [
+        _fila(
+            fr["cat"], float(fr["vta"]), float(fr["vta25_ytd"]),
+            float(fr["mg"]), float(fr["mg25_ytd"]),
+            float(fr["vta_mes"]), float(fr["vta_mes_ant"]), float(fr["mg_mes"]),
+        )
+        for fr in filas_data
+    ]
+
+    total = _fila(
+        "Total general", total_26, vta_acum_ant_tot,
+        mg_acum_tot, mg_acum_ant_tot,
+        v_mes_26, v_mes_25, mg_mes_tot,
+    )
+    total["pct_mkt_share"] = 100.0
+
+    return {
+        "kpis":            kpis,
+        "total":           total,
+        "filas":           filas,
+        "categoria":       categoria,
         "categoria_label": CATEGORIAS_VTA.get(categoria, ("Marca",))[0],
     }
 

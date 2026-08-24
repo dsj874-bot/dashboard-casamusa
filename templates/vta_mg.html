@@ -1,0 +1,427 @@
+{% extends "base.html" %}
+
+{% block title %}Vta Mg{% endblock %}
+{% block page_title %}Venta y Margen{% endblock %}
+{% block page_subtitle %}Venta y margen, mes y acumulado, por categoría — actual vs año anterior{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Layout: filtros + contenido */
+  .vmg-layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  @media(max-width:1100px){ .vmg-layout { grid-template-columns: 1fr; } }
+
+  /* Panel filtros */
+  .filtros-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 14px;
+    position: sticky;
+    top: 80px;
+  }
+  .filtros-panel-titulo {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--muted); margin-bottom: 14px;
+  }
+  .filtro-item { margin-bottom: 12px; }
+  .filtro-item label {
+    display: block; font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.4px;
+    color: var(--muted); margin-bottom: 4px;
+  }
+  .filtro-item select, .filtro-item input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 8px; font-size: 11.5px;
+    color: var(--text); outline: none; box-sizing: border-box;
+  }
+  .filtro-item select:focus, .filtro-item input:focus { border-color: #22a347; }
+  .filtro-item input[readonly] { color: var(--muted2); cursor: default; }
+  .btn-aplicar {
+    width: 100%; padding: 9px; background: #22a347; color: #fff;
+    border: none; border-radius: 8px; font-size: 12px; font-weight: 600;
+    cursor: pointer; margin-top: 4px;
+  }
+  .btn-aplicar:hover { background: #1a8239; }
+  .btn-limpiar {
+    width: 100%; padding: 7px; background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-size: 11px; cursor: pointer; margin-top: 6px;
+  }
+  .btn-limpiar:hover { border-color: var(--muted2); color: var(--text); }
+
+  /* KPI tabla (igual patron que Vta Acumulada) */
+  .kpi-tabla-wrap {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden; margin-bottom: 16px;
+  }
+  .kpi-tabla { width: 100%; border-collapse: collapse; }
+  .kpi-tabla .grp-header th {
+    padding: 9px 14px; font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    text-align: center; border-bottom: 1px solid var(--border);
+    border-right: 2px solid var(--border);
+  }
+  .kpi-tabla .grp-header th:last-child { border-right: none; }
+  .kpi-tabla .grp-header .grp-1 { background:rgba(34,163,71,0.10); color:#22a347; }
+  .kpi-tabla .grp-header .grp-2 { background:rgba(59,130,246,0.10); color:#3b82f6; }
+  .kpi-tabla .grp-header .grp-3 { background:rgba(245,158,11,0.10); color:#f59e0b; }
+  .kpi-tabla .col-header th {
+    padding: 7px 14px; font-size: 10px; font-weight: 600;
+    text-transform: uppercase; color: var(--muted); text-align: right;
+    background: var(--surface2); border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border); white-space: nowrap;
+  }
+  .kpi-tabla .col-header th.sep { border-right: 2px solid var(--border); }
+  .kpi-tabla .col-header th:last-child { border-right: none; }
+  .kpi-tabla .data-row td {
+    padding: 14px 14px; font-size: 14px; font-weight: 700;
+    text-align: right; border-right: 1px solid var(--border); white-space: nowrap;
+  }
+  .kpi-tabla .data-row td.sep { border-right: 2px solid var(--border); }
+  .kpi-tabla .data-row td:last-child { border-right: none; }
+
+  /* Tabla principal */
+  .main-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .main-table thead th {
+    padding: 9px 11px; text-align: right; font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.4px;
+    color: var(--muted); background: var(--surface2);
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+    cursor: pointer; user-select: none;
+  }
+  .main-table thead th:hover { color: var(--text); }
+  .main-table thead th:first-child { text-align: left; }
+  .main-table tbody td {
+    padding: 8px 11px; border-bottom: 1px solid rgba(30,42,58,0.5);
+    white-space: nowrap; text-align: right;
+  }
+  .main-table tbody td:first-child { text-align: left; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
+  .main-table tbody tr:hover { background: var(--surface2); }
+  .row-total td {
+    background: rgba(245,158,11,0.07); font-weight: 700;
+    color: var(--amber); border-top: 2px solid rgba(245,158,11,0.25);
+    border-bottom: 2px solid rgba(245,158,11,0.25);
+  }
+  .col-grp1 { border-left: 2px solid var(--border); }
+  .txt-muted { color: #64748b; }
+  .vp { color: #22c55e; }
+  .vn { color: #ef4444; }
+  .dias-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 20px; padding: 4px 12px; font-size: 11px;
+    color: var(--muted2); margin-bottom: 14px;
+  }
+  .dias-badge strong { color: #22a347; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI header -->
+<div class="kpi-tabla-wrap">
+  <table class="kpi-tabla" id="kpi-table">
+    <tr class="grp-header">
+      <th colspan="3" class="grp-1">Vta Año Actual / Año Anterior</th>
+      <th colspan="3" class="grp-2">Vta Mes Actual / Vta Mes Año Anterior</th>
+      <th colspan="3" class="grp-3">Vta Mes Actual / Vta Mes Anterior</th>
+    </tr>
+    <tr class="col-header" id="kpi-cols"></tr>
+    <tr class="data-row"   id="kpi-vals"></tr>
+  </table>
+</div>
+
+<div id="fecha-badge-wrap"></div>
+
+<!-- Layout: filtros + tabla -->
+<div class="vmg-layout">
+
+  <!-- Panel filtros -->
+  <div class="filtros-panel">
+    <div class="filtros-panel-titulo">🔍 Filtros</div>
+
+    <div class="filtro-item">
+      <label>Fecha Par</label>
+      <input type="text" id="f-fecha-par" readonly value="—">
+    </div>
+
+    <div class="filtro-item">
+      <label>Categoría P</label>
+      <select id="f-categoria" onchange="aplicar()"></select>
+    </div>
+
+    <div class="filtro-item">
+      <label>Sucursal</label>
+      <select id="f-sucursal"><option value="">Todas</option></select>
+    </div>
+
+    <div class="filtro-item">
+      <label>Vendedor</label>
+      <select id="f-vendedor"><option value="">Todos</option></select>
+    </div>
+
+    <div class="filtro-item">
+      <label>Familia</label>
+      <select id="f-familia"><option value="">Todas</option></select>
+    </div>
+
+    <div class="filtro-item">
+      <label>Marca</label>
+      <select id="f-marca"><option value="">Todas</option></select>
+    </div>
+
+    <div class="filtro-item">
+      <label>Subfamilia</label>
+      <select id="f-subfamilia"><option value="">Todas</option></select>
+    </div>
+
+    <div class="filtro-item">
+      <label>Nombre Cliente</label>
+      <input type="text" id="f-cliente" list="dl-cliente" placeholder="Todos">
+      <datalist id="dl-cliente"></datalist>
+    </div>
+
+    <div class="filtro-item">
+      <label>Procedencia</label>
+      <select id="f-procedencia"><option value="">Todas</option></select>
+    </div>
+
+    <div class="filtro-item">
+      <label>Descripción producto</label>
+      <input type="text" id="f-descripcion_producto" list="dl-descripcion" placeholder="Todos">
+      <datalist id="dl-descripcion"></datalist>
+    </div>
+
+    <div class="filtro-item">
+      <label>Tipo Venta</label>
+      <select id="f-tipo_venta"><option value="">Todos</option></select>
+    </div>
+
+    <div class="filtro-item">
+      <label>Distribuidor</label>
+      <select id="f-distribuidor"><option value="">Todos</option></select>
+    </div>
+
+    <button class="btn-aplicar" onclick="aplicar()">Aplicar filtros</button>
+    <button class="btn-limpiar" onclick="limpiar()">Limpiar</button>
+  </div>
+
+  <!-- Tabla -->
+  <div style="min-width:0;">
+    <div class="table-card">
+      <div class="table-header">
+        <div class="table-header-title" id="tabla-titulo">Cargando...</div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="main-table" id="tbl-vta-mg">
+          <thead>
+            <tr>
+              <th id="th-cat" data-key="categoria" style="text-align:left">Categoría Parámetro</th>
+              <th data-key="vta_mes">Vta mes</th>
+              <th data-key="vta_mes_ant">Vta mes año ant</th>
+              <th data-key="vta_acum">Vta Acum</th>
+              <th data-key="vta_acum_ant">Vta acum año ant</th>
+              <th data-key="pct_crec">Vta % Crec</th>
+              <th data-key="pct_mkt_share">Mk Share</th>
+              <th data-key="pct_mg_acum" class="col-grp1">% Mg Acum</th>
+              <th data-key="vta_prom">Vta prom</th>
+              <th data-key="vta_prom_ant">Vta prom año ant</th>
+              <th data-key="mg_mes" class="col-grp1">Mg mes</th>
+              <th data-key="pct_mg">%Mg</th>
+              <th data-key="mg_acum">Mg acum</th>
+              <th data-key="mg_prom">Mg prom</th>
+              <th data-key="mg_prom_ant">Mg prom año ant</th>
+              <th data-key="pct_crec_mg">% Crec Mg</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-vta-mg">
+            <tr><td colspan="16" style="text-align:center;padding:40px;color:var(--muted)">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const fmtN  = v => v == null ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
+const fmtPct = v => {
+  if(v == null) return '<span style="color:#64748b">—</span>';
+  const cls = v >= 0 ? 'vp' : 'vn';
+  return `<span class="${cls}">${v >= 0 ? '▲' : '▼'} ${Math.abs(v).toFixed(1)}%</span>`;
+};
+const fmtPlainPct = v => v == null ? '—' : Math.abs(v).toFixed(2).replace('.', ',') + '%';
+
+let _total = {};
+let _filas = [];
+let _sortKey = null;
+let _sortDir = 'desc';
+
+// Cargar filtros disponibles
+fetch('/api/filtros_vta_acum')
+  .then(r => r.json())
+  .then(data => {
+    const sel = document.getElementById('f-categoria');
+    Object.entries(data.categorias || {}).forEach(([k, label]) => {
+      const opt = document.createElement('option');
+      opt.value = k; opt.textContent = label;
+      if(k === 'marca') opt.selected = true;
+      sel.appendChild(opt);
+    });
+
+    const fillsSelect = {
+      sucursal:    'f-sucursal',
+      vendedor:    'f-vendedor',
+      familia:     'f-familia',
+      marca:       'f-marca',
+      subfamilia:  'f-subfamilia',
+      procedencia: 'f-procedencia',
+      tipo_venta:  'f-tipo_venta',
+      distribuidor:'f-distribuidor',
+    };
+    Object.entries(fillsSelect).forEach(([key, selId]) => {
+      const s = document.getElementById(selId);
+      const vals = (data.filtros || {})[key] || [];
+      vals.forEach(v => {
+        const o = document.createElement('option');
+        o.value = v; o.textContent = v;
+        s.appendChild(o);
+      });
+    });
+
+    const fillsDatalist = {
+      cliente:              'dl-cliente',
+      descripcion_producto: 'dl-descripcion',
+    };
+    Object.entries(fillsDatalist).forEach(([key, dlId]) => {
+      const dl = document.getElementById(dlId);
+      const vals = (data.filtros || {})[key] || [];
+      dl.innerHTML = vals.map(v => `<option value="${v.replace(/"/g,'&quot;')}">`).join('');
+    });
+
+    aplicar();
+  })
+  .catch(e => console.error('Error filtros:', e));
+
+
+function getFiltros() {
+  const v = id => document.getElementById(id)?.value || '';
+  const f = { categoria: v('f-categoria') };
+  const keys = ['sucursal','vendedor','familia','marca','subfamilia','cliente',
+                'procedencia','descripcion_producto','tipo_venta','distribuidor'];
+  keys.forEach(k => { const val = v('f-'+k); if(val) f[k] = val; });
+  return f;
+}
+
+function aplicar() {
+  document.getElementById('tbody-vta-mg').innerHTML =
+    '<tr><td colspan="16" style="text-align:center;padding:30px;color:var(--muted)">Cargando...</td></tr>';
+
+  fetch('/api/vta_mg', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(getFiltros())
+  })
+  .then(r => r.json())
+  .then(data => {
+    if(data.error) { alert('Error: ' + data.error); return; }
+    renderKPIs(data.kpis);
+    _total = data.total || {};
+    _filas = data.filas || [];
+    document.getElementById('tabla-titulo').textContent =
+      'Venta y Margen por ' + (data.categoria_label || 'Categoría');
+    document.getElementById('th-cat').textContent = data.categoria_label || 'Categoría Parámetro';
+    renderTabla();
+  })
+  .catch(e => console.error('Error datos:', e));
+}
+
+function limpiar() {
+  ['f-sucursal','f-vendedor','f-familia','f-marca','f-subfamilia','f-cliente',
+   'f-procedencia','f-descripcion_producto','f-tipo_venta','f-distribuidor']
+    .forEach(id => { const s = document.getElementById(id); if(s) s.value = ''; });
+  aplicar();
+}
+
+function renderKPIs(k) {
+  document.getElementById('kpi-cols').innerHTML = `
+    <th>Venta ${k.ano_actual}</th>
+    <th>Venta ${k.ano_anterior}</th>
+    <th class="sep">Var ${k.ano_anterior}</th>
+    <th>${k.mes_nombre} ${k.ano_actual}</th>
+    <th>${k.mes_nombre} ${k.ano_anterior}</th>
+    <th class="sep">Var ${k.ano_anterior}</th>
+    <th>${k.mes_nombre} ${k.ano_actual}</th>
+    <th>${k.mes_anterior_nombre} ${k.ano_actual}</th>
+    <th>Var ${k.mes_anterior_nombre}</th>`;
+
+  document.getElementById('kpi-vals').innerHTML = `
+    <td>${fmtN(k.v_ano_actual)}</td>
+    <td class="txt-muted">${fmtN(k.v_ano_anterior)}</td>
+    <td class="sep">${fmtPct(k.var_ano)}</td>
+    <td>${fmtN(k.v_mes_actual)}</td>
+    <td class="txt-muted">${fmtN(k.v_mes_ant_ano)}</td>
+    <td class="sep">${fmtPct(k.var_mes_ano)}</td>
+    <td>${fmtN(k.v_mes_actual)}</td>
+    <td class="txt-muted">${fmtN(k.v_mes_ant_mes)}</td>
+    <td>${fmtPct(k.var_mes_mes)}</td>`;
+
+  document.getElementById('fecha-badge-wrap').innerHTML =
+    `<div class="dias-badge">📅 Datos al <strong>${k.fecha_datos}</strong></div>`;
+  document.getElementById('f-fecha-par').value = k.fecha_datos || '—';
+}
+
+document.querySelectorAll('#tbl-vta-mg thead th[data-key]').forEach(th => {
+  th.addEventListener('click', () => {
+    _sortDir = (_sortKey === th.dataset.key) ? (_sortDir === 'desc' ? 'asc' : 'desc') : 'desc';
+    _sortKey = th.dataset.key;
+    renderTabla();
+  });
+});
+
+function renderTabla() {
+  let filasOrdenadas = [..._filas];
+  if(_sortKey){
+    filasOrdenadas.sort((a, b) => {
+      let va = a[_sortKey], vb = b[_sortKey];
+      if(typeof va === 'string') { va = va.toLowerCase(); vb = (vb||'').toLowerCase(); }
+      else { va = va || 0; vb = vb || 0; }
+      if(va < vb) return _sortDir === 'asc' ? -1 : 1;
+      if(va > vb) return _sortDir === 'asc' ?  1 : -1;
+      return 0;
+    });
+  }
+
+  const fila = (r, esTotal) => `<tr class="${esTotal ? 'row-total' : ''}">
+    <td title="${r.categoria}">${r.categoria}</td>
+    <td>${fmtN(r.vta_mes)}</td>
+    <td class="txt-muted">${fmtN(r.vta_mes_ant)}</td>
+    <td>${fmtN(r.vta_acum)}</td>
+    <td class="txt-muted">${fmtN(r.vta_acum_ant)}</td>
+    <td>${fmtPct(r.pct_crec)}</td>
+    <td>${fmtPlainPct(r.pct_mkt_share)}</td>
+    <td class="col-grp1">${fmtPlainPct(r.pct_mg_acum)}</td>
+    <td>${fmtN(r.vta_prom)}</td>
+    <td class="txt-muted">${fmtN(r.vta_prom_ant)}</td>
+    <td class="col-grp1">${fmtN(r.mg_mes)}</td>
+    <td>${fmtPlainPct(r.pct_mg)}</td>
+    <td>${fmtN(r.mg_acum)}</td>
+    <td>${fmtN(r.mg_prom)}</td>
+    <td class="txt-muted">${fmtN(r.mg_prom_ant)}</td>
+    <td>${fmtPct(r.pct_crec_mg)}</td>
+  </tr>`;
+
+  let html = fila(_total, true);
+  filasOrdenadas.forEach(r => { html += fila(r, false); });
+  document.getElementById('tbody-vta-mg').innerHTML = html;
+}
+</script>
+{% endblock %}

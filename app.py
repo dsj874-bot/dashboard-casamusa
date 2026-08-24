@@ -1804,6 +1804,30 @@ def api_vta_mg_mensual():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/vta_mg")
+@login_requerido
+def vta_mg():
+    return render_template("vta_mg.html",
+                           active="vta_mg",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/vta_mg", methods=["POST"])
+@login_requerido
+def api_vta_mg():
+    try:
+        filtros = request.get_json(silent=True) or {}
+        if _sucursal_forzada():
+            filtros["sucursal"] = _sucursal_forzada()
+        if _canal_forzado():
+            filtros["tipo_venta"] = _canal_forzado()
+        if USAR_POSTGRES_COMERCIAL:
+            return jsonify(data_loader_pg.get_vta_mg_pg(filtros))
+        return jsonify(data_loader.get_vta_mg(filtros))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ══════════════════════════════════════════════════════
 #  ARRANQUE
 # ══════════════════════════════════════════════════════

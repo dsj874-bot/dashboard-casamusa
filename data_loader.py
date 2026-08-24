@@ -1386,10 +1386,14 @@ FILTROS_VTA = {
     "sucursal":   "SUCURSAL_LOGICA",
     "vendedor":   "VENDEDOR",
     "familia":    "FAMILIA",
+    "marca":      "MARCA",
     "subfamilia": "SUBFAMILIA",
+    "cliente":    "NOMBRE_CLIENTE",
+    "descripcion_producto": "DESCRIPCION",
     "tipo_venta": "TIPO_VENTA",
     "procedencia":"PROCEDENCIA",
     "cond_pago":  "COND_PAGO",
+    "distribuidor": "PROVEEDOR_POR_DEFECTO",
 }
 
 
@@ -1839,5 +1843,140 @@ def get_vta_mg_mensual(filtros=None):
         "filas_mensual":   filas_mensual,
         "total_acum":      total_acum,
         "filas_acum":      filas_acum,
+        "categoria_label": CATEGORIAS_VTA.get(categoria, ("Marca",))[0],
+    }
+
+
+# ══════════════════════════════════════════════════════
+#  Vta Mg — venta + margen, mes y acumulado, por categoria
+# ══════════════════════════════════════════════════════
+def get_vta_mg(filtros=None):
+    """
+    Combina en una sola fila por categoria: venta y margen, mes y
+    acumulado, actual y año anterior -- replica la pantalla "Vta Mg"
+    de BIWISER. filtros: mismo esquema que get_vta_acum (categoria +
+    claves de FILTROS_VTA).
+    """
+    f           = filtros or {}
+    df26_raw    = get_df_2026()
+    df25_raw    = get_df_2025()
+    fecha_datos = _fecha_datos()
+    mes_actual  = fecha_datos.month
+    dia_actual  = fecha_datos.day
+    mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
+
+    inicio_ano    = date(2026, 1, 1)
+    doy           = (fecha_datos - inicio_ano).days + 1
+    meses_elapsed = doy * 12 / 365.0
+
+    categoria = f.get("categoria", "marca")
+    _, col_grupo = CATEGORIAS_VTA.get(categoria, ("Marca", "MARCA"))
+    if col_grupo not in df26_raw.columns and col_grupo != "SUCURSAL_LOGICA":
+        col_grupo = "MARCA"
+
+    df26 = df26_raw.copy()
+    df25 = df25_raw.copy()
+    for fk, col in FILTROS_VTA.items():
+        val = f.get(fk)
+        if val and val not in ("todas", "todos", ""):
+            if col in df26.columns:
+                if isinstance(val, (list, tuple, set)):
+                    valores_str = [str(v) for v in val]
+                    df26 = df26[df26[col].astype(str).isin(valores_str)]
+                    df25 = df25[df25[col].astype(str).isin(valores_str)]
+                else:
+                    df26 = df26[df26[col].astype(str) == str(val)]
+                    df25 = df25[df25[col].astype(str) == str(val)]
+
+    df25_ytd = df25[
+        (df25["MES"] < mes_actual) |
+        ((df25["MES"] == mes_actual) & (df25["DIA"] <= dia_actual))
+    ]
+    df25_mes = df25[(df25["MES"] == mes_actual) & (df25["DIA"] <= dia_actual)]
+    df26_mes = df26[df26["MES"] == mes_actual]
+    df26_mes_ant = df26[df26["MES"] == mes_anterior]
+
+    # ── KPIs (mismo esquema que get_vta_acum) ──────────
+    v_ano_26  = float(df26["TOTAL"].sum())
+    v_ano_25  = float(df25_ytd["TOTAL"].sum())
+    v_mes_26  = float(df26_mes["TOTAL"].sum())
+    v_mes_25  = float(df25_mes["TOTAL"].sum())
+    v_mes_ant = float(df26_mes_ant["TOTAL"].sum())
+
+    kpis = {
+        "v_ano_actual":        round(v_ano_26, 0),
+        "v_ano_anterior":      round(v_ano_25, 0),
+        "var_ano":             var_pct(v_ano_26, v_ano_25),
+        "v_mes_actual":        round(v_mes_26, 0),
+        "v_mes_ant_ano":       round(v_mes_25, 0),
+        "var_mes_ano":         var_pct(v_mes_26, v_mes_25),
+        "v_mes_ant_mes":       round(v_mes_ant, 0),
+        "var_mes_mes":         var_pct(v_mes_26, v_mes_ant),
+        "fecha_datos":         fecha_datos.strftime("%d/%m/%Y"),
+        "mes_nombre":          MESES.get(mes_actual, ""),
+        "mes_anterior_nombre": MESES.get(mes_anterior, ""),
+        "ano_actual":          2026,
+        "ano_anterior":        2025,
+    }
+
+    # ── Agrupaciones por categoria ──────────────────────
+    vta_acum      = df26.groupby(col_grupo)["TOTAL"].sum()
+    vta_acum_ant  = df25_ytd.groupby(col_grupo)["TOTAL"].sum() if col_grupo in df25_ytd.columns else pd.Series(dtype=float)
+    mg_acum       = df26.groupby(col_grupo)["UTILIDAD_BRUTA"].sum()
+    mg_acum_ant   = df25_ytd.groupby(col_grupo)["UTILIDAD_BRUTA"].sum() if col_grupo in df25_ytd.columns else pd.Series(dtype=float)
+    vta_mes       = df26_mes.groupby(col_grupo)["TOTAL"].sum()
+    vta_mes_ant   = df25_mes.groupby(col_grupo)["TOTAL"].sum() if col_grupo in df25_mes.columns else pd.Series(dtype=float)
+    mg_mes        = df26_mes.groupby(col_grupo)["UTILIDAD_BRUTA"].sum()
+
+    total_26 = float(vta_acum.sum())
+
+    def _fila(cat, vta, vta_ant, mg, mg_ant, v_mes, v_mes_ant, m_mes):
+        prom     = round(vta     / meses_elapsed, 0) if meses_elapsed > 0 else 0
+        prom_ant = round(vta_ant / meses_elapsed, 0) if meses_elapsed > 0 else 0
+        mg_prom     = round(mg     / meses_elapsed, 0) if meses_elapsed > 0 else 0
+        mg_prom_ant = round(mg_ant / meses_elapsed, 0) if meses_elapsed > 0 else 0
+        return {
+            "categoria":      str(cat),
+            "vta_mes":        round(v_mes, 0),
+            "vta_mes_ant":    round(v_mes_ant, 0),
+            "vta_acum":       round(vta, 0),
+            "vta_acum_ant":   round(vta_ant, 0),
+            "pct_crec":       var_pct(vta, vta_ant),
+            "pct_mkt_share":  round(vta / total_26 * 100, 1) if total_26 > 0 else 0,
+            "pct_mg_acum":    round(mg / vta * 100, 1) if vta else 0.0,
+            "vta_prom":       prom,
+            "vta_prom_ant":   prom_ant,
+            "mg_mes":         round(m_mes, 0),
+            "pct_mg":         round(m_mes / v_mes * 100, 1) if v_mes else 0.0,
+            "mg_acum":        round(mg, 0),
+            "mg_prom":        mg_prom,
+            "mg_prom_ant":    mg_prom_ant,
+            "pct_crec_mg":    var_pct(mg, mg_ant),
+        }
+
+    filas = []
+    for cat in vta_acum.sort_values(ascending=False).index:
+        filas.append(_fila(
+            cat,
+            float(vta_acum.get(cat, 0)),     float(vta_acum_ant.get(cat, 0)),
+            float(mg_acum.get(cat, 0)),      float(mg_acum_ant.get(cat, 0)),
+            float(vta_mes.get(cat, 0)),      float(vta_mes_ant.get(cat, 0)),
+            float(mg_mes.get(cat, 0)),
+        ))
+
+    total = _fila(
+        "Total general",
+        total_26,                        float(vta_acum_ant.sum()),
+        float(mg_acum.sum()),             float(mg_acum_ant.sum()),
+        v_mes_26,                         v_mes_25,
+        float(mg_mes.sum()),
+    )
+    total["pct_mkt_share"] = 100.0
+
+    return {
+        "kpis":            kpis,
+        "total":           total,
+        "filas":           filas,
+        "categoria":       categoria,
         "categoria_label": CATEGORIAS_VTA.get(categoria, ("Marca",))[0],
     }

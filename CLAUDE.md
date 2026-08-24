@@ -3,11 +3,15 @@
 ## Stack
 - Python 3.14 + Flask 3.1 + pandas 3.0
 - Templates Jinja2 + Chart.js (CDN)
-- **Comercial corre sobre Postgres (Supabase) desde el 2026-08-19** — ver
-  "Fase 1: Comercial en Postgres" más abajo. Excel/pandas (`data_loader.py`)
-  sigue existiendo intacto como fuente independiente para el diff de
-  validación, pero el dashboard real (local Y Vercel) ya no lo lee para
-  Comercial. Inventario/Adquisiciones/Obligatorios siguen 100% en Excel.
+- **Comercial e Inventario corren sobre Postgres (Supabase)** — Comercial
+  desde el 2026-08-19, Inventario desde el 2026-08-20/21 (ver "Fase 1:
+  Comercial en Postgres" y "Fase 1: Inventario en Postgres" más abajo).
+  Excel/pandas (`data_loader.py`, `data_loader_inventario.py`,
+  `data_loader_obligatorios.py`) siguen existiendo intactos como fuente
+  independiente para el diff de validación, pero el dashboard real (local
+  Y Vercel) ya no los lee para esos dos dominios. Adquisiciones sigue
+  100% en Excel — próximo en la lista, y a diferencia de Comercial/
+  Inventario el usuario quiere REARMAR sus reportes, no solo portarlos.
 - Dependencias no estándar: `python-calamine` (lectura rápida de xlsx),
   `pyarrow` (cache en parquet), `pillow` (edición de imágenes, ej. logo),
   `psycopg[binary]` + `psycopg-pool` (Postgres), `openpyxl` (escribir
@@ -37,17 +41,50 @@ Dashboard/
 ├── data_loader_pg.py          # Equivalente Postgres de cada funcion de
 │                              # data_loader.py (Fase 1, Comercial) + helpers
 │                              # de gestion (asignar_vendedor_home, etc.)
+├── data_loader_inventario_pg.py   # Equivalente Postgres de los 6 reportes
+│                                    # core de data_loader_inventario.py
+│                                    # (Resumen/Bodegas/Familia/Marca/
+│                                    # Clasificacion/Procedencia)
+├── data_loader_obligatorios_pg.py # Alertas/Plan de Compra/Distribucion
+│                                    # sobre Productos Prioritarios (tabla
+│                                    # productos_obligatorios) + Nivel de
+│                                    # Servicio reusa sus helpers internos
+│                                    # (_stock_combinado_pg, etc.)
+├── data_loader_segunda_linea.py   # Mismo trio (Alertas/Compra/Distribucion)
+│                                    # pero para "2a Linea" (AAA/M05 fuera de
+│                                    # Obligatorios) -- Postgres-only, sin
+│                                    # equivalente Excel
+├── data_loader_exclusion_compra.py # Productos No Comprar + buscador de
+│                                     # productos (usado por las 2 paginas
+│                                     # de autoservicio de Inventario)
+├── data_loader_nivel_servicio.py  # Fill rate (Sum(min(stock,demanda))/
+│                                    # Sum(demanda)) por sucursal, pantalla
+│                                    # "Nivel de Servicio"
 ├── db.py                     # Pool de conexiones Postgres (psycopg_pool)
 ├── migrations/                # SQL versionado, se aplica a mano (sin
 │   ├── 001_control_datos.sql  #  herramienta de migraciones tipo alembic)
 │   ├── 002_fase1_comercial.sql
-│   └── 003_vendedor_home.sql  # tabla vendedor_home + vista v_ventas
+│   ├── 003_vendedor_home.sql  # tabla vendedor_home + vista v_ventas
+│   ├── 004_inventario.sql     # tablas inventario_stock/control (Fase 1 Inv.)
+│   ├── 005_obligatorios.sql   # tabla productos_obligatorios
+│   ├── 006_pedido_total.sql   # columna pedido_total en productos
+│   ├── 007_exclusion_compra.sql   # tabla productos_no_comprar
+│   └── 008_prioridad_updated_by.sql  # columna updated_by en productos_obligatorios
 ├── scripts/
 │   ├── backfill_fase1_comercial.py  # Carga inicial Excel -> Postgres (uso
 │   │                                  # unico, ya corrido; reusa columnas de
 │   │                                  # data_loader_pg.VENTAS_COLUMNAS)
-│   └── validar_fase1_comercial.py   # Diff Excel vs Postgres, correr tras
-│                                      # CUALQUIER cambio en data_loader_pg.py
+│   ├── validar_fase1_comercial.py   # Diff Excel vs Postgres, correr tras
+│   │                                  # CUALQUIER cambio en data_loader_pg.py
+│   ├── backfill_inventario.py       # Carga inicial Inventario.xlsx -> Postgres
+│   │                                  # (uso unico, ya corrido) -- ver gotcha
+│   │                                  # dict_row/venta_mensual mas abajo
+│   ├── backfill_obligatorios.py     # Carga inicial Obligatorios (Excel-
+│   │                                  # curado) -> productos_obligatorios
+│   ├── validar_inventario.py        # Diff Excel vs Postgres para los 6
+│   │                                  # reportes core de Inventario
+│   └── validar_obligatorios.py      # Diff para Alertas/Compra/Distribucion
+│                                      # sobre Productos Prioritarios
 ├── vercel.json                # Config deploy Vercel
 ├── iniciar.bat                # Abre Flask en Windows (instala deps) --
 │                              # NO es como corre hoy en produccion, ver
@@ -99,7 +136,24 @@ Dashboard/
     ├── cargar_ne.html        # /cargar_ne (autoservicio, admin)
     ├── cargar_metas.html     # /cargar_metas (autoservicio, admin)
     ├── gestionar_vendedores.html  # /gestionar_vendedores (autoservicio, admin)
-    └── en_construccion.html  # solo /datos la usa por ahora
+    ├── en_construccion.html  # solo /datos la usa por ahora
+    ├── _inventario_sidebar.html   # sidebar propio de Inventario (incluido por
+    │                                # TODAS las paginas de Inventario via
+    │                                # {% block sidebar_nav %}, no el default
+    │                                # de base.html -- ver bug de sidebar abajo)
+    ├── inventario_resumen.html, inventario_bodegas.html,
+    │   inventario_familia.html, inventario_marca.html,
+    │   inventario_clasificacion.html, inventario_procedencia.html  # 6 core
+    ├── inventario_alertas.html, inventario_compras.html,
+    │   inventario_distribucion.html  # "Plan de Compra Prioritarios"
+    ├── inventario_alertas_segunda_linea.html,
+    │   inventario_compras_segunda_linea.html,
+    │   inventario_distribucion_segunda_linea.html  # "2a Linea"
+    ├── inventario_nivel_servicio.html  # /inventario/nivel_servicio, Chart.js
+    │                                     # combo bar($)+linea(%) por sucursal
+    ├── subir_inventario.html    # /subir_inventario (autoservicio, admin)
+    ├── gestionar_productos_compra.html  # /gestionar_productos_compra (admin)
+    └── gestionar_prioridad.html # /gestionar_prioridad (admin)
 ```
 
 ## Columnas SAP B1 (Ventas_20XX.xlsx)
@@ -144,12 +198,13 @@ Flujo real (no automático desde SAP, alguien copia el archivo a mano):
 3. Dos formas de disparar la consolidación:
    - Botón "🔄 Actualizar datos" en el topbar → POST `/admin/actualizar`
      (**solo visible/permitido para usuarios con `admin: True` en
-     GERENTES** — hoy dsepulveda/emusa/jsantana/naguilera, ver sección
-     Autenticación). SOLO consolida archivos — no confirma días sin
-     ventas, ver más abajo. Es el
-     respaldo manual: si un día hábil no se cargó el archivo antes de
-     las 19:00, se carga más tarde (aunque sea de noche) y se aprieta
-     el botón para forzarlo.
+     GERENTES** — hoy dsepulveda/emusa/jsantana, ver sección
+     Autenticación). Consolida archivos Y (desde 2026-08-24) también
+     llama `confirmar_dia_sin_ventas()` incondicionalmente al final,
+     igual que `actualizar_diario.py` — ver siguiente sección para el
+     por qué. Es el respaldo manual: si un día hábil no se cargó el
+     archivo antes de las 19:00, se carga más tarde (aunque sea de
+     noche) y se aprieta el botón para forzarlo.
    - Tarea Programada de Windows `CasaMusa_ActualizarVentas`, corre todos
      los días a las 19:00 vía `actualizar_diario.py` (no necesita que
      Flask esté corriendo). `LogonType: S4U` (no requiere sesión
@@ -162,6 +217,25 @@ Flujo real (no automático desde SAP, alguien copia el archivo a mano):
      Si el corte de fecha se queda pegado varios días, revisar primero
      `Get-ScheduledTaskInfo -TaskName CasaMusa_ActualizarVentas` y
      `actualizar_diario.log`.
+
+## `confirmar_dia_sin_ventas()` se llama SIEMPRE, no solo si no hay archivo (bug real 2026-08-24)
+Hasta el 2026-08-24, `actualizar_diario.py` solo llamaba
+`confirmar_dia_sin_ventas()` dentro del `if not resultado.get("ok"):`
+(rama "no se encontró archivo"). Eso asumía que si SÍ se encontró y
+consolidó un archivo, el corte quedaba al día. Falso: el export de SAP
+simplemente OMITE los días sin actividad (ej. domingo) en vez de traer
+una fila con venta $0 — así que un archivo real, consolidado con éxito
+(`ok=True`) un lunes, puede no traer NINGUNA fila del domingo anterior,
+y el corte de "Datos al" quedaba congelado en el último día CON fila,
+atrasando la pantalla aunque el domingo ya estuviera resuelto (síntoma
+real reportado por el usuario con captura de pantalla: "Datos al
+22/08/2026" cuando ya era 23/08 y el domingo 23 no tuvo venta).
+**Fix**: `confirmar_dia_sin_ventas()` ahora se llama SIEMPRE al final,
+tanto en `actualizar_diario.py`/`main()` como en la ruta
+`/admin/actualizar` — es idempotente/monótona (usa `GREATEST()` en
+Postgres, solo avanza el corte, nunca lo retrocede), así que llamarla
+de más no tiene efecto cuando el archivo sí trajo el día de ayer
+cubierto. No volver a poner esta llamada detrás de un `if not ok`.
 
 ## Si no hay archivo a las 19:00 (`actualizar_diario.py`)
 - Decisión explícita (2026-07-24): se confirma automáticamente el día
@@ -244,9 +318,14 @@ falta debuggear una diferencia.
   `utilidad_bruta` (de un total de ~$100M) es ESPERADO y no es bug — es
   precision float64 (pandas) vs numeric exacto (Postgres) en sumas sobre
   cientos de miles de filas; no perseguirlo.
-- **Sincronizacion de ventas (`sincronizar_ventas_pg(df, fechas)` en
-  data_loader_pg.py)**: delete-by-fecha_conta + insert, mismo criterio de
-  dedupe que usa el cache local. Se llama desde 3 lugares:
+- **Sincronizacion de ventas (`sincronizar_ventas_pg(df, fechas,
+  tamano_lote=5000, reintentos=3)` en data_loader_pg.py)**: delete-by-
+  fecha_conta + insert por lotes con commit-y-reintento por lote (ver
+  "Gotcha Postgres #2" mas abajo — reescrita 2026-08-24 tras un
+  "no hay conexion" real al subir Ventas, causado por el mismo
+  antipatron de transaccion unica que ya se habia corregido para
+  Inventario). Mismo criterio de dedupe que usa el cache local. Se
+  llama desde 3 lugares:
   - `actualizar_diario.py` (tarea 19:00) y el boton "Actualizar datos"
     local, via el parametro `on_nuevo` de
     `data_loader.actualizar_desde_archivo_mensual()` — data_loader.py NO
@@ -317,6 +396,120 @@ Claude que corriera un script Python:
   `/api/subir_ventas` — mismo patron: GET trae datos, POST guarda,
   `admin_requerido` en ambos.
 
+## Fase 1 — Inventario en Postgres (2026-08-20/21, extendido durante la semana)
+Mismo patrón que Comercial: `USAR_POSTGRES_INVENTARIO` (default "1"),
+`data_loader_inventario_pg.py` espeja cada función de
+`data_loader_inventario.py` con sufijo `_pg`. Cubre:
+
+- **6 reportes core**: Resumen, Por Bodega, Por Familia, Por Marca, Por
+  Clasificación, Por Procedencia. Tabla `inventario_stock` (una fila por
+  producto+bodega, reemplazada entera en cada carga — foto, no
+  histórico) + `inventario_control` (equivalente a `control_datos`,
+  guarda la fecha de la última foto cargada).
+- **Productos Prioritarios ("Plan de Compra Prioritarios")**: Alertas de
+  Quiebre / Plan de Compra / Distribución desde CD, sobre la tabla
+  `productos_obligatorios` (curada originalmente en Excel, ver más
+  abajo) — `data_loader_obligatorios_pg.py`.
+- **"2ª Línea"** (`data_loader_segunda_linea.py`, **100% Postgres-only,
+  sin equivalente Excel**): mismo trio de pantallas pero para productos
+  AAA/M05 que NO están en `productos_obligatorios`. Reglas de negocio
+  explícitas del usuario:
+  - Código que empieza en **6** (`PREFIJOS_FUERA_SEGUNDA_LINEA` en
+    `data_loader_exclusion_compra.py`): excluido de TODO el universo
+    (ni Alertas, ni Distribución, ni Plan de Compra) — no son productos
+    reales de reventa.
+  - Código que empieza en **3 o 7** (`PREFIJOS_IMPORTADO_SIN_INJERENCIA`):
+    aparecen en Alertas/Distribución, pero excluidos SOLO de las
+    sugerencias de Plan de Compra ("son productos importados que no
+    tengo ingerencia de compra" — decisión explícita del usuario).
+- **Nivel de Servicio** (`/inventario/nivel_servicio`, sección propia en
+  el sidebar, sin filtros): fill rate = `Σ min(stock_combinado,
+  demanda_diaria) / Σ demanda_diaria`, sobre Productos Prioritarios.
+  Reusa los helpers internos de `data_loader_obligatorios_pg.py`
+  (`_stock_combinado_pg`/`_venta_combinada_pg`/`_cargar_stock_pg`) con
+  `cod_equiv=None` (no hay par equivalente en este contexto). San Isidro
+  se trata como sucursal independiente (solo su propia venta, sin ajuste
+  de CD — decisión explícita del usuario). Un quiebre total en un
+  producto puntual aporta 0% a ese producto (no se excluye ni se trata
+  especial) — así es como debe funcionar la fórmula. Página de 2 KPIs
+  (Inventario Total $, Nivel de Servicio % general) + gráfico combo
+  Chart.js (barras=$ eje izq., línea=% eje der. 0-100) por sucursal.
+  **Nunca verificado visualmente en navegador** (preview_start falló:
+  puerto 5000 reservado por el OS) — solo verificado vía Flask
+  `test_client()` + llamada directa a la función con números plausibles.
+
+### Páginas de autoservicio de Inventario (sidebar "Administración", solo `admin: True`)
+- **`/subir_inventario`**: sube el Inventario.xlsx (foto completa,
+  reemplaza `inventario_stock` entero) — reusa
+  `data_loader_inventario.fusionar_datos_duros(df)` (extraída como
+  helper reusable, antes vivía inline en `_leer_inventario()`).
+- **`/gestionar_productos_compra`** ("Productos No Comprar"): excluye un
+  producto SOLO del Plan de Compra (Prioritarios y 2ª Línea) — NO de
+  Alertas ni Distribución, a propósito ("no vamos a comprar los conduit
+  fuertes" pero igual hay que saber si hacen falta/redistribuir). Tabla
+  `productos_no_comprar`. Buscador con filtro por Familia + búsqueda de
+  texto por palabra (no substring literal — "conduit fuerte" no
+  matcheaba "CONDUIT PVC ... FUERTE" con substring porque las palabras
+  no son adyacentes en la descripción real).
+- **`/gestionar_prioridad`**: promueve un producto de 2ª Línea a
+  Prioritario (`promover_a_prioridad()`, autocompleta familia/
+  subfamilia/grupo/descripción desde la tabla `productos`) o lo devuelve
+  a 2ª Línea (`quitar_de_prioridad()`). Motivado por: "necesito que los
+  productos puedan pasar desde segunda linea a prioridad".
+- Buscador compartido de ambas páginas: `buscar_productos()` en
+  `data_loader_exclusion_compra.py`, excluye por defecto
+  `PREFIJOS_EXCLUIDOS_BUSCADOR` (dígito 6, y opcionalmente 3/7 según el
+  parámetro `prefijos_excluidos` de cada caller) — el dropdown de
+  Familia NUNCA debe mostrar productos con código 6 (bug real reportado
+  por el usuario: "la lista despegable debiese mostrarme todos los
+  productos a Excepcion de los SM0").
+
+### `productos_obligatorios`: acentos/mayúsculas inconsistentes (curación Excel vs SAP)
+La tabla se curó originalmente desde Excel (mayúsculas/acentos libres);
+`productos` viene de SAP con su propio estándar. Se encontraron y
+corrigieron SOLO las discrepancias que eran el mismo valor con
+acento/mayúscula distinta (123 filas de `familia`, 80 de `grupo`,
+verificado con un script Python `unicodedata`-normalizado antes de
+tocar nada) — las 66 diferencias reales de `subfamilia` y 421 de
+`grupo` (curación intencional distinta, no error de tipeo) se dejaron
+intactas a propósito. Si se promueve un producto nuevo desde
+`/gestionar_prioridad` y aparece una "familia duplicada" con/sin
+tilde, revisar primero si es un caso real de curación divergente antes
+de normalizar en masa.
+
+## Gotcha Postgres #1 — `db.get_connection()`/`db.conexion_pool()` usan `row_factory=dict_row`
+Toda conexión de este proyecto devuelve **dicts**, no tuplas. Esto es
+invisible la mayoría del tiempo (`row["col"]`), pero es una trampa real
+al desempacar con unpacking posicional:
+```python
+for codigo, bodega, venta in cur.fetchall():   # BUG: recorre las
+    ...                                          # LLAVES del dict (strings),
+                                                   # no los valores
+```
+Esto rompió en silencio (sin excepción, sin error visible) la
+preservación de `venta_mensual` durante todo `scripts/backfill_inventario.py`
+en esta sesión — el rescate-antes-de-truncar quedaba vacío porque el
+dict nunca se indexaba de verdad. Fix: siempre `row["columna"]`, nunca
+unpacking posicional sobre un cursor de este proyecto.
+
+## Gotcha Postgres #2 — bulk INSERT/UPSERT: commit por lote, nunca una transacción gigante
+`DATABASE_URL` usa el **pooler transaccional de Supabase** (Supavisor,
+puerto 6543) — puede cortar la conexión a mitad de una transacción larga.
+Un DELETE+INSERT de miles de filas en una sola transacción (un solo
+`conn.commit()` al final) revienta como "no hay conexión" en el
+navegador si el pooler corta a mitad de camino, y deja la tabla en un
+estado parcial. Encontrado y corregido TRES veces distintas esta
+sesión (`cargar_stock` de Inventario, el rescate de `venta_mensual`
+antes de truncar, y `sincronizar_ventas_pg` para el upload de Ventas)
+— el patrón correcto, ya probado en `backfill_ventas()`, es:
+1. DELETE en su propia transacción, commit aparte.
+2. INSERT en lotes (ej. 5000 filas) — **cada lote hace su propio
+   `conn.commit()`**, con reintento-y-reconexión (2-3 intentos) si el
+   commit del lote falla.
+
+No volver a escribir un bulk write de Postgres en este proyecto como
+"un solo `with conn: ... commit()` al final" — siempre por lotes.
+
 ## Sucursales lógicas (SUCURSAL_LOGICA) y vendedores
 SAP maneja sucursales físicas. La función `_aplicar_sucursal_logica()`:
 - Mapea sucursales físicas → lógicas (`_MAPA_SUC_BASE`).
@@ -333,7 +526,13 @@ SAP maneja sucursales físicas. La función `_aplicar_sucursal_logica()`:
   venta de una persona se vea a su nombre sin importar bajo qué
   sucursal/bodega quedó registrada en SAP.
 - Orden canónico: MT, LC, MR, SE, CMD, CH, MP, CANAL DIGITAL, OF
-  (`ORDEN_SUCURSALES`).
+  (`ORDEN_SUCURSALES`). **Ya NO se usa para ordenar las pantallas de
+  reporte** (Proyección, Por Sucursal, Seguimiento Metas, Seguimiento
+  Ppto en el lado `_pg`) — esas ahora ordenan dinámicamente por venta
+  real descendente (mayor venta primero, calculado en cada llamada, no
+  un índice fijo). `ORDEN_SUCURSALES` sigue vigente tal cual SOLO para
+  las pantallas de roster/edición (Gestionar Vendedores, NE x Facturar,
+  Cargar Metas), donde un orden estable importa más que el ranking.
 - Hay una persona sin mapear en `VEND_HOME`: **EMA SEPULVEDA TUREN**
   (~$33M en SI-STK/2025, cae en OTROS/SE) — ya no trabaja en la empresa,
   se dejó así a propósito, no "corregir".
@@ -462,39 +661,96 @@ negativas se veían verdes. No revivir esa confusión.
 Usuarios hardcodeados en `app.py` (dict `GERENTES`). Sin DB. Emails
 como *keys* del dict deben ir en minúscula (`/login` hace
 `.strip().lower()` antes de buscar, pero el usuario puede escribir el
-correo con cualquier capitalización al iniciar sesión).
-`"admin": True` en la entrada de un gerente le da acceso al botón
-"Actualizar datos" (oculto en el HTML Y rechazado con 403 en el
-servidor si no es admin). Por defecto los gerentes nuevos NO son admin.
-Session Flask con secret_key.
+correo con cualquier capitalización al iniciar sesión). Session Flask
+con secret_key.
 
-Usuarios actuales (actualizado 2026-08-19):
-| Correo | Nombre | Admin (ve "Administración") |
-|---|---|---|
-| dsepulveda@casamusa.cl | Administrador | ✅ Sí |
-| emusa@casamusa.cl | G. General | ✅ Sí (agregado 2026-08-19, sube venta mensual) |
-| jsantana@casamusa.cl | Comercial | ✅ Sí (agregado 2026-08-19, sube venta mensual) |
-| naguilera@casamusa.cl | ECI | ✅ Sí |
-| fmusa@casamusa.cl | Importaciones | No |
-| malvarado@casamusa.cl | Finanzas | No |
+Cada entrada de `GERENTES` puede combinar estas llaves (no son
+mutuamente excluyentes, ver tabla de restricciones más abajo):
+- **`admin: True`**: ve el menú "Administración" (Subir Ventas/
+  Inventario, Cargar NE/Metas, Gestionar Vendedores/Productos/
+  Prioridad) y el botón "Actualizar datos". Por defecto los usuarios
+  nuevos NO son admin.
+- **`sucursal`**: string o lista — fuerza todos los reportes de
+  Comercial a esa sucursal únicamente (Jefe de Sucursal clásico). Lista
+  cuando una persona cubre más de una sucursal (ej. Express = CH+MP).
+- **`canal`**: lista de valores de `TIPO_VENTA` — fuerza los reportes a
+  ese/esos canales únicamente, en vez de por sucursal (perfil
+  e-commerce, ve todas las sucursales pero solo su tipo de venta).
+- **`sucursal_ne`**: string — controla SOLO qué filas de NE x Facturar
+  puede ver/editar en `/cargar_ne`, independiente de `sucursal`/`canal`
+  (existe porque Elennys no tiene una `sucursal` real de SAP, pero sí
+  necesita su propia fila de NE bajo "CANAL DIGITAL").
 
-Jefes de sucursal (ven solo su sucursal, sin "Administración"):
-| Correo | Sucursal(es) |
-|---|---|
-| gcarrasco@casamusa.cl | MT |
-| sarjona@casamusa.cl | LC |
-| evalera@casamusa.cl | MR |
-| jvillegas@casamusa.cl | CH + MP (perfil "Express") |
+Usuarios actuales (actualizado 2026-08-24):
+| Correo | Nombre | Admin | Gerencia |
+|---|---|---|---|
+| dsepulveda@casamusa.cl | Administrador | ✅ Sí | ✅ Sí |
+| emusa@casamusa.cl | G. General | ✅ Sí | ✅ Sí |
+| jsantana@casamusa.cl | Comercial | ✅ Sí | ✅ Sí |
+| fmusa@casamusa.cl | Importaciones | No | ✅ Sí |
+| malvarado@casamusa.cl | Finanzas | No | ✅ Sí |
 
-Las claves siguen el patrón `Rol2026` (ej. `Admin2026`, `ECI2026`,
-`Comercial2026`, `GGeneral2026`). Los usuarios previos (gerente@,
-ventas@, enrique@, marcelo@, y el antiguo "David Sepúlveda") fueron
-eliminados — dsepulveda@casamusa.cl se reutilizó para el nuevo rol
-"Administrador". emusa/jsantana recibieron `admin: True` el 2026-08-19
-especificamente para poder usar `/subir_ventas` (las 3 personas que
-suben la venta mensual: dsepulveda, jsantana, emusa) — esto tambien
-les dio acceso a `/cargar_ne`, `/cargar_metas` y `/gestionar_vendedores`,
-ya que hoy `admin` es un solo flag (no hay permisos mas finos).
+Jefes de sucursal / canal (NO gerencia — ven solo Comercial, filtrado a
+lo suyo, sin "Administración"):
+| Correo | Nombre | Restricción | Mecanismo |
+|---|---|---|---|
+| gcarrasco@casamusa.cl | MT | sucursal MT | `sucursal` + `sucursal_ne` implícito (=sucursal) |
+| sarjona@casamusa.cl | LC | sucursal LC | idem |
+| evalera@casamusa.cl | MR | sucursal MR | idem |
+| jvillegas@casamusa.cl | Express | sucursal CH+MP | idem (lista) |
+| eperez@casamusa.cl | E-commerce | canal e-commerce (todas las sucursales) | `canal: CANALES_ECOMMERCE` + `sucursal_ne: "CANAL DIGITAL"` |
+
+`CANALES_ECOMMERCE = ["CASAMUSA.CL", "MERCADO LIBRE CM", "MERCADO LIBRE SC", "MKT PLACE", "VENTA ASISTIDA", "SODIMAC/LEGRAND"]`
+(Elennys es la encargada de E-commerce en general — se fue agregando
+canal por canal en la conversación real con el usuario, ojo si aparece
+un canal e-commerce nuevo en SAP, hay que agregarlo a esta lista a mano).
+
+Las claves siguen el patrón `Rol2026` (ej. `Admin2026`, `Ecommerce2026`,
+`Comercial2026`, `GGeneral2026`). **naguilera@casamusa.cl fue eliminado
+por completo** (se fue de la empresa) — `login_requerido`/
+`admin_requerido` revalidan en CADA request que `session["usuario"]`
+siga en `GERENTES`, así que a alguien que se elimina se le corta el
+acceso de inmediato (sesión activa incluida), no solo se le bloquea un
+login nuevo.
+
+### Restricciones de área (before_request hooks en app.py)
+Tres mecanismos independientes, cada uno con su propio criterio — no
+confundir uno con otro:
+- **`USUARIOS_INVENTARIO_ADQUISICIONES = {"dsepulveda@casamusa.cl"}`** +
+  `_restringir_inventario_adquisiciones()`: solo esta cuenta ve
+  Inventario/Adquisiciones — para todos los demás, esas rutas ni
+  aparecen en `/inicio` ni son accesibles directo por URL.
+- **`_restringir_metas_ppto_canal()`**: bloquea `/metas`/`/ppto` (y sus
+  `/api/`) para cualquier sesión con `canal` seteado (hoy solo
+  Elennys) — decisión explícita del usuario tras confirmar que
+  comparar venta parcial (solo su canal) contra la meta del equipo
+  completo mostraba un "100% atrasado" engañoso para todo el resto del
+  equipo, y $0 sin meta cargada para ella. No es un bug de cálculo
+  (`pct_cumpl = (1 - vta/meta_acum)*100` es correcto), es una base de
+  comparación que no tiene sentido para un perfil de canal — más
+  simple ocultarlas que rehacer la base de comparación.
+- **`USUARIOS_GERENCIA = {"dsepulveda@casamusa.cl", "emusa@casamusa.cl", "fmusa@casamusa.cl", "malvarado@casamusa.cl", "jsantana@casamusa.cl"}`**
+  (por EMAIL, **independiente del flag `admin`** — fmusa y malvarado son
+  gerencia pero NO admin) + `_restringir_areas_no_comercial()`: bloquea
+  `/finanzas`, `/logistica`, `/bodega`, `/forecast`, `/tareas` para
+  cualquiera fuera de este set, y `/inicio` solo les muestra el mosaico
+  de Comercial a los no-gerencia. **Ojo**: el primer intento de esta
+  restricción usó `session.get("admin")` como criterio y excluía
+  incorrectamente a fmusa/malvarado (no son admin, sí son gerencia) —
+  el usuario lo corrigió explícitamente ("los gerentes son EMUSA,
+  FMUSA, DSEPULVEDA, MALVARADO y JSANTANA. Todos los demas son jefes de
+  sucursales"). `admin` sigue siendo un flag totalmente distinto (visibilidad
+  del menú "Administración"), no tocar ese significado.
+
+### NE x Facturar: acceso por Jefe de Sucursal (extendido más allá de admin)
+`/cargar_ne` y `/api/cargar_ne` usan el decorador
+`admin_o_jefe_sucursal_requerido` (admin O `sucursal` O `sucursal_ne`) —
+antes era solo `admin_requerido`. Cada Jefe de Sucursal ve y edita
+ÚNICAMENTE la fila de su propia sucursal (validado también en el
+servidor, no solo escondiendo filas en el HTML). `_sucursal_ne_forzada()`
+es el helper que resuelve la sucursal efectiva a partir de la sesión —
+usa `sucursal_ne` si existe (caso Elennys, que no tiene `sucursal` real),
+si no cae a `sucursal`.
 
 ## Páginas activas
 Las 14 de esta tabla corren sobre Postgres desde Fase 1 (2026-08-19) —
@@ -502,7 +758,11 @@ la columna "Función datos" lista la version Excel; la real (Vercel y
 local) es la misma función + sufijo `_pg` en `data_loader_pg.py`. Las 4
 páginas de autoservicio (`/subir_ventas`, `/cargar_ne`, `/cargar_metas`,
 `/gestionar_vendedores`) no están en esta tabla porque no muestran un
-reporte — ver sección "Páginas de autoservicio" más arriba.
+reporte — ver sección "Páginas de autoservicio" más arriba. Las
+páginas de Inventario (6 core + Plan de Compra Prioritarios + 2ª Línea
++ Nivel de Servicio + sus 3 páginas de autoservicio) NO están en esta
+tabla — ver la sección "Fase 1 — Inventario en Postgres" más arriba,
+que las documenta a todas.
 
 | Ruta | Template | Función datos |
 |------|----------|---------------|
@@ -584,8 +844,16 @@ Los reportes siguen la estructura del sistema BIWISER interno:
    Code no tiene permisos de administrador en esta maquina para
    reiniciarlo solo, hay que pedirselo al usuario cada vez.
 6. Tras cualquier cambio en `data_loader_pg.py` o en las tablas de
-   Postgres, correr `python scripts/validar_fase1_comercial.py` antes
-   de dar el cambio por terminado.
+   Postgres (Comercial), correr `python scripts/validar_fase1_comercial.py`
+   antes de dar el cambio por terminado. Para Inventario/Obligatorios,
+   `python scripts/validar_inventario.py` y
+   `python scripts/validar_obligatorios.py` (2ª Línea y Nivel de
+   Servicio no tienen equivalente Excel, no hay script de validación
+   posible para esas dos).
+6b. Cualquier bulk INSERT/UPSERT nuevo a Postgres debe ir por lotes con
+   commit-y-reintento por lote, nunca una sola transacción para todo —
+   ver "Gotcha Postgres #2" más abajo, ya causó 3 bugs reales de "no
+   hay conexión" en esta sesión.
 7. `app.py` fuerza stdout/stderr a UTF-8 al importar — necesario porque
    la consola de Windows por defecto no soporta los caracteres de caja
    del banner ni tildes en prints.
