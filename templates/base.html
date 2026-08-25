@@ -33,6 +33,7 @@
       --blue-light:  #93c5fd;
       --blue-dark:   #2563eb;
       --slate:       #334155;
+      --card-shadow: none;
       --sidebar-w:   250px;
     }
 
@@ -42,7 +43,8 @@
         --bg:          #c9ab7d;
         --surface:     #ede2cc;
         --surface2:    #ddc7a0;
-        --border:      #c9b48a;
+        --border:      #a68f63;
+        --card-shadow: 0 1px 3px rgba(43,36,25,0.16), 0 4px 10px rgba(43,36,25,0.10);
         --text:        #2b2419;
         --text-strong: #000000;
         --muted:       #a89873;
@@ -69,7 +71,8 @@
       --bg:          #c9ab7d;
       --surface:     #ede2cc;
       --surface2:    #ddc7a0;
-      --border:      #c9b48a;
+      --border:      #a68f63;
+      --card-shadow: 0 1px 3px rgba(43,36,25,0.16), 0 4px 10px rgba(43,36,25,0.10);
       --text:        #2b2419;
       --text-strong: #000000;
       --muted:       #a89873;
@@ -369,6 +372,7 @@
       border: 1px solid var(--border);
       border-radius: 14px;
       padding: 22px 24px;
+      box-shadow: var(--card-shadow);
       transition: border-color 0.2s;
     }
     .kpi-card:hover { border-color: var(--accent); }
@@ -401,6 +405,7 @@
       border: 1px solid var(--border);
       border-radius: 14px;
       overflow: hidden;
+      box-shadow: var(--card-shadow);
       margin-bottom: 16px;
     }
     .kpi-tabla { width: 100%; border-collapse: collapse; }
@@ -463,6 +468,7 @@
       border: 1px solid var(--border);
       border-radius: 14px;
       padding: 22px 24px;
+      box-shadow: var(--card-shadow);
     }
     .chart-card-title {
       font-size: 14px;
@@ -482,6 +488,7 @@
       border: 1px solid var(--border);
       border-radius: 14px;
       overflow: hidden;
+      box-shadow: var(--card-shadow);
       margin-bottom: 24px;
     }
     .table-header {
