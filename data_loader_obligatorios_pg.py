@@ -514,10 +514,41 @@ def get_lista_prioridad():
     ]
 
 
+# Subfamilias donde el segundo nivel del Plan de Compra debe agruparse
+# por COLOR (no por el "grupo" real de SAP, que ahi es solo
+# TAPAS/MODULOS/ARMADOS y no dice nada util para reponer) -- ej. Living
+# Now, Luzica. En cualquier otra subfamilia "grupo" sigue siendo el de
+# SAP (ej. diametro en Conduit PVC).
+SUBFAMILIAS_AGRUPAR_POR_COLOR = {"LIVING NOW", "LUZICA"}
+# Prefijos (no la palabra completa) para cubrir concordancia de genero
+# en español: "blanco/blanca", "negro/negra". "arena" no varia.
+COLORES_CONOCIDOS = {"BLANC": "Blanco", "NEGR": "Negro", "ARENA": "Arena"}
+
+
+def _grupo_para_obligatorios(subfamilia, descripcion, grupo_real):
+    """Grupo a guardar en productos_obligatorios: el color detectado en
+    la descripcion si la subfamilia es de las que se agrupan por color,
+    'Soporte'/'Genericos' si es un producto de esa subfamilia sin color
+    visible (mecanismo interno), o el grupo real de SAP en cualquier
+    otro caso."""
+    if (subfamilia or "").upper() not in SUBFAMILIAS_AGRUPAR_POR_COLOR:
+        return grupo_real
+    desc_up = (descripcion or "").upper()
+    for prefijo, color in COLORES_CONOCIDOS.items():
+        if prefijo in desc_up:
+            return color
+    if "SOPORTE" in desc_up:
+        return "Soporte"
+    return "Genericos"
+
+
 def promover_a_prioridad(codigo, procedencia_obligatoria, codigo_equivalente=None, updated_by=None):
     """Agrega (o actualiza si ya existia) un producto a
-    productos_obligatorios -- familia/subfamilia/grupo/descripcion se
-    autocompletan desde productos, no hay que volver a escribirlos."""
+    productos_obligatorios -- familia/subfamilia/descripcion se
+    autocompletan desde productos, no hay que volver a escribirlos.
+    "grupo" tambien se autocompleta, salvo en subfamilias de
+    SUBFAMILIAS_AGRUPAR_POR_COLOR donde se reemplaza por el color
+    detectado en la descripcion (ver _grupo_para_obligatorios)."""
     if str(codigo).startswith(dec.PREFIJOS_FUERA_SEGUNDA_LINEA):
         raise ValueError(f"El código {codigo} empieza con un prefijo excluido (no son productos de reventa) y no puede promoverse a Prioridad.")
 
@@ -530,6 +561,8 @@ def promover_a_prioridad(codigo, procedencia_obligatoria, codigo_equivalente=Non
             p = cur.fetchone()
     if not p:
         raise ValueError(f"El código {codigo} no existe en productos.")
+
+    grupo = _grupo_para_obligatorios(p["subfamilia"], p["descripcion"], p["grupo"])
 
     with db.get_connection() as conn:
         with conn.cursor() as cur:
@@ -545,7 +578,7 @@ def promover_a_prioridad(codigo, procedencia_obligatoria, codigo_equivalente=Non
                     codigo_equivalente=excluded.codigo_equivalente, updated_by=excluded.updated_by,
                     updated_at=now()
                 """,
-                (codigo, p["familia"], p["subfamilia"], p["grupo"], p["descripcion"],
+                (codigo, p["familia"], p["subfamilia"], grupo, p["descripcion"],
                  procedencia_obligatoria, codigo_equivalente, updated_by),
             )
         conn.commit()
