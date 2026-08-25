@@ -75,11 +75,11 @@
   .fila-producto[data-parent-grupo] td:first-child { padding-left: 56px; }
 
   .celda-stock { border-radius: 8px; padding: 6px 4px; font-weight: 600; }
-  .celda-ok      { background: rgba(34,163,71,0.12); color: #22a347; }
-  .celda-alerta-temprana { background: rgba(234,179,8,0.16); color: #b45309; }
-  .celda-quiebre { background: rgba(239,68,68,0.14); color: #ef4444; }
-  .celda-quiebre-cd { background: rgba(239,68,68,0.28); color: #ef4444; box-shadow: inset 0 0 0 2px #ef4444; }
-  .badge-cd { font-size: 9px; font-weight: 700; background: #ef4444; color: #fff; border-radius: 4px; padding: 1px 5px; margin-left: 4px; vertical-align: middle; }
+  .celda-ok      { background: rgba(34,163,71,0.12); color: var(--accent); }
+  .celda-alerta-temprana { background: rgba(234,179,8,0.16); color: var(--amber-dark); }
+  .celda-quiebre { background: rgba(239,68,68,0.14); color: var(--red); }
+  .celda-quiebre-cd { background: rgba(239,68,68,0.28); color: var(--red); box-shadow: inset 0 0 0 2px var(--red); }
+  .badge-cd { font-size: 9px; font-weight: 700; background: var(--red); color: #fff; border-radius: 4px; padding: 1px 5px; margin-left: 4px; vertical-align: middle; }
 </style>
 {% endblock %}
 
@@ -92,15 +92,15 @@
   </div>
   <div class="kpi-card">
     <div class="kpi-label">En Quiebre Crítico (alguna sucursal)</div>
-    <div class="kpi-value" id="kpi-quiebre" style="color:#ef4444">—</div>
+    <div class="kpi-value" id="kpi-quiebre" style="color:var(--red)">—</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Alerta Temprana (a vigilar)</div>
-    <div class="kpi-value" id="kpi-alerta-temprana" style="color:#b45309">—</div>
+    <div class="kpi-value" id="kpi-alerta-temprana" style="color:var(--amber-dark)">—</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">En Quiebre en CD (San Isidro)</div>
-    <div class="kpi-value" id="kpi-quiebre-cd" style="color:#ef4444">—</div>
+    <div class="kpi-value" id="kpi-quiebre-cd" style="color:var(--red)">—</div>
   </div>
 </div>
 
@@ -132,7 +132,7 @@
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+        <tr><td style="text-align:center;color:var(--muted);padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -175,7 +175,7 @@ function cargarDatos() {
   const familia = document.getElementById("f-familia").value;
 
   document.getElementById("tabla-body").innerHTML =
-    '<tr><td style="text-align:center;color:#475569;padding:24px;">Cargando...</td></tr>';
+    '<tr><td style="text-align:center;color:var(--muted);padding:24px;">Cargando...</td></tr>';
 
   fetch(`/api/inventario/segunda_linea/alertas?familia=${encodeURIComponent(familia)}`)
     .then(r => r.json())
@@ -252,7 +252,7 @@ function renderTodo(d) {
   function resumenGrupo(productos) {
     const rojo = productos.filter(p => p.tiene_quiebre).length;
     const amarillo = productos.filter(p => p.tiene_alerta_temprana && !p.tiene_quiebre).length;
-    const color = rojo > 0 ? '#ef4444' : (amarillo > 0 ? '#b45309' : '#22a347');
+    const color = rojo > 0 ? 'var(--red)' : (amarillo > 0 ? 'var(--amber-dark)' : 'var(--accent)');
     const partes = [];
     if (rojo > 0) partes.push(`${rojo} en quiebre`);
     if (amarillo > 0) partes.push(`${amarillo} alerta temprana`);
@@ -291,7 +291,7 @@ function renderTodo(d) {
   });
 
   if (grupos.length === 0) {
-    html = `<tr><td colspan="${colspanTotal}" style="text-align:center;color:#475569;padding:32px;">No hay productos de segunda línea para esta familia.</td></tr>`;
+    html = `<tr><td colspan="${colspanTotal}" style="text-align:center;color:var(--muted);padding:32px;">No hay productos de segunda línea para esta familia.</td></tr>`;
   }
 
   document.getElementById("tabla-body").innerHTML = html;

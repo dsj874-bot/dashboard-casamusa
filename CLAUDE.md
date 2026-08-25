@@ -657,6 +657,49 @@ en nav activo, botones, hover) es `--accent`, NO `--red` — hubo un bug
 donde `--red` estaba puesto en verde por error y todas las variaciones
 negativas se veían verdes. No revivir esa confusión.
 
+## Selector de Tema (Oscuro / Claro / Sistema)
+`base.html` define TODOS los colores como variables CSS en `:root`
+(dark, default) — cualquier plantilla nueva debe usar `var(--token)`,
+nunca un hex suelto, o no respetará el tema.
+- **3 bloques de tokens en `base.html`**: `:root` (oscuro, default),
+  `@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {...} }`
+  ("Sistema" — sigue al SO si el usuario no forzó nada) y
+  `:root[data-theme="light"] {...}` (forzado a claro a mano, gana aunque
+  el SO esté oscuro). Los 3 bloques deben mantenerse con el mismo set
+  de variables — si se agrega un token nuevo, agregarlo en los 3.
+- **Selector** (topbar, arriba a la derecha, `#theme-switch`): 3
+  botones (🌙/☀️/🖥️) que escriben `localStorage.tema` (`"dark"`
+  (default) | `"light"` | `"system"`) y ponen/quitan el atributo
+  `data-theme` en `<html>`. Un script inline en `<head>` (antes de
+  `</head>`, corre ANTES de pintar) aplica el tema guardado para evitar
+  parpadeo — no mover esa lógica a `extra_scripts` (correría demasiado
+  tarde, después del primer paint).
+- **Logo**: `static/img/logo.png` tiene texto BLANCO (diseñado para
+  sidebar oscuro) — sobre sidebar claro se pierde. Existe
+  `static/img/logo-light.png` (generado con Pillow, mismo trazo pero
+  con el relleno blanco pasado a `#0f172a`) — el JS del selector de
+  tema cambia el `src` del `<img>` según el tema efectivo (incluye
+  escuchar el evento `change` de `matchMedia` para cuando está en
+  "Sistema" y el SO cambia sin recargar la página).
+- **Gotcha real (ya paso una vez): Chart.js/Canvas NO entiende
+  `var(--token)`** — a diferencia de un `style="color:var(--x)"` en
+  HTML (que el navegador sí parsea como CSS real), `ctx.fillStyle` y
+  cualquier color que Chart.js reciba en su config se pasan directo al
+  Canvas 2D, que no resuelve custom properties. Todas las pantallas con
+  `new Chart(...)` deben resolver el valor ANTES de pasarlo:
+  ```js
+  const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  Chart.defaults.color = cssVar("--muted2");   // NO: "var(--muted2)"
+  ```
+  Si se agrega un gráfico nuevo, copiar este patrón — nunca poner
+  `"var(--x)"` como string literal dentro de un dataset/scale de
+  Chart.js. (Los colores de gráficos quedan fijados al momento de
+  crear el chart — cambiar de tema sin recargar la página no
+  recolorea un gráfico ya dibujado, es una limitación conocida.)
+- **`login.html` e `inicio.html` quedaron fuera** (son standalone, no
+  extienden `base.html`, no tienen el selector ni los tokens) — decisión
+  explícita para acotar el alcance, no un olvido.
+
 ## Autenticación
 Usuarios hardcodeados en `app.py` (dict `GERENTES`). Sin DB. Emails
 como *keys* del dict deben ir en minúscula (`/login` hace

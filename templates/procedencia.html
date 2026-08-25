@@ -29,7 +29,7 @@
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td colspan="8" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+        <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -45,8 +45,9 @@
 
 {% block extra_scripts %}
 <script>
-Chart.defaults.color       = "#64748b";
-Chart.defaults.borderColor = "#1e2a3a";
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+Chart.defaults.color       = cssVar("--muted2");
+Chart.defaults.borderColor = cssVar("--border");
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
 const fmtMM  = v => "$" + Math.round(v).toLocaleString("es-CL");
@@ -109,7 +110,7 @@ fetch("/api/ventas_por_procedencia")
             label: mes + " " + aAct,
             data: items.map(s => Math.round(s.v_mes_actual / 1000000)),
             backgroundColor: "rgba(34,163,71,0.75)",
-            borderColor: "#22a347",
+            borderColor: cssVar("--accent"),
             borderWidth: 1,
             borderRadius: 5,
           },
@@ -117,7 +118,7 @@ fetch("/api/ventas_por_procedencia")
             label: mesAnt + " " + aAct,
             data: items.map(s => Math.round(s.v_mes_anterior / 1000000)),
             backgroundColor: "rgba(100,116,139,0.35)",
-            borderColor: "#64748b",
+            borderColor: cssVar("--muted2"),
             borderWidth: 1,
             borderRadius: 5,
           }
@@ -131,7 +132,7 @@ fetch("/api/ventas_por_procedencia")
           tooltip: { callbacks: { label: ctx => " $" + ctx.raw.toLocaleString("es-CL") + " MM" } }
         },
         scales: {
-          x: { ticks: { callback: v => "$" + v + " MM" }, grid: { color: "#1e2a3a" } },
+          x: { ticks: { callback: v => "$" + v + " MM" }, grid: { color: cssVar("--border") } },
           y: { grid: { display: false } }
         }
       }

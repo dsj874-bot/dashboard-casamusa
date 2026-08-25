@@ -21,11 +21,11 @@
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Vendido Después</div>
-    <div class="kpi-value" id="kpi-vendido" style="color:#22a347">—</div>
+    <div class="kpi-value" id="kpi-vendido" style="color:var(--accent)">—</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">% Conversión Global</div>
-    <div class="kpi-value" id="kpi-pct" style="color:#22a347">—</div>
+    <div class="kpi-value" id="kpi-pct" style="color:var(--accent)">—</div>
     <div class="kpi-change text-muted">Topado al 100% por código: nunca cuenta más de lo comprado en ese lote específico</div>
   </div>
 </div>
@@ -46,7 +46,7 @@
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td colspan="4" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+        <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -63,8 +63,9 @@
 
 {% block extra_scripts %}
 <script>
-Chart.defaults.color       = "#64748b";
-Chart.defaults.borderColor = "#1e2a3a";
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+Chart.defaults.color       = cssVar("--muted2");
+Chart.defaults.borderColor = cssVar("--border");
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
@@ -95,13 +96,13 @@ fetch("/api/adquisiciones/conversion_pedido")
           {
             label: "Comprado a Pedido",
             data: d.meses.map(m => m.monto_comprado / 1e6),
-            backgroundColor: "#334155",
+            backgroundColor: cssVar("--slate"),
             borderRadius: 4,
           },
           {
             label: "Vendido Después",
             data: d.meses.map(m => m.monto_vendido / 1e6),
-            backgroundColor: "#22a347",
+            backgroundColor: cssVar("--accent"),
             borderRadius: 4,
           },
         ],
@@ -110,7 +111,7 @@ fetch("/api/adquisiciones/conversion_pedido")
         responsive: true,
         plugins: { legend: { position: "top" } },
         scales: {
-          y: { beginAtZero: true, grid: { color: "#1e2a3a" } },
+          y: { beginAtZero: true, grid: { color: cssVar("--border") } },
           x: { grid: { display: false } },
         },
       },

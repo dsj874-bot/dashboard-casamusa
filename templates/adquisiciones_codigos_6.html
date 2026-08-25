@@ -17,11 +17,11 @@
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Sin Ninguna Venta</div>
-    <div class="kpi-value" id="kpi-sin-venta" style="color:#ef4444">—</div>
+    <div class="kpi-value" id="kpi-sin-venta" style="color:var(--red)">—</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Monto Invertido Sin Vender</div>
-    <div class="kpi-value" id="kpi-monto" style="color:#ef4444">—</div>
+    <div class="kpi-value" id="kpi-monto" style="color:var(--red)">—</div>
   </div>
 </div>
 
@@ -45,7 +45,7 @@
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td colspan="8" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+        <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -114,7 +114,7 @@ function renderTabla() {
 
   if (_items.length === 0) {
     document.getElementById("tabla-body").innerHTML =
-      `<tr><td colspan="8" style="text-align:center;color:#475569;padding:32px;">Todos los códigos "6" recibidos ya tienen alguna venta.</td></tr>`;
+      `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Todos los códigos "6" recibidos ya tienen alguna venta.</td></tr>`;
     return;
   }
 

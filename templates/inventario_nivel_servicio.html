@@ -21,9 +21,9 @@
   .ns-kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin-bottom: 8px; }
   .ns-kpi-value { font-size: 34px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
   .ns-kpi-sub { font-size: 12px; color: var(--muted2); margin-top: 4px; }
-  .ns-kpi-value.nivel-alto { color: #22a347; }
-  .ns-kpi-value.nivel-medio { color: #eab308; }
-  .ns-kpi-value.nivel-bajo { color: #ef4444; }
+  .ns-kpi-value.nivel-alto { color: var(--accent); }
+  .ns-kpi-value.nivel-medio { color: var(--warn); }
+  .ns-kpi-value.nivel-bajo { color: var(--red); }
 
   .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; }
   .chart-card-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
@@ -56,8 +56,9 @@
 
 {% block extra_scripts %}
 <script>
-Chart.defaults.color       = "#64748b";
-Chart.defaults.borderColor = "#1e2a3a";
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+Chart.defaults.color       = cssVar("--muted2");
+Chart.defaults.borderColor = cssVar("--border");
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
@@ -88,7 +89,7 @@ fetch("/api/inventario/nivel_servicio")
             label: "Inventario Total ($)",
             data: d.por_sucursal.map(s => Math.round(s.valor_inventario / 1000000)),
             backgroundColor: "rgba(100,116,139,0.45)",
-            borderColor: "#64748b",
+            borderColor: cssVar("--muted2"),
             borderWidth: 1,
             borderRadius: 5,
             yAxisID: "y",
@@ -97,9 +98,9 @@ fetch("/api/inventario/nivel_servicio")
             type: "line",
             label: "Nivel de Servicio (%)",
             data: d.por_sucursal.map(s => s.nivel_servicio),
-            borderColor: "#22a347",
-            backgroundColor: "#22a347",
-            pointBackgroundColor: "#22a347",
+            borderColor: cssVar("--accent"),
+            backgroundColor: cssVar("--accent"),
+            pointBackgroundColor: cssVar("--accent"),
             pointRadius: 5,
             borderWidth: 2,
             tension: 0.2,
@@ -125,7 +126,7 @@ fetch("/api/inventario/nivel_servicio")
           y: {
             position: "left",
             ticks: { callback: v => "$" + v + " MM" },
-            grid: { color: "#1e2a3a" },
+            grid: { color: cssVar("--border") },
             title: { display: true, text: "Inventario ($ MM)" },
           },
           y1: {

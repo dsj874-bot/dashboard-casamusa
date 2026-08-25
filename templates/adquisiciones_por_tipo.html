@@ -30,7 +30,7 @@
   </div>
   <div class="kpi-card">
     <div class="kpi-label">% Recibido (Año Actual)</div>
-    <div class="kpi-value" id="kpi-pct-recibido" style="color:#22a347">—</div>
+    <div class="kpi-value" id="kpi-pct-recibido" style="color:var(--accent)">—</div>
     <div class="kpi-change text-muted">De lo comprado este año, cuánto ya llegó</div>
   </div>
 </div>
@@ -80,7 +80,7 @@
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td colspan="18" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+        <tr><td colspan="18" style="text-align:center;color:var(--muted);padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -99,8 +99,9 @@
 <script>
 const TIPO_COMPRA = "{{ tipo_compra }}";
 
-Chart.defaults.color       = "#64748b";
-Chart.defaults.borderColor = "#1e2a3a";
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+Chart.defaults.color       = cssVar("--muted2");
+Chart.defaults.borderColor = cssVar("--border");
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
@@ -142,25 +143,25 @@ Promise.all([
     document.getElementById("kpi-data-row-comprado").innerHTML = `
       <td class="fw-bold" style="text-align:left;">Comprado</td>
       <td>${fmtCLP(d.c_ano_actual)}</td>
-      <td style="color:#64748b">${fmtCLP(d.c_ano_anterior)}</td>
+      <td style="color:var(--muted2)">${fmtCLP(d.c_ano_anterior)}</td>
       <td class="sep ${varCls(d.var_ano)}">${fmtVar(d.var_ano)}</td>
       <td>${fmtCLP(d.c_mes_actual)}</td>
-      <td style="color:#64748b">${fmtCLP(d.c_mes_ant_ano)}</td>
+      <td style="color:var(--muted2)">${fmtCLP(d.c_mes_ant_ano)}</td>
       <td class="sep ${varCls(d.var_mes_ano)}">${fmtVar(d.var_mes_ano)}</td>
       <td>${fmtCLP(d.c_mes_actual)}</td>
-      <td style="color:#64748b">${fmtCLP(d.c_mes_ant_mes)}</td>
+      <td style="color:var(--muted2)">${fmtCLP(d.c_mes_ant_mes)}</td>
       <td class="${varCls(d.var_mes_mes)}">${fmtVar(d.var_mes_mes)}</td>
     `;
     document.getElementById("kpi-data-row-recibido").innerHTML = `
       <td class="fw-bold" style="text-align:left;">Recibido</td>
       <td>${fmtCLP(r.r_ano_actual)}</td>
-      <td style="color:#64748b">${fmtCLP(r.r_ano_anterior)}</td>
+      <td style="color:var(--muted2)">${fmtCLP(r.r_ano_anterior)}</td>
       <td class="sep ${varCls(r.var_ano)}">${fmtVar(r.var_ano)}</td>
       <td>${fmtCLP(r.r_mes_actual)}</td>
-      <td style="color:#64748b">${fmtCLP(r.r_mes_ant_ano)}</td>
+      <td style="color:var(--muted2)">${fmtCLP(r.r_mes_ant_ano)}</td>
       <td class="sep ${varCls(r.var_mes_ano)}">${fmtVar(r.var_mes_ano)}</td>
       <td>${fmtCLP(r.r_mes_actual)}</td>
-      <td style="color:#64748b">${fmtCLP(r.r_mes_ant_mes)}</td>
+      <td style="color:var(--muted2)">${fmtCLP(r.r_mes_ant_mes)}</td>
       <td class="${varCls(r.var_mes_mes)}">${fmtVar(r.var_mes_mes)}</td>
     `;
   })
@@ -232,7 +233,7 @@ function renderTabla() {
 
   if (_items.length === 0) {
     document.getElementById("tabla-body").innerHTML =
-      `<tr><td colspan="18" style="text-align:center;color:#475569;padding:32px;">Sin datos para este tipo de compra.</td></tr>`;
+      `<tr><td colspan="18" style="text-align:center;color:var(--muted);padding:32px;">Sin datos para este tipo de compra.</td></tr>`;
     return;
   }
 
@@ -269,13 +270,13 @@ fetch(`/api/adquisiciones/por_mes?tipo=${encodeURIComponent(TIPO_COMPRA)}`)
           {
             label: String(d.ano_actual),
             data: d.meses.map(m => m.actual / 1e6),
-            backgroundColor: "#22a347",
+            backgroundColor: cssVar("--accent"),
             borderRadius: 4,
           },
           {
             label: String(d.ano_anterior),
             data: d.meses.map(m => m.anterior / 1e6),
-            backgroundColor: "#334155",
+            backgroundColor: cssVar("--slate"),
             borderRadius: 4,
           },
         ],
@@ -284,7 +285,7 @@ fetch(`/api/adquisiciones/por_mes?tipo=${encodeURIComponent(TIPO_COMPRA)}`)
         responsive: true,
         plugins: { legend: { position: "top" } },
         scales: {
-          y: { beginAtZero: true, grid: { color: "#1e2a3a" } },
+          y: { beginAtZero: true, grid: { color: cssVar("--border") } },
           x: { grid: { display: false } },
         },
       },

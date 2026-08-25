@@ -7,21 +7,87 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* ══════════════════════════════
+       TEMA (oscuro por defecto, ver bloques claro/sistema mas abajo)
+    ══════════════════════════════ */
     :root {
-      --bg:        #080c14;
-      --surface:   #0f1623;
-      --surface2:  #141e2e;
-      --border:    #1e2a3a;
-      --text:      #f1f5f9;
-      --muted:     #475569;
-      --muted2:    #64748b;
-      --accent:    #22a347;
-      --red:       #ef4444;
-      --red-light: #fca5a5;
-      --green:     #10b981;
-      --amber:     #f59e0b;
-      --blue:      #3b82f6;
-      --sidebar-w: 250px;
+      --bg:          #080c14;
+      --surface:     #0f1623;
+      --surface2:    #141e2e;
+      --border:      #1e2a3a;
+      --text:        #f1f5f9;
+      --text-strong: #ffffff;
+      --muted:       #475569;
+      --muted2:      #64748b;
+      --muted-light: #94a3b8;
+      --accent:      #22a347;
+      --accent-dark: #1a8239;
+      --red:         #ef4444;
+      --red-light:   #fca5a5;
+      --green:       #10b981;
+      --pos:         #22c55e;
+      --amber:       #f59e0b;
+      --amber-dark:  #b45309;
+      --warn:        #eab308;
+      --blue:        #3b82f6;
+      --blue-light:  #93c5fd;
+      --blue-dark:   #2563eb;
+      --slate:       #334155;
+      --sidebar-w:   250px;
+    }
+
+    /* "Sistema": sin data-theme, sigue las preferencias del SO */
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]) {
+        --bg:          #f8fafc;
+        --surface:     #ffffff;
+        --surface2:    #f1f5f9;
+        --border:      #e2e8f0;
+        --text:        #0f172a;
+        --text-strong: #000000;
+        --muted:       #94a3b8;
+        --muted2:      #64748b;
+        --muted-light: #475569;
+        --accent:      #1a8239;
+        --accent-dark: #146a2e;
+        --red:         #dc2626;
+        --red-light:   #f87171;
+        --green:       #059669;
+        --pos:         #16a34a;
+        --amber:       #d97706;
+        --amber-dark:  #92400e;
+        --warn:        #ca8a04;
+        --blue:        #2563eb;
+        --blue-light:  #60a5fa;
+        --blue-dark:   #1d4ed8;
+        --slate:       #cbd5e1;
+      }
+    }
+
+    /* Forzado a claro (elegido a mano, gana aunque el SO este en oscuro) */
+    :root[data-theme="light"] {
+      --bg:          #f8fafc;
+      --surface:     #ffffff;
+      --surface2:    #f1f5f9;
+      --border:      #e2e8f0;
+      --text:        #0f172a;
+      --text-strong: #000000;
+      --muted:       #94a3b8;
+      --muted2:      #64748b;
+      --muted-light: #475569;
+      --accent:      #1a8239;
+      --accent-dark: #146a2e;
+      --red:         #dc2626;
+      --red-light:   #f87171;
+      --green:       #059669;
+      --pos:         #16a34a;
+      --amber:       #d97706;
+      --amber-dark:  #92400e;
+      --warn:        #ca8a04;
+      --blue:        #2563eb;
+      --blue-light:  #60a5fa;
+      --blue-dark:   #1d4ed8;
+      --slate:       #cbd5e1;
     }
 
     body {
@@ -57,9 +123,9 @@
       font-size: 22px;
       font-weight: 900;
       letter-spacing: -0.5px;
-      color: #fff;
+      color: var(--text-strong);
     }
-    .logo-text span { color: #22a347; }
+    .logo-text span { color: var(--accent); }
     .logo-sub {
       font-size: 9px;
       letter-spacing: 2px;
@@ -102,9 +168,11 @@
       background: var(--surface2);
       color: var(--text);
     }
-    .nav-item.active {
+    .nav-item.active,
+    .nav-item.active:link,
+    .nav-item.active:visited {
       background: rgba(34,163,71,0.12);
-      color: #fff;
+      color: var(--text-strong);
       font-weight: 600;
     }
     .nav-item.active .nav-icon { color: var(--accent); }
@@ -152,8 +220,8 @@
       cursor: pointer;
     }
     .btn-logout:hover {
-      border-color: #22a347;
-      color: #22a347;
+      border-color: var(--accent);
+      color: var(--accent);
     }
 
     /* Boton colapsar (siempre en el borde de la barra, ambos estados) */
@@ -251,6 +319,33 @@
       color: var(--muted2);
     }
 
+    /* Selector de tema (Oscuro / Claro / Sistema) */
+    .theme-switch {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 3px;
+    }
+    .theme-switch button {
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      padding: 5px 9px;
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+      color: var(--muted2);
+      transition: background 0.15s, color 0.15s;
+    }
+    .theme-switch button:hover { color: var(--text); }
+    .theme-switch button.activo {
+      background: var(--accent);
+      color: #fff;
+    }
+
     /* Contenido */
     .content {
       padding: 28px 32px;
@@ -320,9 +415,9 @@
       border-right: 2px solid var(--border);
     }
     .kpi-tabla .grp-header th:last-child { border-right: none; }
-    .kpi-tabla .grp-header .grp-1 { background: rgba(34,163,71,0.10); color: #22a347; }
-    .kpi-tabla .grp-header .grp-2 { background: rgba(59,130,246,0.10); color: #3b82f6; }
-    .kpi-tabla .grp-header .grp-3 { background: rgba(245,158,11,0.10); color: #f59e0b; }
+    .kpi-tabla .grp-header .grp-1 { background: rgba(34,163,71,0.10); color: var(--accent); }
+    .kpi-tabla .grp-header .grp-2 { background: rgba(59,130,246,0.10); color: var(--blue); }
+    .kpi-tabla .grp-header .grp-3 { background: rgba(245,158,11,0.10); color: var(--amber); }
 
     .kpi-tabla .col-header th {
       padding: 8px 16px;
@@ -351,8 +446,8 @@
     }
     .kpi-tabla .data-row td.sep { border-right: 2px solid var(--border); }
     .kpi-tabla .data-row td:last-child { border-right: none; }
-    .kpi-tabla .data-row td.var-pos { color: #22a347; font-size: 16px; }
-    .kpi-tabla .data-row td.var-neg { color: #ef4444; font-size: 16px; }
+    .kpi-tabla .data-row td.var-pos { color: var(--accent); font-size: 16px; }
+    .kpi-tabla .data-row td.var-neg { color: var(--red); font-size: 16px; }
 
     /* Chart cards */
     .chart-grid {
@@ -482,7 +577,7 @@
       transition: background 0.15s;
       align-self: flex-end;
     }
-    .btn-filter:hover { background: #1a8239; }
+    .btn-filter:hover { background: var(--accent-dark); }
 
     /* Loading */
     .loading {
@@ -493,6 +588,16 @@
     }
 
   </style>
+  <script>
+    // Aplicar el tema guardado antes de pintar, para evitar parpadeo.
+    // Default "dark" -- el tema de siempre, si el usuario nunca elige nada.
+    (function () {
+      var tema = localStorage.getItem('tema') || 'dark';
+      if (tema !== 'system') {
+        document.documentElement.setAttribute('data-theme', tema);
+      }
+    })();
+  </script>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -627,6 +732,11 @@
         📥 Descargar Excel
       </button>
       {% endblock %}
+      <div class="theme-switch" id="theme-switch">
+        <button type="button" data-tema="dark"   title="Tema oscuro">🌙</button>
+        <button type="button" data-tema="light"  title="Tema claro">☀️</button>
+        <button type="button" data-tema="system" title="Igual que el sistema">🖥️</button>
+      </div>
       <div class="fecha-badge" id="fecha-hoy"></div>
     </div>
   </div>
@@ -657,6 +767,50 @@
     localStorage.setItem('sidebarCollapsed', nuevoEstado ? '1' : '0');
     aplicarEstadoSidebar(nuevoEstado);
   });
+
+  // Selector de tema (Oscuro / Claro / Sistema)
+  (function () {
+    const switchEl = document.getElementById('theme-switch');
+    const botones = switchEl.querySelectorAll('button');
+    const matchClaro = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)');
+    const logoImg = document.querySelector('.sidebar-logo img');
+
+    function esClaroEfectivo(tema) {
+      if (tema === 'light') return true;
+      if (tema === 'dark') return false;
+      return !!(matchClaro && matchClaro.matches);
+    }
+    function actualizarLogo(tema) {
+      if (logoImg) {
+        logoImg.src = esClaroEfectivo(tema) ? '/static/img/logo-light.png' : '/static/img/logo.png';
+      }
+    }
+    function marcarActivo(tema) {
+      botones.forEach(b => b.classList.toggle('activo', b.dataset.tema === tema));
+    }
+    function aplicarTema(tema) {
+      if (tema === 'system') {
+        document.documentElement.removeAttribute('data-theme');
+      } else {
+        document.documentElement.setAttribute('data-theme', tema);
+      }
+      marcarActivo(tema);
+      actualizarLogo(tema);
+    }
+    aplicarTema(localStorage.getItem('tema') || 'dark');
+    botones.forEach(b => {
+      b.addEventListener('click', () => {
+        localStorage.setItem('tema', b.dataset.tema);
+        aplicarTema(b.dataset.tema);
+      });
+    });
+    // Si esta en "Sistema" y el SO cambia de tema sin recargar la pagina
+    if (matchClaro) {
+      matchClaro.addEventListener('change', () => {
+        if ((localStorage.getItem('tema') || 'dark') === 'system') actualizarLogo('system');
+      });
+    }
+  })();
 
   // Descargar Excel — exporta la(s) tabla(s) que estan visibles en la
   // pantalla actual (una hoja por tabla), sin depender de la estructura

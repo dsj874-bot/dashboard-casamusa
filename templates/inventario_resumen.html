@@ -24,7 +24,7 @@
 <div class="kpi-grid" id="kpi-grid">
   <div class="kpi-card">
     <div class="kpi-label">Valor Total (Stock + Tránsito)</div>
-    <div class="kpi-value" id="kpi-valor-total" style="color:#22a347">—</div>
+    <div class="kpi-value" id="kpi-valor-total" style="color:var(--accent)">—</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Valor Stock Disponible</div>
@@ -79,8 +79,9 @@ if (btnActualizarInv) {
   });
 }
 
-Chart.defaults.color       = "#64748b";
-Chart.defaults.borderColor = "#1e2a3a";
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+Chart.defaults.color       = cssVar("--muted2");
+Chart.defaults.borderColor = cssVar("--border");
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
@@ -104,7 +105,7 @@ fetch("/api/inventario/resumen")
           label: "Valor Stock",
           data: d.por_bodega.map(b => Math.round(b.valor_stock / 1000000)),
           backgroundColor: "rgba(34,163,71,0.75)",
-          borderColor: "#22a347",
+          borderColor: cssVar("--accent"),
           borderWidth: 1,
           borderRadius: 5,
         }]
@@ -117,7 +118,7 @@ fetch("/api/inventario/resumen")
           tooltip: { callbacks: { label: ctx => " $" + ctx.raw.toLocaleString("es-CL") + " MM" } }
         },
         scales: {
-          x: { ticks: { callback: v => "$" + v + " MM" }, grid: { color: "#1e2a3a" } },
+          x: { ticks: { callback: v => "$" + v + " MM" }, grid: { color: cssVar("--border") } },
           y: { grid: { display: false } }
         }
       }

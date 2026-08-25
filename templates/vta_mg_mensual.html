@@ -51,7 +51,7 @@
   font-size: 12px; font-weight: 700;
   cursor: pointer; transition: background 0.15s;
 }
-.btn-apply:hover { background: #2563eb; }
+.btn-apply:hover { background: var(--blue-dark); }
 
 /* ── KPIs ───────────────────────────────────────── */
 .kpi-3col {
@@ -85,7 +85,7 @@
 .tbl-mg thead .th-mes {
   background: rgba(59,130,246,0.12);
   border-left: 1px solid var(--border);
-  font-size: 10.5px; font-weight: 700; color: #93c5fd;
+  font-size: 10.5px; font-weight: 700; color: var(--blue-light);
   letter-spacing: 0.5px;
 }
 .tbl-mg thead .th-sub {
@@ -95,13 +95,13 @@
 .tbl-mg tbody td { font-size: 11px; padding: 5px 8px; white-space: nowrap; }
 .tbl-mg tbody .col-cat { font-weight: 600; color: var(--text); min-width: 110px; text-align: left; }
 .tbl-mg tbody .num     { text-align: right; }
-.tbl-mg tbody .pct     { text-align: right; color: #10b981; font-weight: 600; }
+.tbl-mg tbody .pct     { text-align: right; color: var(--green); font-weight: 600; }
 .tbl-mg tbody .mes-sep { border-left: 1px solid var(--border); }
-.tbl-mg .total-row td  { background: rgba(245,158,11,0.08); font-weight: 700; color: #f59e0b; }
+.tbl-mg .total-row td  { background: rgba(245,158,11,0.08); font-weight: 700; color: var(--amber); }
 
 /* ── Variacion colores ──────────────────────────── */
-.vpos { color: #22c55e; }
-.vneg { color: #ef4444; }
+.vpos { color: var(--pos); }
+.vneg { color: var(--red); }
 .vneu { color: var(--muted); }
 
 /* ── Area principal ─────────────────────────────── */
@@ -127,15 +127,15 @@
 
 /* ── Barra margen ───────────────────────────────── */
 .mg-bar-wrap { display: flex; align-items: center; gap: 6px; }
-.mg-bar-bg   { flex:1; background: #1e2a3a; border-radius:3px; height:5px; overflow:hidden; min-width:40px; }
-.mg-bar-fill { height:5px; border-radius:3px; background: #10b981; }
+.mg-bar-bg   { flex:1; background: var(--border); border-radius:3px; height:5px; overflow:hidden; min-width:40px; }
+.mg-bar-fill { height:5px; border-radius:3px; background: var(--green); }
 
 /* ── Tabla acumulada ────────────────────────────── */
 .tbl-sm thead th { font-size: 10px; padding: 7px 10px; }
 .tbl-sm tbody td { font-size: 11.5px; padding: 6px 10px; white-space: nowrap; }
 .tbl-sm .col-cat { font-weight: 600; color: var(--text); min-width: 120px; }
 .tbl-sm .num     { text-align: right; }
-.tbl-sm .total-row td { background: rgba(245,158,11,0.08); font-weight: 700; color: #f59e0b; }
+.tbl-sm .total-row td { background: rgba(245,158,11,0.08); font-weight: 700; color: var(--amber); }
 </style>
 {% endblock %}
 

@@ -59,9 +59,9 @@
   .fila-producto-compra.visible { display: table-row; }
   .fila-producto-compra[data-parent-grupo] td:first-child { padding-left: 56px; }
 
-  .cantidad-comprar { font-size: 16px; font-weight: 700; color: #22a347; }
+  .cantidad-comprar { font-size: 16px; font-weight: 700; color: var(--accent); }
   .sin-necesidad { color: var(--muted); font-weight: 400; }
-  .sin-opcion { color: #ef4444; font-weight: 600; font-size: 12.5px; cursor: help; }
+  .sin-opcion { color: var(--red); font-weight: 600; font-size: 12.5px; cursor: help; }
 
   .comparativo-card {
     background: var(--surface);
@@ -73,7 +73,7 @@
     cursor: pointer;
   }
   .comparativo-card:hover { background: var(--surface2); }
-  .comparativo-card.activo { border-color: #22a347; box-shadow: inset 0 0 0 1px #22a347; }
+  .comparativo-card.activo { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .comparativo-card .comparativo-meses { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
   .comparativo-card .comparativo-valor { font-size: 13px; font-weight: 700; color: var(--text); }
 </style>
@@ -88,7 +88,7 @@
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Requieren Compra Ahora</div>
-    <div class="kpi-value" id="kpi-necesidad" style="color:#22a347">—</div>
+    <div class="kpi-value" id="kpi-necesidad" style="color:var(--accent)">—</div>
   </div>
 </div>
 
@@ -130,7 +130,7 @@
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td colspan="4" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+        <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -174,7 +174,7 @@ function cargarDatos() {
   const meses = document.getElementById("f-meses").value;
 
   document.getElementById("tabla-body").innerHTML =
-    '<tr><td colspan="4" style="text-align:center;color:#475569;padding:24px;">Cargando...</td></tr>';
+    '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px;">Cargando...</td></tr>';
 
   fetch(`/api/inventario/plan_compras?familia=${encodeURIComponent(familia)}&meses=${encodeURIComponent(meses)}`)
     .then(r => r.json())
@@ -226,7 +226,7 @@ function renderTodo(d) {
 
   if (d.productos.length === 0) {
     document.getElementById("tabla-body").innerHTML =
-      `<tr><td colspan="4" style="text-align:center;color:#475569;padding:32px;">No hay productos obligatorios definidos para esta familia.</td></tr>`;
+      `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:32px;">No hay productos obligatorios definidos para esta familia.</td></tr>`;
     return;
   }
 
@@ -309,7 +309,7 @@ function renderTodo(d) {
       <tr class="fila-subfamilia-header" data-gidx="${gi}">
         <td colspan="4" class="fw-bold">
           <span class="icono-expandir">▶</span> ${g.subfamilia}
-          <span style="color:${conNecesidad > 0 ? '#22a347' : 'var(--muted)'};font-weight:600;margin-left:8px;">
+          <span style="color:${conNecesidad > 0 ? 'var(--accent)' : 'var(--muted)'};font-weight:600;margin-left:8px;">
             (${conNecesidad} de ${g.productos.length} requieren compra)
           </span>
         </td>
@@ -323,7 +323,7 @@ function renderTodo(d) {
           <tr class="fila-grupo-header" data-parent-sub="${gi}" data-gpidx="${gid}">
             <td colspan="4" class="fw-bold">
               <span class="icono-expandir">▶</span> ${sg.grupo}
-              <span style="color:${conNecesidadSub > 0 ? '#22a347' : 'var(--muted)'};font-weight:600;margin-left:8px;">
+              <span style="color:${conNecesidadSub > 0 ? 'var(--accent)' : 'var(--muted)'};font-weight:600;margin-left:8px;">
                 (${conNecesidadSub} de ${sg.productos.length} requieren compra)
               </span>
             </td>

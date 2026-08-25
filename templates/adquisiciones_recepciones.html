@@ -54,8 +54,9 @@
 
 {% block extra_scripts %}
 <script>
-Chart.defaults.color       = "#64748b";
-Chart.defaults.borderColor = "#1e2a3a";
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+Chart.defaults.color       = cssVar("--muted2");
+Chart.defaults.borderColor = cssVar("--border");
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
@@ -87,13 +88,13 @@ fetch("/api/adquisiciones/recepciones/resumen")
     `;
     document.getElementById("kpi-data-row").innerHTML = `
       <td>${fmtCLP(d.r_ano_actual)}</td>
-      <td style="color:#64748b">${fmtCLP(d.r_ano_anterior)}</td>
+      <td style="color:var(--muted2)">${fmtCLP(d.r_ano_anterior)}</td>
       <td class="sep ${varCls(d.var_ano)}">${fmtVar(d.var_ano)}</td>
       <td>${fmtCLP(d.r_mes_actual)}</td>
-      <td style="color:#64748b">${fmtCLP(d.r_mes_ant_ano)}</td>
+      <td style="color:var(--muted2)">${fmtCLP(d.r_mes_ant_ano)}</td>
       <td class="sep ${varCls(d.var_mes_ano)}">${fmtVar(d.var_mes_ano)}</td>
       <td>${fmtCLP(d.r_mes_actual)}</td>
-      <td style="color:#64748b">${fmtCLP(d.r_mes_ant_mes)}</td>
+      <td style="color:var(--muted2)">${fmtCLP(d.r_mes_ant_mes)}</td>
       <td class="${varCls(d.var_mes_mes)}">${fmtVar(d.var_mes_mes)}</td>
     `;
   })
@@ -114,13 +115,13 @@ fetch("/api/adquisiciones/recepciones/por_mes")
           {
             label: String(d.ano_actual),
             data: d.meses.map(m => m.actual / 1e6),
-            backgroundColor: "#22a347",
+            backgroundColor: cssVar("--accent"),
             borderRadius: 4,
           },
           {
             label: String(d.ano_anterior),
             data: d.meses.map(m => m.anterior / 1e6),
-            backgroundColor: "#334155",
+            backgroundColor: cssVar("--slate"),
             borderRadius: 4,
           },
         ],
@@ -129,7 +130,7 @@ fetch("/api/adquisiciones/recepciones/por_mes")
         responsive: true,
         plugins: { legend: { position: "top" } },
         scales: {
-          y: { beginAtZero: true, grid: { color: "#1e2a3a" } },
+          y: { beginAtZero: true, grid: { color: cssVar("--border") } },
           x: { grid: { display: false } },
         },
       },

@@ -12,23 +12,23 @@
   .tbl-ppto tbody td { font-size: 12.5px; padding: 9px 12px; }
 
   /* ── Variación con color ─────────────────────── */
-  .var-pos { color: #22c55e; }   /* verde = crece */
-  .var-neg { color: #ef4444; }   /* rojo  = cae   */
-  .var-neu { color: #64748b; }
+  .var-pos { color: var(--pos); }   /* verde = crece */
+  .var-neg { color: var(--red); }   /* rojo  = cae   */
+  .var-neu { color: var(--muted2); }
 
   /* ── Barra progreso ppto ─────────────────────── */
   .bar-wrap { display:flex; align-items:center; gap:8px; }
-  .bar-bg   { flex:1; background:#1e2a3a; border-radius:4px; height:6px; overflow:hidden; min-width:60px; }
-  .bar-fill { height:6px; border-radius:4px; background:#3b82f6; transition:width 0.4s; }
-  .bar-fill.over { background:#ef4444; }
+  .bar-bg   { flex:1; background:var(--border); border-radius:4px; height:6px; overflow:hidden; min-width:60px; }
+  .bar-fill { height:6px; border-radius:4px; background:var(--blue); transition:width 0.4s; }
+  .bar-fill.over { background:var(--red); }
 
   /* ── Tabla mensual 2025 ──────────────────────── */
   .tbl-mensual thead th { font-size: 10px; padding: 6px 10px; }
   .tbl-mensual tbody td { font-size: 11.5px; padding: 6px 10px; }
-  .tbl-mensual .col-suc { font-weight:600; color:#f1f5f9; white-space:nowrap; }
-  .tbl-mensual .mes-cell { color:#94a3b8; }
-  .tbl-mensual .mes-cell.has-data { color:#f1f5f9; }
-  .tbl-mensual .total-row td { background:rgba(59,130,246,0.08); font-weight:700; color:#f59e0b; }
+  .tbl-mensual .col-suc { font-weight:600; color:var(--text); white-space:nowrap; }
+  .tbl-mensual .mes-cell { color:var(--muted-light); }
+  .tbl-mensual .mes-cell.has-data { color:var(--text); }
+  .tbl-mensual .total-row td { background:rgba(59,130,246,0.08); font-weight:700; color:var(--amber); }
 
   /* ── Chart card ──────────────────────────────── */
   .chart-container { position:relative; height:340px; }
@@ -36,8 +36,8 @@
   /* ── KPI groups ──────────────────────────────── */
   .kpi-group-label {
     font-size:10px; font-weight:700; text-transform:uppercase;
-    letter-spacing:1px; color:#475569; padding:0 4px 6px;
-    border-bottom:1px solid #1e2a3a; margin-bottom:12px;
+    letter-spacing:1px; color:var(--muted); padding:0 4px 6px;
+    border-bottom:1px solid var(--border); margin-bottom:12px;
   }
   .kpi-section { display:flex; flex-direction:column; gap:4px; }
   .kpi-group-wrap {
@@ -47,11 +47,11 @@
 
   /* ── Sección título ──────────────────────────── */
   .section-title {
-    font-size:14px; font-weight:700; color:#f1f5f9;
+    font-size:14px; font-weight:700; color:var(--text);
     margin-bottom:16px; display:flex; align-items:center; gap:8px;
   }
   .section-title::after {
-    content:''; flex:1; height:1px; background:#1e2a3a;
+    content:''; flex:1; height:1px; background:var(--border);
   }
 </style>
 {% endblock %}
@@ -107,7 +107,7 @@
 <div class="section-title">Detalle Mensual por Sucursal</div>
 <div class="table-card" id="tabla-mensual-wrap" style="margin-bottom:28px;">
   <!-- year tabs -->
-  <div style="display:flex;gap:8px;padding:14px 20px;border-bottom:1px solid #1e2a3a;">
+  <div style="display:flex;gap:8px;padding:14px 20px;border-bottom:1px solid var(--border);">
     <button class="btn-tab active" id="tab-26" onclick="switchTab(26)">2026</button>
     <button class="btn-tab"        id="tab-25" onclick="switchTab(25)">2025</button>
   </div>
@@ -124,17 +124,19 @@
 <style>
   .btn-tab {
     padding:6px 16px; border-radius:8px; font-size:12px; font-weight:600;
-    background:transparent; border:1px solid #1e2a3a; color:#64748b; cursor:pointer;
+    background:transparent; border:1px solid var(--border); color:var(--muted2); cursor:pointer;
     transition:all 0.15s;
   }
-  .btn-tab.active { background:rgba(59,130,246,0.15); border-color:#3b82f6; color:#93c5fd; }
-  .btn-tab:hover:not(.active) { border-color:#475569; color:#f1f5f9; }
+  .btn-tab.active { background:rgba(59,130,246,0.15); border-color:var(--blue); color:var(--blue-light); }
+  .btn-tab:hover:not(.active) { border-color:var(--muted); color:var(--text); }
 </style>
 
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
 // ── Formato de números ─────────────────────────────────
 const fmt  = v => v == null ? '—' : new Intl.NumberFormat('es-CL',{style:'currency',currency:'CLP',maximumFractionDigits:0}).format(v);
 const fmtM = v => v == null || v === 0 ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
@@ -163,7 +165,7 @@ async function cargar() {
     renderTablaMensual(_data, _tabActivo);
   } catch(e) {
     document.getElementById('kpi-area').innerHTML =
-      `<div style="color:#ef4444;grid-column:1/-1">Error: ${e.message}</div>`;
+      `<div style="color:var(--red);grid-column:1/-1">Error: ${e.message}</div>`;
   }
 }
 
@@ -173,7 +175,7 @@ function renderKPIs(k) {
     <div class="kpi-card">
       <div class="kpi-label">${label}</div>
       <div class="kpi-value" style="font-size:22px">${fmtM(val)}</div>
-      <div class="kpi-change">${fmtPct(pct, positiveIsGood)}&nbsp;<span style="color:#64748b">${sub}</span></div>
+      <div class="kpi-change">${fmtPct(pct, positiveIsGood)}&nbsp;<span style="color:var(--muted2)">${sub}</span></div>
     </div>`;
 
   document.getElementById('kpi-area').innerHTML = `
@@ -200,7 +202,7 @@ function renderKPIs(k) {
         <div class="kpi-card">
           <div class="kpi-label">Datos al</div>
           <div class="kpi-value" style="font-size:18px">${k.fecha_datos}</div>
-          <div class="kpi-change" style="color:#64748b">${k.dh_transcurridos} días hábiles transcurridos</div>
+          <div class="kpi-change" style="color:var(--muted2)">${k.dh_transcurridos} días hábiles transcurridos</div>
         </div>
         ${card('Mes Anterior '+k.ano_actual, k.v_mes_ant_mes, 'vs mismo período', k.var_mes_mes)}
       </div>
@@ -257,7 +259,7 @@ function barraHtml(pct, over) {
   const w = Math.min(pct, 100);
   return `<div class="bar-wrap">
     <div class="bar-bg"><div class="bar-fill${over?' over':''}" style="width:${w}%"></div></div>
-    <span style="font-size:11px;color:${over?'#ef4444':'#94a3b8'};min-width:36px">${pct.toFixed(0)}%</span>
+    <span style="font-size:11px;color:${over?'var(--red)':'var(--muted-light)'};min-width:36px">${pct.toFixed(0)}%</span>
   </div>`;
 }
 
@@ -281,7 +283,7 @@ function renderChart(data) {
           label: '2026',
           data: t26,
           backgroundColor: 'rgba(59,130,246,0.6)',
-          borderColor: '#3b82f6',
+          borderColor: cssVar('--blue'),
           borderWidth: 1,
           borderRadius: 4,
           order: 2,
@@ -291,7 +293,7 @@ function renderChart(data) {
           label: '2025',
           data: t25,
           backgroundColor: 'rgba(100,116,139,0.35)',
-          borderColor: '#64748b',
+          borderColor: cssVar('--muted2'),
           borderWidth: 1,
           borderRadius: 4,
           order: 3,
@@ -300,7 +302,7 @@ function renderChart(data) {
           type: 'line',
           label: 'Ppto/mes',
           data: ppto,
-          borderColor: '#f59e0b',
+          borderColor: cssVar('--amber'),
           backgroundColor: 'rgba(245,158,11,0.1)',
           borderWidth: 2,
           pointRadius: 3,
@@ -315,7 +317,7 @@ function renderChart(data) {
       interaction: { mode:'index', intersect:false },
       plugins: {
         legend: {
-          labels: { color:'#94a3b8', font:{size:12} }
+          labels: { color: cssVar('--muted-light'), font:{size:12} }
         },
         tooltip: {
           callbacks: {
@@ -324,10 +326,10 @@ function renderChart(data) {
         }
       },
       scales: {
-        x: { ticks:{color:'#64748b'}, grid:{color:'#1e2a3a'} },
+        x: { ticks:{color: cssVar('--muted2')}, grid:{color: cssVar('--border')} },
         y: {
-          ticks:{ color:'#64748b', callback: v=>'$'+Math.round(v/1e6)+'M' },
-          grid:{ color:'#1e2a3a' }
+          ticks:{ color: cssVar('--muted2'), callback: v=>'$'+Math.round(v/1e6)+'M' },
+          grid:{ color: cssVar('--border') }
         }
       }
     }

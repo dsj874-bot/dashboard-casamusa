@@ -57,7 +57,7 @@
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td colspan="2" style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+        <tr><td colspan="2" style="text-align:center;color:var(--muted);padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -72,8 +72,9 @@
 
 {% block extra_scripts %}
 <script>
-Chart.defaults.color       = "#64748b";
-Chart.defaults.borderColor = "#1e2a3a";
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+Chart.defaults.color       = cssVar("--muted2");
+Chart.defaults.borderColor = cssVar("--border");
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
 const btnActualizarInv = document.getElementById('btn-actualizar-inv');
@@ -112,7 +113,7 @@ fetch("/api/inventario/familia")
           label: "Valor Total",
           data: d.filas.map(f => Math.round(f.total_general / 1000000)),
           backgroundColor: "rgba(34,163,71,0.75)",
-          borderColor: "#22a347",
+          borderColor: cssVar("--accent"),
           borderWidth: 1,
           borderRadius: 5,
         }]
@@ -126,7 +127,7 @@ fetch("/api/inventario/familia")
           tooltip: { callbacks: { label: ctx => " $" + ctx.raw.toLocaleString("es-CL") + " MM" } }
         },
         scales: {
-          x: { ticks: { callback: v => "$" + v + " MM" }, grid: { color: "#1e2a3a" } },
+          x: { ticks: { callback: v => "$" + v + " MM" }, grid: { color: cssVar("--border") } },
           y: { grid: { display: false }, ticks: { font: { size: 11 } } }
         }
       }
@@ -151,11 +152,11 @@ function renderPivot(d) {
   function fila(etiqueta, bodegaNombre, campo, esTotalGeneral, clsFila) {
     const celdas = [`<td class="fw-bold">${etiqueta}</td>`];
     if (esTotalGeneral) {
-      celdas.push(`<td class="fw-bold" style="color:#22a347">${fmtCLP(d.total.total_general)}</td>`);
+      celdas.push(`<td class="fw-bold" style="color:var(--accent)">${fmtCLP(d.total.total_general)}</td>`);
       d.filas.forEach(f => celdas.push(`<td class="fw-bold">${fmtCLP(f.total_general)}</td>`));
     } else {
       const totalCelda = d.total.valores[bodegaNombre][campo];
-      celdas.push(`<td class="fw-bold" style="color:#22a347">${fmtCLP(totalCelda || 0)}</td>`);
+      celdas.push(`<td class="fw-bold" style="color:var(--accent)">${fmtCLP(totalCelda || 0)}</td>`);
       d.filas.forEach(f => {
         const v = f.valores[bodegaNombre][campo];
         celdas.push(`<td>${v !== null ? fmtCLP(v) : '—'}</td>`);

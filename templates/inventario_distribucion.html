@@ -44,8 +44,8 @@
     cursor: pointer;
   }
   .celda-envio { font-weight: 700; }
-  .celda-envio.cubierto { color: #22a347; }
-  .celda-envio.deficit { color: #ef4444; }
+  .celda-envio.cubierto { color: var(--accent); }
+  .celda-envio.deficit { color: var(--red); }
   .celda-envio.sin-envio { color: var(--muted); font-weight: 400; }
 
   .fila-subfamilia-header { cursor: pointer; background: var(--surface2); }
@@ -75,11 +75,11 @@
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Unidades a Enviar (Total)</div>
-    <div class="kpi-value" id="kpi-unidades" style="color:#22a347">—</div>
+    <div class="kpi-value" id="kpi-unidades" style="color:var(--accent)">—</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Con Déficit (SI no alcanza)</div>
-    <div class="kpi-value" id="kpi-deficit" style="color:#ef4444">—</div>
+    <div class="kpi-value" id="kpi-deficit" style="color:var(--red)">—</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Objetivo de Cobertura</div>
@@ -112,7 +112,7 @@
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td style="text-align:center;color:#475569;padding:32px;">Cargando...</td></tr>
+        <tr><td style="text-align:center;color:var(--muted);padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -157,7 +157,7 @@ function cargarDatos() {
   const familia = document.getElementById("f-familia").value;
 
   document.getElementById("tabla-body").innerHTML =
-    '<tr><td style="text-align:center;color:#475569;padding:24px;">Cargando...</td></tr>';
+    '<tr><td style="text-align:center;color:var(--muted);padding:24px;">Cargando...</td></tr>';
 
   fetch(`/api/inventario/distribucion?familia=${encodeURIComponent(familia)}`)
     .then(r => r.json())
@@ -181,7 +181,7 @@ function renderTodo(d) {
 
   if (d.productos.length === 0) {
     document.getElementById("tabla-body").innerHTML =
-      `<tr><td colspan="${colspanTotal}" style="text-align:center;color:#475569;padding:32px;">No hay productos que requieran distribución para esta familia.</td></tr>`;
+      `<tr><td colspan="${colspanTotal}" style="text-align:center;color:var(--muted);padding:32px;">No hay productos que requieran distribución para esta familia.</td></tr>`;
     return;
   }
 
@@ -249,7 +249,7 @@ function renderTodo(d) {
 
   function resumenGrupo(productos) {
     const conDeficit = productos.filter(tieneDeficit).length;
-    const color = conDeficit > 0 ? '#ef4444' : '#22a347';
+    const color = conDeficit > 0 ? 'var(--red)' : 'var(--accent)';
     const texto = conDeficit > 0 ? `${conDeficit} con déficit` : "todos cubiertos";
     return `<span style="color:${color};font-weight:600;margin-left:8px;">(${texto} de ${productos.length})</span>`;
   }
@@ -299,7 +299,7 @@ function renderTodo(d) {
   });
 
   if (grupos.length === 0) {
-    html = `<tr><td colspan="${colspanTotal}" style="text-align:center;color:#475569;padding:32px;">No hay productos que requieran distribución para esta familia.</td></tr>`;
+    html = `<tr><td colspan="${colspanTotal}" style="text-align:center;color:var(--muted);padding:32px;">No hay productos que requieran distribución para esta familia.</td></tr>`;
   }
 
   document.getElementById("tabla-body").innerHTML = html;
