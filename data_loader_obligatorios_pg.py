@@ -519,10 +519,20 @@ def get_lista_prioridad():
 # TAPAS/MODULOS/ARMADOS y no dice nada util para reponer) -- ej. Living
 # Now, Luzica. En cualquier otra subfamilia "grupo" sigue siendo el de
 # SAP (ej. diametro en Conduit PVC).
-SUBFAMILIAS_AGRUPAR_POR_COLOR = {"LIVING NOW", "LUZICA"}
+SUBFAMILIAS_AGRUPAR_POR_COLOR = {
+    "LIVING NOW", "LUZICA",
+    "SINTHESI S12", "SINTHESI S17", "SINTHESI S22", "SINTHESI S33",
+    "SINTHESI S33 MATE", "SINTHESI S44",
+}
 # Prefijos (no la palabra completa) para cubrir concordancia de genero
-# en español: "blanco/blanca", "negro/negra". "arena" no varia.
-COLORES_CONOCIDOS = {"BLANC": "Blanco", "NEGR": "Negro", "ARENA": "Arena"}
+# en español: "blanco/blanca", "negro/negra". "arena" no varia. "NOIR"
+# en este catalogo aparece siempre como "Noir Mate" (linea Sinthesi S33
+# Mate); "CARB" cubre "Carbon"/"Carbón" sin depender del acento.
+COLORES_CONOCIDOS = {
+    "BLANC": "Blanco", "NEGR": "Negro", "ARENA": "Arena",
+    "NOIR": "Noir Mate", "CARB": "Carbon", "MAGNESIO": "Magnesio",
+    "PIEDRA": "Piedra",
+}
 
 
 def _grupo_para_obligatorios(subfamilia, descripcion, grupo_real):
