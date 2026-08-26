@@ -508,7 +508,32 @@ antes de truncar, y `sincronizar_ventas_pg` para el upload de Ventas)
    commit del lote falla.
 
 No volver a escribir un bulk write de Postgres en este proyecto como
-"un solo `with conn: ... commit()` al final" — siempre por lotes.
+"un solo `with conn: ... commit()` al final" — siempre por lotes. Ojo
+también con el retry: si un lote falla porque el pooler cortó la
+conexión, **no llamar `conn.rollback()` sobre esa conexión** (ya está
+muerta, `rollback()` también lanza) — solo `conn.close()` envuelto en
+`try/except` y reconectar. Ver `cargar_ano_pg()` en
+`scripts/backfill_adquisiciones.py` para el patrón correcto (encontrado
+y corregido 2026-08-26, la versión con `rollback()` tumbaba el script
+entero en el primer corte de conexión).
+
+## Gotcha Windows — `pandas.ExcelFile` no cierra el archivo solo
+Cualquier función que abra un Excel con `pd.ExcelFile(path)` y después
+necesite `os.remove()`/`shutil.move()`/`shutil.copy()` sobre ESE MISMO
+archivo (todas las rutas `/api/subir_*`, que leen a un temp file y
+luego lo mueven/borran) **debe cerrar el `ExcelFile` explícitamente**
+(`xl.close()`) antes de tocar el archivo en disco — si no, Windows
+tira `PermissionError: el proceso no tiene acceso al archivo porque
+está siendo utilizado por otro proceso`. `pd.read_excel()` (sin pasar
+por `ExcelFile`) no tiene este problema, se cierra solo.
+`_leer_hoja_con_datos()` de `data_loader_inventario.py` y
+`_hoja_con_datos()`/`_leer_archivo()` de `data_loader_adquisiciones.py`
+ya lo hacen bien (`xl.close()` en un `finally`, ANTES de que cualquier
+`except` externo intente borrar el archivo — un `finally` en el
+try/except de más afuera corre demasiado tarde). Bug real encontrado
+2026-08-26 en `/api/subir_compras` — no reproducía siempre porque
+dependía del timing del garbage collector, cuidado al asumir que un
+código así "ya funcionó antes" es seguro.
 
 ## Sucursales lógicas (SUCURSAL_LOGICA) y vendedores
 SAP maneja sucursales físicas. La función `_aplicar_sucursal_logica()`:
