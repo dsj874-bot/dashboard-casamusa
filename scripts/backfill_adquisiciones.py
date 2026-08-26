@@ -57,22 +57,12 @@ def _lotes(seq, tamano):
         yield seq[i:i + tamano]
 
 
-def cargar_ano_pg(tabla, columnas_pg, mapa, ano, df, tamano_lote=5000, reintentos=3):
-    """Reemplaza SOLO las filas de un año puntual (DELETE WHERE ano=X +
-    INSERT) -- reusable tanto por la carga inicial completa (llamada una
-    vez por año) como por una subida web futura de un año especifico,
-    sin arriesgar borrar el otro año por error. Mismo patron de
-    commit-por-lote-con-reintento que el resto del proyecto (ver Gotcha
-    Postgres #2 en CLAUDE.md)."""
+def _insertar_filas(tabla, columnas_pg, mapa, ano, df, tamano_lote=5000, reintentos=3):
+    """Solo el INSERT por lotes con commit-y-reintento (ver Gotcha
+    Postgres #2 en CLAUDE.md) -- el caller decide que se borra antes."""
     cols_sql = ", ".join(["ano"] + columnas_pg)
     placeholders = ", ".join(["%s"] * (len(columnas_pg) + 1))
     sql = f"insert into {tabla} ({cols_sql}) values ({placeholders})"
-
-    with db.get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(f"delete from {tabla} where ano = %s", (ano,))
-        conn.commit()
-    conn.close()
 
     filas = [
         tuple([ano] + [dlpg.valor_sql(row.get(mapa[c])) for c in columnas_pg])
@@ -107,19 +97,75 @@ def cargar_ano_pg(tabla, columnas_pg, mapa, ano, df, tamano_lote=5000, reintento
     return total
 
 
+def cargar_ano_pg(tabla, columnas_pg, mapa, ano, df, tamano_lote=5000, reintentos=3):
+    """Reemplaza TODAS las filas de un año puntual (DELETE WHERE ano=X +
+    INSERT). Uso: carga inicial completa / re-extraccion completa del
+    año desde SAP. NO usar para una subida web incremental -- si el
+    archivo no trae el año completo, esto borra todo lo que no venia
+    en el archivo (bug real 2026-08-26: una subida de solo Agosto borro
+    Enero-Julio enteros). Para eso, usar cargar_incremental_pg."""
+    with db.get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"delete from {tabla} where ano = %s", (ano,))
+        conn.commit()
+    conn.close()
+
+    return _insertar_filas(tabla, columnas_pg, mapa, ano, df, tamano_lote, reintentos)
+
+
+def cargar_incremental_pg(tabla, columnas_pg, mapa, clave_pg, clave_excel, ano, df, tamano_lote=5000, reintentos=3):
+    """Sube/actualiza SOLO las filas cuya clave natural (N_ORDEN_COMPRA
+    para compras, N_RECEPCION para recepciones) aparece en el archivo
+    subido -- borra esas claves puntuales y las vuelve a insertar,
+    dejando todo lo demas del año intacto. Mismo patron de "sync solo
+    lo que trae el archivo" que ya usa Ventas (sincronizar_ventas_pg,
+    que sincroniza por dia en vez de por año completo). Pensado para
+    subidas web recurrentes (agregar las OC/recepciones nuevas del
+    mes), no para la carga inicial (ver cargar_ano_pg)."""
+    claves = df[clave_excel].dropna().unique().tolist()
+    if not claves:
+        print(f"  {tabla} {ano}: archivo sin filas, nada que hacer.")
+        return 0
+
+    with db.get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"delete from {tabla} where ano = %s and {clave_pg} = ANY(%s)", (ano, claves))
+            print(f"  {tabla} {ano}: {cur.rowcount} filas viejas reemplazadas ({len(claves)} claves en el archivo).")
+        conn.commit()
+    conn.close()
+
+    return _insertar_filas(tabla, columnas_pg, mapa, ano, df, tamano_lote, reintentos)
+
+
 def cargar_compras(ano, df):
-    return cargar_ano_pg("compras", COLUMNAS_COMPRAS, _MAPA_COMPRAS, ano, df)
+    """Usada por /api/subir_compras (subida web) -- incremental: solo
+    toca las OC que vienen en el archivo."""
+    return cargar_incremental_pg("compras", COLUMNAS_COMPRAS, _MAPA_COMPRAS, "n_orden_compra", "N_ORDEN_COMPRA", ano, df)
 
 
 def cargar_recepciones(ano, df):
+    """Usada por /api/subir_recepciones (subida web) -- incremental:
+    solo toca las recepciones que vienen en el archivo."""
+    return cargar_incremental_pg("recepciones", COLUMNAS_RECEPCIONES, _MAPA_RECEPCIONES, "n_recepcion", "N_RECEPCION", ano, df)
+
+
+def cargar_compras_completo(ano, df):
+    """Carga inicial / re-extraccion completa del año -- reemplaza TODO
+    el año. Usada solo por el __main__ de este script, no por la web."""
+    return cargar_ano_pg("compras", COLUMNAS_COMPRAS, _MAPA_COMPRAS, ano, df)
+
+
+def cargar_recepciones_completo(ano, df):
+    """Carga inicial / re-extraccion completa del año -- reemplaza TODO
+    el año. Usada solo por el __main__ de este script, no por la web."""
     return cargar_ano_pg("recepciones", COLUMNAS_RECEPCIONES, _MAPA_RECEPCIONES, ano, df)
 
 
 if __name__ == "__main__":
     print("Cargando Compras...")
-    cargar_compras(2025, da.get_df_2025())
-    cargar_compras(2026, da.get_df_2026())
+    cargar_compras_completo(2025, da.get_df_2025())
+    cargar_compras_completo(2026, da.get_df_2026())
     print("Cargando Recepciones...")
-    cargar_recepciones(2025, da.get_df_recepciones_2025())
-    cargar_recepciones(2026, da.get_df_recepciones_2026())
+    cargar_recepciones_completo(2025, da.get_df_recepciones_2025())
+    cargar_recepciones_completo(2026, da.get_df_recepciones_2026())
     print("Listo.")

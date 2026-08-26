@@ -517,6 +517,35 @@ muerta, `rollback()` también lanza) — solo `conn.close()` envuelto en
 y corregido 2026-08-26, la versión con `rollback()` tumbaba el script
 entero en el primer corte de conexión).
 
+## Gotcha grave — subida web "por año completo" borra lo que el archivo no trae
+`cargar_ano_pg()` (DELETE WHERE ano=X + INSERT) sirve para una carga
+inicial o una re-extracción COMPLETA del año desde SAP — pero NUNCA
+para una subida web recurrente donde el usuario sube solo lo nuevo
+(ej. "las OC de agosto"). Incidente real 2026-08-26: el usuario subió
+un Excel con solo Compras/Recepciones de agosto vía `/subir_compras`,
+que en ese momento llamaba `cargar_ano_pg` — borró TODO 2026
+(enero-julio incluido) y lo reemplazo por las ~800-1200 filas de
+agosto. Se recuperó restaurando desde la copia local de Excel
+(`COMPRAS_2026_XLSX`/`RECEPCIONES_2026_XLSX`, que por suerte tenían el
+dato completo hasta julio de la migración original).
+
+Fix: `cargar_compras()`/`cargar_recepciones()` (las que usa
+`/api/subir_compras`/`/api/subir_recepciones`) ahora llaman
+`cargar_incremental_pg()` en vez de `cargar_ano_pg()` — borra solo las
+filas cuya clave natural (`N_ORDEN_COMPRA` / `N_RECEPCION`) aparece en
+el archivo subido, e inserta esas. El resto del año queda intacto.
+Mismo principio que `sincronizar_ventas_pg()` (sincroniza por día, no
+por año completo). `cargar_ano_pg()` sigue existiendo para la carga
+inicial/re-extracción completa (usada solo por el `__main__` de
+`scripts/backfill_adquisiciones.py`, vía `cargar_compras_completo()`/
+`cargar_recepciones_completo()`) — **nunca conectarla a una ruta web**.
+
+Regla general para cualquier "subir X" nuevo: si el usuario puede subir
+un archivo parcial (no todo el universo de datos), el borrado debe
+acotarse a las claves/fechas que trae ESE archivo, no al año/período
+completo. Confirmar con el usuario qué universo espera que cubra cada
+subida antes de elegir DELETE-por-año vs DELETE-por-clave.
+
 ## Gotcha Windows — `pandas.ExcelFile` no cierra el archivo solo
 Cualquier función que abra un Excel con `pd.ExcelFile(path)` y después
 necesite `os.remove()`/`shutil.move()`/`shutil.copy()` sobre ESE MISMO
