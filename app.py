@@ -1613,8 +1613,21 @@ def api_subir_datos_duros():
 
     cols_venta = [c for c in dd.columns if c.startswith("VENTA MENSUAL")]
 
-    os.makedirs(data_loader_inventario.DATA_DIR_INVENTARIO, exist_ok=True)
-    shutil.move(tmp_path, data_loader_inventario.DATOS_DUROS_XLSX)
+    # Datos Duros no tiene tabla en Postgres (a diferencia de Compras/
+    # Recepciones) -- el Excel local ES la fuente de verdad, asi que si
+    # no se puede escribir (p.ej. filesystem de solo lectura en Vercel)
+    # hay que avisarlo claro, no dejar que crashee sin JSON de vuelta.
+    try:
+        os.makedirs(data_loader_inventario.DATA_DIR_INVENTARIO, exist_ok=True)
+        shutil.move(tmp_path, data_loader_inventario.DATOS_DUROS_XLSX)
+    except OSError as e:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        return jsonify({
+            "ok": False,
+            "msg": f"No se pudo guardar el archivo en el servidor (filesystem de solo lectura): {e}. "
+                   "Esta pantalla requiere ejecutarse localmente hasta que Datos Duros tenga tabla en Postgres.",
+        }), 500
     data_loader_inventario._cache["mod_time_dd"] = None  # forzar relectura la proxima vez
 
     n_filas = len(dd)
@@ -1705,12 +1718,19 @@ def api_subir_compras():
     df = df[~df["NOMBRE_PROVEEDOR"].isin(data_loader_adquisiciones.PROVEEDORES_EXCLUIDOS)]
 
     # Reemplaza el Excel local (ground truth) para este año -- mismo
-    # nombre fijo que ya usa data_loader_adquisiciones.py.
+    # nombre fijo que ya usa data_loader_adquisiciones.py. Best-effort:
+    # en Vercel el filesystem del proyecto es de solo lectura (solo
+    # /tmp es escribible), asi que esto falla ahi -- no debe abortar
+    # la carga real a Postgres, que es la fuente de verdad en produccion.
     destino = data_loader_adquisiciones.COMPRAS_2025_XLSX if ano == 2025 else data_loader_adquisiciones.COMPRAS_2026_XLSX
-    os.makedirs(data_loader_adquisiciones.DATA_DIR_ADQUISICIONES, exist_ok=True)
-    shutil.copy(tmp_path, destino)
-    os.remove(tmp_path)
-    data_loader_adquisiciones._cache_compras[ano] = {"df": None, "mod_time": None}
+    try:
+        os.makedirs(data_loader_adquisiciones.DATA_DIR_ADQUISICIONES, exist_ok=True)
+        shutil.copy(tmp_path, destino)
+        data_loader_adquisiciones._cache_compras[ano] = {"df": None, "mod_time": None}
+    except OSError:
+        pass
+    finally:
+        os.remove(tmp_path)
 
     try:
         import scripts.backfill_adquisiciones as ba
@@ -1766,11 +1786,16 @@ def api_subir_recepciones():
     df["FECHA_RECEPCION"] = pd.to_datetime(df["FECHA_RECEPCION"])
     df = df[~df["NOMBRE_PROVEEDOR"].isin(data_loader_adquisiciones.PROVEEDORES_EXCLUIDOS)]
 
+    # Best-effort -- ver comentario equivalente en /api/subir_compras.
     destino = data_loader_adquisiciones.RECEPCIONES_2025_XLSX if ano == 2025 else data_loader_adquisiciones.RECEPCIONES_2026_XLSX
-    os.makedirs(data_loader_adquisiciones.DATA_DIR_ADQUISICIONES, exist_ok=True)
-    shutil.copy(tmp_path, destino)
-    os.remove(tmp_path)
-    data_loader_adquisiciones._cache_recepciones[ano] = {"df": None, "mod_time": None}
+    try:
+        os.makedirs(data_loader_adquisiciones.DATA_DIR_ADQUISICIONES, exist_ok=True)
+        shutil.copy(tmp_path, destino)
+        data_loader_adquisiciones._cache_recepciones[ano] = {"df": None, "mod_time": None}
+    except OSError:
+        pass
+    finally:
+        os.remove(tmp_path)
 
     try:
         import scripts.backfill_adquisiciones as ba
