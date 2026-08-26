@@ -96,6 +96,8 @@
     border-bottom: 1px solid var(--border); white-space: nowrap;
   }
   .main-table thead th:first-child { text-align: left; }
+  .main-table thead th[data-key] { cursor: pointer; user-select: none; }
+  .main-table thead th[data-key]:hover { color: var(--text); }
   .main-table tbody td {
     padding: 9px 12px; border-bottom: 1px solid rgba(30,42,58,0.5);
     white-space: nowrap; text-align: right;
@@ -221,15 +223,15 @@
         <table class="main-table">
           <thead>
             <tr>
-              <th id="th-cat" style="text-align:left">Categoría</th>
-              <th>Vta Acum 2026</th>
-              <th>Vta Acum 2025</th>
-              <th>% Crec.</th>
-              <th>% Mkt Share</th>
-              <th>Promedio Venta</th>
-              <th>Prom. Año Ant.</th>
-              <th>Proyección Anual</th>
-              <th>Cierre 2025</th>
+              <th id="th-cat" data-key="categoria" style="text-align:left">Categoría</th>
+              <th data-key="vta_acum">Vta Acum 2026</th>
+              <th data-key="vta_acum_ant">Vta Acum 2025</th>
+              <th data-key="pct_crec">% Crec.</th>
+              <th data-key="pct_mkt_share">% Mkt Share</th>
+              <th data-key="promedio_venta">Promedio Venta</th>
+              <th data-key="promedio_venta_ant">Prom. Año Ant.</th>
+              <th data-key="proyeccion">Proyección Anual</th>
+              <th data-key="vta_cierre_ant">Cierre 2025</th>
             </tr>
           </thead>
           <tbody id="tbody-acum">
@@ -353,12 +355,56 @@ function renderKPIs(k) {
     `<div class="dias-badge">📅 Datos al <strong>${k.fecha_datos}</strong></div>`;
 }
 
+let _total = null, _filas = [];
+let _sortKey = null, _sortDir = 'desc';
+
+document.querySelectorAll('.main-table thead th[data-key]').forEach(th => {
+  th.addEventListener('click', () => {
+    _sortDir = (_sortKey === th.dataset.key) ? (_sortDir === 'desc' ? 'asc' : 'desc') : 'desc';
+    _sortKey = th.dataset.key;
+    renderFilas();
+  });
+});
+
+function actualizarFlechasAcum() {
+  document.querySelectorAll('.main-table thead th[data-key]').forEach(th => {
+    if (!th.dataset.label) th.dataset.label = th.textContent;
+    const activo = th.dataset.key === _sortKey;
+    th.textContent = th.dataset.label + (activo ? (_sortDir === 'desc' ? ' ▼' : ' ▲') : '');
+  });
+}
+
 function renderTabla(data) {
   const { total, filas, categoria_label } = data;
 
   document.getElementById('tabla-titulo').textContent =
     'Venta Acumulada por ' + (categoria_label || 'Categoría');
-  document.getElementById('th-cat').textContent = categoria_label || 'Categoría';
+  document.querySelectorAll('.main-table thead th[data-key]').forEach(th => { delete th.dataset.label; });
+  document.getElementById('th-cat').dataset.label = categoria_label || 'Categoría';
+
+  _total = total;
+  _filas = filas;
+  _sortKey = null;
+  _sortDir = 'desc';
+  renderFilas();
+}
+
+function renderFilas() {
+  const total = _total;
+  let filas = [..._filas];
+
+  if (_sortKey) {
+    filas.sort((a, b) => {
+      let va = a[_sortKey], vb = b[_sortKey];
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
+      if (va < vb) return _sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return _sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
 
   const fila = (r, esTotal) => {
     const barW = Math.min(r.pct_mkt_share || 0, 100);
@@ -383,6 +429,7 @@ function renderTabla(data) {
   let html = fila(total, true);
   filas.forEach(r => { html += fila(r, false); });
   document.getElementById('tbody-acum').innerHTML = html;
+  actualizarFlechasAcum();
 }
 </script>
 {% endblock %}
