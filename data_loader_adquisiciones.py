@@ -62,7 +62,7 @@ def _hoja_con_datos(xl):
         if COLUMNAS_ESPERADAS.issubset(candidata.columns):
             return candidata
     raise ValueError(
-        f"Ninguna hoja de {xl.io} tiene las columnas esperadas de compras "
+        f"Ninguna hoja tiene las columnas esperadas de compras "
         f"({', '.join(sorted(COLUMNAS_ESPERADAS))})."
     )
 
@@ -79,6 +79,7 @@ def _leer_archivo(ano):
         except Exception:
             xl = pd.ExcelFile(xlsx)
         df = _hoja_con_datos(xl)
+        xl.close()  # liberar el handle del archivo (Flask corre de forma continua, no dejar handles colgados)
 
         df["FECHA_CREACION"] = pd.to_datetime(df["FECHA_CREACION"])
         df["MES"] = df["FECHA_CREACION"].dt.month

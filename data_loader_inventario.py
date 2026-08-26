@@ -81,11 +81,20 @@ def _leer_hoja_con_datos(path, columnas_esperadas):
         xl = pd.ExcelFile(path, engine="calamine")
     except Exception:
         xl = pd.ExcelFile(path)
-    for nombre_hoja in xl.sheet_names:
-        columnas = xl.parse(nombre_hoja, nrows=0).columns
-        if all(c in columnas for c in columnas_esperadas):
-            return xl.parse(nombre_hoja)
-    return xl.parse(xl.sheet_names[0])
+    try:
+        for nombre_hoja in xl.sheet_names:
+            columnas = xl.parse(nombre_hoja, nrows=0).columns
+            if all(c in columnas for c in columnas_esperadas):
+                return xl.parse(nombre_hoja)
+        return xl.parse(xl.sheet_names[0])
+    finally:
+        # Cerrar el handle del archivo explicitamente -- si no, en
+        # Windows un os.remove()/shutil.move() inmediatamente despues
+        # (ej. en las rutas /api/subir_*) puede fallar con "el proceso
+        # no tiene acceso al archivo porque esta siendo usado por otro
+        # proceso" (bug real encontrado 2026-08-26, dependia del timing
+        # del garbage collector para no reproducirse).
+        xl.close()
 
 
 def fusionar_datos_duros(df):

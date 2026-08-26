@@ -11,21 +11,16 @@
 <a href="/adquisiciones/stock" class="nav-item {% if active == 'adquisiciones_stock' %}active{% endif %}">
   <span class="nav-icon">📥</span><span class="nav-label"> Compras para Stock</span>
 </a>
-<a href="/adquisiciones/recepciones" class="nav-item {% if active == 'adquisiciones_recepciones' %}active{% endif %}">
-  <span class="nav-icon">📦</span><span class="nav-label"> Resumen Recepciones</span>
-</a>
 <a href="/adquisiciones/lead_time" class="nav-item {% if active == 'adquisiciones_lead_time' %}active{% endif %}">
   <span class="nav-icon">⏱️</span><span class="nav-label"> Lead Time por Proveedor</span>
 </a>
 <a href="/adquisiciones/otif" class="nav-item {% if active == 'adquisiciones_otif' %}active{% endif %}">
   <span class="nav-icon">✅</span><span class="nav-label"> Cumplimiento / OTIF</span>
 </a>
-<a href="/adquisiciones/pendientes" class="nav-item {% if active == 'adquisiciones_pendientes' %}active{% endif %}">
-  <span class="nav-icon">⏳</span><span class="nav-label"> OC Pendientes de Recibir</span>
+
+{% if es_admin %}
+<div class="nav-section-title">Administración</div>
+<a href="/subir_compras" class="nav-item {% if active == 'subir_compras' %}active{% endif %}">
+  <span class="nav-icon">⬆️</span><span class="nav-label"> Subir Compras / Recepciones</span>
 </a>
-<a href="/adquisiciones/conversion_pedido" class="nav-item {% if active == 'adquisiciones_conversion_pedido' %}active{% endif %}">
-  <span class="nav-icon">🔄</span><span class="nav-label"> Conversión Pedido → Venta</span>
-</a>
-<a href="/adquisiciones/codigos_6" class="nav-item {% if active == 'adquisiciones_codigos_6' %}active{% endif %}">
-  <span class="nav-icon">🚫</span><span class="nav-label"> Códigos "6" Sin Venta</span>
-</a>
+{% endif %}

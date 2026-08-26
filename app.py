@@ -40,6 +40,11 @@ if USAR_POSTGRES_INVENTARIO:
     import data_loader_inventario_pg
     import data_loader_obligatorios_pg
 
+# Mismo patron para el dominio Adquisiciones (ver migrations/009_adquisiciones.sql)
+USAR_POSTGRES_ADQUISICIONES = os.environ.get("USAR_POSTGRES_ADQUISICIONES", "1") == "1"
+if USAR_POSTGRES_ADQUISICIONES:
+    import data_loader_adquisiciones_pg
+
 # ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
 #  Para agregar un gerente: agregar una línea aquí
@@ -146,6 +151,7 @@ PREFIJOS_RESTRINGIDOS_INV_ADQ = (
     "/adquisiciones", "/api/adquisiciones",
     "/subir_inventario", "/api/subir_inventario",
     "/subir_datos_duros", "/api/subir_datos_duros",
+    "/subir_compras", "/api/subir_compras", "/api/subir_recepciones",
     "/gestionar_productos_compra", "/api/gestionar_productos_compra",
     "/gestionar_prioridad", "/api/gestionar_prioridad",
     "/admin/actualizar_inventario",
@@ -346,6 +352,8 @@ def adquisiciones():
 def api_adquisiciones_resumen():
     try:
         tipo = request.args.get("tipo", "") or None
+        if USAR_POSTGRES_ADQUISICIONES:
+            return jsonify(data_loader_adquisiciones_pg.get_resumen_combinado_pg(tipo))
         return jsonify(data_loader_adquisiciones.get_resumen(tipo))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -356,6 +364,8 @@ def api_adquisiciones_resumen():
 def api_adquisiciones_por_mes():
     try:
         tipo = request.args.get("tipo", "") or None
+        if USAR_POSTGRES_ADQUISICIONES:
+            return jsonify(data_loader_adquisiciones_pg.get_por_mes_combinado_pg(tipo))
         return jsonify(data_loader_adquisiciones.get_compras_por_mes(tipo))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -374,6 +384,8 @@ def adquisiciones_proveedores():
 def api_adquisiciones_por_proveedor():
     try:
         tipo = request.args.get("tipo", "") or None
+        if USAR_POSTGRES_ADQUISICIONES:
+            return jsonify(data_loader_adquisiciones_pg.get_por_proveedor_combinado_pg(tipo))
         return jsonify(data_loader_adquisiciones.get_compras_por_proveedor(tipo))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -397,34 +409,6 @@ def adquisiciones_stock():
                            tipo_compra="STOCK",
                            titulo="Compras para Stock",
                            session_nombre=session.get("nombre"))
-
-
-@app.route("/adquisiciones/recepciones")
-@login_requerido
-def adquisiciones_recepciones():
-    return render_template("adquisiciones_recepciones.html",
-                           active="adquisiciones_recepciones",
-                           session_nombre=session.get("nombre"))
-
-
-@app.route("/api/adquisiciones/recepciones/resumen")
-@login_requerido
-def api_adquisiciones_recepciones_resumen():
-    try:
-        tipo = request.args.get("tipo", "") or None
-        return jsonify(data_loader_adquisiciones.get_resumen_recepciones(tipo))
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/adquisiciones/recepciones/por_mes")
-@login_requerido
-def api_adquisiciones_recepciones_por_mes():
-    try:
-        tipo = request.args.get("tipo", "") or None
-        return jsonify(data_loader_adquisiciones.get_recepciones_por_mes(tipo))
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/adquisiciones/lead_time")
@@ -457,57 +441,6 @@ def adquisiciones_otif():
 def api_adquisiciones_otif():
     try:
         return jsonify(data_loader_adquisiciones.get_cumplimiento_por_proveedor())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/adquisiciones/pendientes")
-@login_requerido
-def adquisiciones_pendientes():
-    return render_template("adquisiciones_pendientes.html",
-                           active="adquisiciones_pendientes",
-                           session_nombre=session.get("nombre"))
-
-
-@app.route("/api/adquisiciones/pendientes")
-@login_requerido
-def api_adquisiciones_pendientes():
-    try:
-        return jsonify(data_loader_adquisiciones.get_oc_pendientes())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/adquisiciones/conversion_pedido")
-@login_requerido
-def adquisiciones_conversion_pedido():
-    return render_template("adquisiciones_conversion_pedido.html",
-                           active="adquisiciones_conversion_pedido",
-                           session_nombre=session.get("nombre"))
-
-
-@app.route("/api/adquisiciones/conversion_pedido")
-@login_requerido
-def api_adquisiciones_conversion_pedido():
-    try:
-        return jsonify(data_loader_adquisiciones.get_conversion_pedido_venta())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/adquisiciones/codigos_6")
-@login_requerido
-def adquisiciones_codigos_6():
-    return render_template("adquisiciones_codigos_6.html",
-                           active="adquisiciones_codigos_6",
-                           session_nombre=session.get("nombre"))
-
-
-@app.route("/api/adquisiciones/codigos_6")
-@login_requerido
-def api_adquisiciones_codigos_6():
-    try:
-        return jsonify(data_loader_adquisiciones.get_codigos_6_sin_venta())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1691,6 +1624,161 @@ def api_subir_datos_duros():
             f"{len(cols_venta)} columnas de venta mensual detectadas "
             f"({', '.join(cols_venta)}). Se aplica a Postgres en la proxima subida de stock (/subir_inventario)."
         ),
+    })
+
+
+# ══════════════════════════════════════════════════════
+#  SUBIR COMPRAS / RECEPCIONES — self-service (reemplaza dejar
+#  Compras_20XX.xlsx / Recepciones_20XX.xlsx a mano en el servidor).
+#  Cada carga reemplaza SOLO el año elegido (no el otro), tanto en el
+#  archivo local (ground truth Excel, ver data_loader_adquisiciones.py)
+#  como en Postgres.
+# ══════════════════════════════════════════════════════
+@app.route("/subir_compras")
+@admin_requerido
+def subir_compras():
+    return render_template("subir_compras.html",
+                           active="subir_compras",
+                           session_nombre=session.get("nombre"))
+
+
+def _leer_archivo_subido(archivo, tmp_suffix=".xlsx"):
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=tmp_suffix, delete=False) as tmp:
+        archivo.save(tmp.name)
+        return tmp.name
+
+
+@app.route("/api/subir_compras", methods=["POST"])
+@admin_requerido
+def api_subir_compras():
+    if not USAR_POSTGRES_ADQUISICIONES:
+        return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_ADQUISICIONES=1)."}), 400
+
+    archivo = request.files.get("archivo")
+    ano = request.form.get("ano")
+    if not archivo or not archivo.filename:
+        return jsonify({"ok": False, "msg": "No se recibio ningun archivo."}), 400
+    if ano not in ("2025", "2026"):
+        return jsonify({"ok": False, "msg": "Falta indicar el año (2025 o 2026)."}), 400
+    if not archivo.filename.lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "msg": "El archivo debe ser .xlsx."}), 400
+    ano = int(ano)
+
+    tmp_path = None
+    try:
+        tmp_path = _leer_archivo_subido(archivo)
+        xl = None
+        try:
+            try:
+                xl = pd.ExcelFile(tmp_path, engine="calamine")
+            except Exception:
+                xl = pd.ExcelFile(tmp_path)
+            df = data_loader_adquisiciones._hoja_con_datos(xl)
+        finally:
+            # Cerrar el handle ANTES de que el except de mas abajo intente
+            # os.remove(tmp_path) -- un finally en el try/except externo
+            # corre DESPUES del cuerpo del except (incluido su return), asi
+            # que cerrar alla no alcanza a tiempo (bug real encontrado
+            # 2026-08-26: PermissionError de Windows al intentar borrar un
+            # archivo que ExcelFile todavia tenia abierto).
+            if xl is not None:
+                xl.close()
+    except Exception as e:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        return jsonify({"ok": False, "msg": f"No se pudo leer el Excel: {e}"}), 400
+
+    faltantes = [c for c in data_loader_adquisiciones.COLUMNAS_ESPERADAS if c not in df.columns]
+    if faltantes:
+        os.remove(tmp_path)
+        return jsonify({"ok": False, "msg": f"Faltan columnas esperadas: {', '.join(sorted(faltantes))}"}), 400
+    if len(df) == 0:
+        os.remove(tmp_path)
+        return jsonify({"ok": False, "msg": "El archivo esta vacio (0 filas)."}), 400
+
+    df["FECHA_CREACION"] = pd.to_datetime(df["FECHA_CREACION"])
+    df = df[~df["NOMBRE_PROVEEDOR"].isin(data_loader_adquisiciones.PROVEEDORES_EXCLUIDOS)]
+
+    # Reemplaza el Excel local (ground truth) para este año -- mismo
+    # nombre fijo que ya usa data_loader_adquisiciones.py.
+    destino = data_loader_adquisiciones.COMPRAS_2025_XLSX if ano == 2025 else data_loader_adquisiciones.COMPRAS_2026_XLSX
+    os.makedirs(data_loader_adquisiciones.DATA_DIR_ADQUISICIONES, exist_ok=True)
+    shutil.copy(tmp_path, destino)
+    os.remove(tmp_path)
+    data_loader_adquisiciones._cache_compras[ano] = {"df": None, "mod_time": None}
+
+    try:
+        import scripts.backfill_adquisiciones as ba
+        ba.cargar_compras(ano, df)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Archivo guardado, pero fallo la carga a Postgres: {e}"}), 500
+
+    n_filas = len(df)
+    return jsonify({
+        "ok": True,
+        "filas": n_filas,
+        "msg": f"OK: Compras {ano} actualizado, {n_filas:,}".replace(",", ".") + " filas.",
+    })
+
+
+@app.route("/api/subir_recepciones", methods=["POST"])
+@admin_requerido
+def api_subir_recepciones():
+    if not USAR_POSTGRES_ADQUISICIONES:
+        return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_ADQUISICIONES=1)."}), 400
+
+    archivo = request.files.get("archivo")
+    ano = request.form.get("ano")
+    if not archivo or not archivo.filename:
+        return jsonify({"ok": False, "msg": "No se recibio ningun archivo."}), 400
+    if ano not in ("2025", "2026"):
+        return jsonify({"ok": False, "msg": "Falta indicar el año (2025 o 2026)."}), 400
+    if not archivo.filename.lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "msg": "El archivo debe ser .xlsx."}), 400
+    ano = int(ano)
+
+    tmp_path = None
+    try:
+        tmp_path = _leer_archivo_subido(archivo)
+        try:
+            df = pd.read_excel(tmp_path, engine="calamine")
+        except Exception:
+            df = pd.read_excel(tmp_path)
+    except Exception as e:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        return jsonify({"ok": False, "msg": f"No se pudo leer el Excel: {e}"}), 400
+
+    columnas_esperadas_recepciones = ["FECHA_RECEPCION", "N_OC", "TOTAL_CLP", "NOMBRE_PROVEEDOR"]
+    faltantes = [c for c in columnas_esperadas_recepciones if c not in df.columns]
+    if faltantes:
+        os.remove(tmp_path)
+        return jsonify({"ok": False, "msg": f"Faltan columnas esperadas: {', '.join(faltantes)}"}), 400
+    if len(df) == 0:
+        os.remove(tmp_path)
+        return jsonify({"ok": False, "msg": "El archivo esta vacio (0 filas)."}), 400
+
+    df["FECHA_RECEPCION"] = pd.to_datetime(df["FECHA_RECEPCION"])
+    df = df[~df["NOMBRE_PROVEEDOR"].isin(data_loader_adquisiciones.PROVEEDORES_EXCLUIDOS)]
+
+    destino = data_loader_adquisiciones.RECEPCIONES_2025_XLSX if ano == 2025 else data_loader_adquisiciones.RECEPCIONES_2026_XLSX
+    os.makedirs(data_loader_adquisiciones.DATA_DIR_ADQUISICIONES, exist_ok=True)
+    shutil.copy(tmp_path, destino)
+    os.remove(tmp_path)
+    data_loader_adquisiciones._cache_recepciones[ano] = {"df": None, "mod_time": None}
+
+    try:
+        import scripts.backfill_adquisiciones as ba
+        ba.cargar_recepciones(ano, df)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Archivo guardado, pero fallo la carga a Postgres: {e}"}), 500
+
+    n_filas = len(df)
+    return jsonify({
+        "ok": True,
+        "filas": n_filas,
+        "msg": f"OK: Recepciones {ano} actualizado, {n_filas:,}".replace(",", ".") + " filas.",
     })
 
 
