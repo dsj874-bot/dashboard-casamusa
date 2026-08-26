@@ -9,7 +9,6 @@
 {% block boton_actualizar %}{% endblock %}
 
 {% block extra_head %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   #tabla-body td.categoria { color: var(--muted2); font-size: 12px; }
   #tabla-body tr.fila-comprado td { border-top: 1px solid var(--border); }
@@ -18,13 +17,6 @@
 {% endblock %}
 
 {% block content %}
-
-<!-- Grafico de barras horizontales (top 15) -->
-<div class="chart-card" style="margin-bottom:20px;">
-  <div class="chart-card-title">Top 15 Proveedores — Comprado vs Recibido (Año Actual)</div>
-  <div class="chart-card-sub" id="chart-sub">Participación sobre el total comprado del año</div>
-  <div class="chart-wrap" style="height:420px;"><canvas id="chartProveedores"></canvas></div>
-</div>
 
 <!-- Tabla detalle -->
 <div class="table-card">
@@ -55,11 +47,6 @@
 
 {% block extra_scripts %}
 <script>
-const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-Chart.defaults.color       = cssVar("--muted2");
-Chart.defaults.borderColor = cssVar("--border");
-Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
-
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
 const fmtUnid = v => Math.round(v).toLocaleString("es-CL");
 const fmtPct = v => (v >= 0 ? "▲ " : "▼ ") + Math.abs(v).toFixed(1) + "%";
@@ -98,8 +85,6 @@ fetch("/api/adquisiciones/por_proveedor")
     if (d.error) { console.error(d.error); return; }
     const aAct = d.ano_actual, aAnt = d.ano_anterior;
 
-    document.getElementById("chart-sub").textContent =
-      "Comparativo " + aAct + " vs mismo período " + aAnt;
     document.getElementById("tabla-titulo").textContent = "Detalle por Proveedor — " + aAct;
     document.getElementById("th-ano-actual").textContent = aAct;
     document.getElementById("th-ano-ant").textContent    = aAnt;
@@ -110,45 +95,6 @@ fetch("/api/adquisiciones/por_proveedor")
 
     _items = d.proveedores;
     renderTabla();
-
-    const top15 = [..._items].sort((a, b) => b.participacion - a.participacion).slice(0, 15);
-    new Chart(document.getElementById("chartProveedores"), {
-      type: "bar",
-      data: {
-        labels: top15.map(p => p.nombre),
-        datasets: [
-          {
-            label: "Comprado " + aAct,
-            data: top15.map(p => Math.round(p.filas[0].v_ano_actual / 1000000)),
-            backgroundColor: "rgba(34,163,71,0.75)",
-            borderColor: cssVar("--accent"),
-            borderWidth: 1,
-            borderRadius: 5,
-          },
-          {
-            label: "Recibido " + aAct,
-            data: top15.map(p => Math.round(p.filas[1].v_ano_actual / 1000000)),
-            backgroundColor: "rgba(59,130,246,0.55)",
-            borderColor: cssVar("--blue"),
-            borderWidth: 1,
-            borderRadius: 5,
-          }
-        ]
-      },
-      options: {
-        indexAxis: "y",
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: "top" },
-          tooltip: { callbacks: { label: ctx => " " + ctx.dataset.label + ": $" + ctx.raw.toLocaleString("es-CL") + " MM" } }
-        },
-        scales: {
-          x: { ticks: { callback: v => "$" + v + " MM" }, grid: { color: cssVar("--border") } },
-          y: { grid: { display: false }, ticks: { font: { size: 11 } } }
-        }
-      }
-    });
   })
   .catch(err => console.error("Error proveedores:", err));
 
