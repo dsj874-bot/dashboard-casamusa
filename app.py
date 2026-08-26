@@ -423,6 +423,8 @@ def adquisiciones_lead_time():
 @login_requerido
 def api_adquisiciones_lead_time():
     try:
+        if USAR_POSTGRES_ADQUISICIONES:
+            return jsonify(data_loader_adquisiciones_pg.get_lead_time_combinado_pg())
         return jsonify(data_loader_adquisiciones.get_lead_time_por_proveedor())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -440,6 +442,8 @@ def adquisiciones_otif():
 @login_requerido
 def api_adquisiciones_otif():
     try:
+        if USAR_POSTGRES_ADQUISICIONES:
+            return jsonify(data_loader_adquisiciones_pg.get_cumplimiento_combinado_pg())
         return jsonify(data_loader_adquisiciones.get_cumplimiento_por_proveedor())
     except Exception as e:
         return jsonify({"error": str(e)}), 500

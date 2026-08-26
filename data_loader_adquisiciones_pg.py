@@ -9,6 +9,8 @@ Compras y recepciones".
 Igual que en data_loader_pg.py: una conexion por funcion, agregados
 por ventana de fecha con FILTER (WHERE ...) en un solo GROUP BY/scan.
 """
+import math
+import numpy as np
 import db
 
 MESES = {
@@ -259,4 +261,184 @@ def get_por_proveedor_combinado_pg(tipo_compra=None):
         "proveedores": proveedores,
         "ano_actual":  2026,
         "ano_anterior": 2025,
+    }
+
+
+def get_lead_time_combinado_pg():
+    """Lead time real (dias entre fecha_creacion de la OC y su primera
+    recepcion) por proveedor -- año actual vs año anterior. Mismo
+    calculo que data_loader_adquisiciones.get_lead_time_por_proveedor(),
+    sobre las tablas compras/recepciones en vez del Excel."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """WITH primera_recepcion AS (
+                       SELECT n_oc, min(fecha_recepcion) AS fecha_recepcion
+                       FROM recepciones
+                       GROUP BY n_oc
+                   ),
+                   oc AS (
+                       SELECT DISTINCT ON (c.ano, c.n_orden_compra)
+                           c.ano, c.n_orden_compra, c.nombre_proveedor, c.fecha_creacion,
+                           pr.fecha_recepcion
+                       FROM compras c
+                       LEFT JOIN primera_recepcion pr ON pr.n_oc = c.n_orden_compra
+                       WHERE c.ano IN (2025, 2026)
+                       ORDER BY c.ano, c.n_orden_compra
+                   ),
+                   oc_lt AS (
+                       SELECT *,
+                           CASE WHEN fecha_recepcion IS NOT NULL AND fecha_recepcion >= fecha_creacion
+                                THEN (fecha_recepcion - fecha_creacion)
+                                ELSE NULL END AS lead_time_dias
+                       FROM oc
+                   )
+                   SELECT ano, nombre_proveedor,
+                       count(*) AS n_oc_total,
+                       count(lead_time_dias) AS n_oc_recibidas,
+                       avg(lead_time_dias) AS lead_promedio,
+                       min(lead_time_dias) AS lead_min,
+                       max(lead_time_dias) AS lead_max
+                   FROM oc_lt
+                   WHERE nombre_proveedor IS NOT NULL
+                   GROUP BY ano, nombre_proveedor""",
+            )
+            grupos = cur.fetchall()
+
+            cur.execute(
+                """WITH primera_recepcion AS (
+                       SELECT n_oc, min(fecha_recepcion) AS fecha_recepcion
+                       FROM recepciones
+                       GROUP BY n_oc
+                   ),
+                   oc AS (
+                       SELECT DISTINCT ON (c.ano, c.n_orden_compra)
+                           c.ano, c.fecha_creacion, pr.fecha_recepcion
+                       FROM compras c
+                       LEFT JOIN primera_recepcion pr ON pr.n_oc = c.n_orden_compra
+                       WHERE c.ano IN (2025, 2026)
+                       ORDER BY c.ano, c.n_orden_compra
+                   )
+                   SELECT ano, avg(fecha_recepcion - fecha_creacion) AS lead_promedio
+                   FROM oc
+                   WHERE fecha_recepcion IS NOT NULL AND fecha_recepcion >= fecha_creacion
+                   GROUP BY ano""",
+            )
+            empresa = {r["ano"]: r["lead_promedio"] for r in cur.fetchall()}
+
+    g26 = {r["nombre_proveedor"]: r for r in grupos if r["ano"] == 2026}
+    g25 = {r["nombre_proveedor"]: r for r in grupos if r["ano"] == 2025}
+
+    items = []
+    for nombre, fila in g26.items():
+        n_oc_total = int(fila["n_oc_total"])
+        n_oc_recibidas = int(fila["n_oc_recibidas"])
+        fila25 = g25.get(nombre)
+        items.append({
+            "nombre":            nombre,
+            "n_oc_total":        n_oc_total,
+            "n_oc_recibidas":    n_oc_recibidas,
+            "n_oc_pendientes":   n_oc_total - n_oc_recibidas,
+            "lead_time_actual":  round(float(fila["lead_promedio"]), 1) if fila["lead_promedio"] is not None else None,
+            "lead_time_min":     int(fila["lead_min"]) if fila["lead_min"] is not None else None,
+            "lead_time_max":     int(fila["lead_max"]) if fila["lead_max"] is not None else None,
+            "lead_time_anterior": round(float(fila25["lead_promedio"]), 1) if fila25 and fila25["lead_promedio"] is not None else None,
+        })
+
+    items.sort(key=lambda x: (x["lead_time_actual"] is None, -(x["lead_time_actual"] or 0), -x["n_oc_total"]))
+
+    return {
+        "items": items,
+        "lead_time_empresa_actual":   round(float(empresa[2026]), 1) if empresa.get(2026) is not None else None,
+        "lead_time_empresa_anterior": round(float(empresa[2025]), 1) if empresa.get(2025) is not None else None,
+        "ano_actual": 2026,
+        "ano_anterior": 2025,
+    }
+
+
+UMBRAL_ON_TIME_DIAS_HABILES = 5  # mismo estandar Nacional que Plan de Compra
+
+
+def get_cumplimiento_combinado_pg():
+    """OTIF (On Time In Full) por proveedor, linea por linea (OC +
+    codigo) del año actual. Mismo calculo que
+    data_loader_adquisiciones.get_cumplimiento_por_proveedor(); el
+    conteo de dias habiles se hace en Python con np.busday_count
+    (igual que el original) sobre las fechas leidas de Postgres."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT n_orden_compra, codigo,
+                       min(nombre_proveedor) AS proveedor,
+                       min(fecha_creacion) AS fecha_creacion,
+                       sum(cantidad_comprada) AS cantidad_comprada
+                   FROM compras
+                   WHERE ano = 2026
+                   GROUP BY n_orden_compra, codigo""",
+            )
+            lineas_compra = cur.fetchall()
+
+            cur.execute(
+                """SELECT n_oc AS n_orden_compra, codigo,
+                       sum(cantidad) AS cantidad_recibida,
+                       min(fecha_recepcion) AS fecha_primera_recepcion
+                   FROM recepciones
+                   WHERE ano IN (2025, 2026)
+                   GROUP BY n_oc, codigo""",
+            )
+            recepcion_por_linea = {(r["n_orden_compra"], r["codigo"]): r for r in cur.fetchall()}
+
+    por_proveedor = {}
+    tot_lineas = tot_in_full = tot_on_time = tot_otif = 0
+
+    for c in lineas_compra:
+        clave = (c["n_orden_compra"], c["codigo"])
+        r = recepcion_por_linea.get(clave)
+        cantidad_recibida = float(r["cantidad_recibida"]) if r else 0.0
+        cantidad_comprada = float(c["cantidad_comprada"] or 0)
+        in_full = math.isclose(cantidad_recibida, cantidad_comprada)
+
+        on_time = False
+        if r and r["fecha_primera_recepcion"] is not None:
+            dias_habiles = int(np.busday_count(c["fecha_creacion"], r["fecha_primera_recepcion"]))
+            on_time = dias_habiles <= UMBRAL_ON_TIME_DIAS_HABILES
+        otif = in_full and on_time
+
+        proveedor = c["proveedor"] or "(Sin proveedor)"
+        acc = por_proveedor.setdefault(proveedor, {"n_lineas": 0, "n_in_full": 0, "n_on_time": 0, "n_otif": 0})
+        acc["n_lineas"] += 1
+        acc["n_in_full"] += int(in_full)
+        acc["n_on_time"] += int(on_time)
+        acc["n_otif"] += int(otif)
+
+        tot_lineas += 1
+        tot_in_full += int(in_full)
+        tot_on_time += int(on_time)
+        tot_otif += int(otif)
+
+    items = []
+    for proveedor, acc in por_proveedor.items():
+        n = acc["n_lineas"]
+        items.append({
+            "nombre":       proveedor,
+            "n_lineas":     n,
+            "pct_in_full":  round(acc["n_in_full"] / n * 100, 1),
+            "pct_on_time":  round(acc["n_on_time"] / n * 100, 1),
+            "pct_otif":     round(acc["n_otif"] / n * 100, 1),
+        })
+
+    items.sort(key=lambda x: (x["pct_otif"], -x["n_lineas"]))
+
+    resumen = {
+        "n_lineas":    tot_lineas,
+        "pct_in_full": round(tot_in_full / tot_lineas * 100, 1) if tot_lineas > 0 else 0.0,
+        "pct_on_time": round(tot_on_time / tot_lineas * 100, 1) if tot_lineas > 0 else 0.0,
+        "pct_otif":    round(tot_otif / tot_lineas * 100, 1) if tot_lineas > 0 else 0.0,
+    }
+
+    return {
+        "items": items,
+        "resumen": resumen,
+        "umbral_dias_habiles": UMBRAL_ON_TIME_DIAS_HABILES,
+        "ano_actual": 2026,
     }
