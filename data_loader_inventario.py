@@ -38,14 +38,16 @@ ORDEN_CLASIFICACION = ["AAA", "M05", "M04", "M03", "M02", "M01", "SM0"]
 IDS_IMPORTADO = {3, 7}
 
 # Bodega -> columna de venta mensual en Datos_Duros_Inventario.xlsx.
-# Solo estas 5 bodegas tienen venta mensual propia; el resto (Maipu,
-# Oficina, Mercado Libre Full, Mercado Libre Full Schneider,
-# E-commerce, Merma) no tiene esa columna -- para esas, venta_mensual
-# y alcance quedan en None (la columna igual se muestra en pantalla,
-# solo el valor queda vacio -- pedido explicito del usuario).
+# Estas 6 bodegas tienen venta mensual propia (Maipu agregada 2026-08-25,
+# antes no tenia dato real); el resto (Oficina, Mercado Libre Full,
+# Mercado Libre Full Schneider, E-commerce, Merma) sigue sin columna --
+# para esas, venta_mensual y alcance quedan en None (la columna igual
+# se muestra en pantalla, solo el valor queda vacio -- pedido explicito
+# del usuario).
 VENTA_MENSUAL_COL = {
     "Chicureo":         "VENTA MENSUAL CHICUREO",
     "Las Condes":       "VENTA MENSUAL LAS CONDES",
+    "Maipú":            "VENTA MENSUAL MAIPU",
     "Manuel Rodríguez": "VENTA MENSUAL MANUEL RODRIGUEZ",
     "Matta":            "VENTA MENSUAL MATTA",
     "San Isidro":       "VENTA MENSUAL SAN ISIDRO",

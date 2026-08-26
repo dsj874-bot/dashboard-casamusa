@@ -3,6 +3,7 @@ from functools import wraps
 from datetime import date
 import io
 import os
+import shutil
 import sys
 import pandas as pd
 import data_loader
@@ -144,6 +145,7 @@ PREFIJOS_RESTRINGIDOS_INV_ADQ = (
     "/inventario", "/api/inventario",
     "/adquisiciones", "/api/adquisiciones",
     "/subir_inventario", "/api/subir_inventario",
+    "/subir_datos_duros", "/api/subir_datos_duros",
     "/gestionar_productos_compra", "/api/gestionar_productos_compra",
     "/gestionar_prioridad", "/api/gestionar_prioridad",
     "/admin/actualizar_inventario",
@@ -1619,6 +1621,76 @@ def api_subir_inventario():
         "ok": True,
         "filas": n_filas,
         "msg": f"OK: inventario actualizado, {filas_fmt} productos.",
+    })
+
+
+# ══════════════════════════════════════════════════════
+#  SUBIR DATOS DUROS — self-service (reemplaza dejar
+#  Datos_Duros_Inventario.xlsx a mano en el servidor). Solo actualiza
+#  el archivo en disco -- FAMILIA/SUBFAMILIA/GRUPO/venta_mensual
+#  llegan a Postgres en la SIGUIENTE subida de /subir_inventario (que
+#  ya fusiona contra este archivo), no hace falta duplicar esa logica
+#  aqui.
+# ══════════════════════════════════════════════════════
+@app.route("/subir_datos_duros")
+@admin_requerido
+def subir_datos_duros():
+    return render_template("subir_datos_duros.html",
+                           active="subir_datos_duros",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/subir_datos_duros", methods=["POST"])
+@admin_requerido
+def api_subir_datos_duros():
+    archivo = request.files.get("archivo")
+    if not archivo or not archivo.filename:
+        return jsonify({"ok": False, "msg": "No se recibio ningun archivo."}), 400
+    if not archivo.filename.lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "msg": "El archivo debe ser .xlsx."}), 400
+
+    import tempfile
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            archivo.save(tmp.name)
+            tmp_path = tmp.name
+        dd = data_loader_inventario._leer_hoja_con_datos(
+            tmp_path, columnas_esperadas=["CODIGO", "FAMILIA", "SUBFAMILIA"]
+        )
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"No se pudo leer el Excel: {e}"}), 400
+
+    faltantes = [c for c in ("CODIGO", "FAMILIA", "SUBFAMILIA", "GRUPO") if c not in dd.columns]
+    if faltantes:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        return jsonify({
+            "ok": False,
+            "msg": f"El archivo no tiene el formato esperado de Datos Duros. Faltan columnas: {', '.join(faltantes)}",
+        }), 400
+    if len(dd) == 0:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        return jsonify({"ok": False, "msg": "El archivo esta vacio (0 filas)."}), 400
+
+    cols_venta = [c for c in dd.columns if c.startswith("VENTA MENSUAL")]
+
+    os.makedirs(data_loader_inventario.DATA_DIR_INVENTARIO, exist_ok=True)
+    shutil.move(tmp_path, data_loader_inventario.DATOS_DUROS_XLSX)
+    data_loader_inventario._cache["mod_time_dd"] = None  # forzar relectura la proxima vez
+
+    n_filas = len(dd)
+    filas_fmt = f"{n_filas:,}".replace(",", ".")
+    return jsonify({
+        "ok": True,
+        "filas": n_filas,
+        "columnas_venta": cols_venta,
+        "msg": (
+            f"OK: Datos Duros actualizado, {filas_fmt} productos, "
+            f"{len(cols_venta)} columnas de venta mensual detectadas "
+            f"({', '.join(cols_venta)}). Se aplica a Postgres en la proxima subida de stock (/subir_inventario)."
+        ),
     })
 
 

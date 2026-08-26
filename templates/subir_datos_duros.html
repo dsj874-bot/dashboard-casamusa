@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}Subir Datos Duros{% endblock %}
+{% block page_title %}Subir Datos Duros{% endblock %}
+{% block page_subtitle %}Actualiza Familia/Subfamilia/Grupo y Venta Mensual por sucursal{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+{% block sidebar_nav %}{% include "_inventario_sidebar.html" %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .subir-wrap { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+  .drop-zone {
+    background: var(--surface);
+    border: 2px dashed var(--border);
+    border-radius: 14px;
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .drop-zone.dragover { border-color: var(--accent); background: rgba(34,163,71,0.08); }
+  .drop-zone .icono { font-size: 40px; margin-bottom: 12px; }
+  .drop-zone .titulo { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .drop-zone .detalle { font-size: 12.5px; color: var(--muted2); }
+  .drop-zone input[type="file"] { display: none; }
+
+  .archivo-elegido {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 13px;
+  }
+  .archivo-elegido.mostrar { display: flex; }
+  .archivo-elegido .nombre { color: var(--text); font-weight: 600; }
+  .archivo-elegido .quitar { color: var(--red); cursor: pointer; font-size: 12px; }
+
+  .btn-subir {
+    padding: 12px 20px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+  }
+  .btn-subir:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .resultado {
+    display: none;
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+  .resultado.mostrar { display: block; }
+  .resultado.ok { background: rgba(34,163,71,0.12); border: 1px solid var(--accent); color: var(--text); }
+  .resultado.error { background: rgba(239,68,68,0.1); border: 1px solid var(--red); color: var(--red-light); }
+
+  .info-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px;
+    font-size: 13px;
+    color: var(--muted2);
+    line-height: 1.7;
+  }
+  .info-card b { color: var(--text); }
+  .info-card ul { margin: 8px 0 0 18px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="subir-wrap">
+
+  <div class="drop-zone" id="drop-zone">
+    <input type="file" id="input-archivo" accept=".xlsx">
+    <div class="icono">⬆️</div>
+    <div class="titulo">Arrastra aquí el archivo de Datos Duros</div>
+    <div class="detalle">o haz click para elegirlo — debe tener las columnas CODIGO, FAMILIA, SUBFAMILIA, GRUPO y al menos una "VENTA MENSUAL &lt;SUCURSAL&gt;"</div>
+  </div>
+
+  <div class="archivo-elegido" id="archivo-elegido">
+    <span class="nombre" id="nombre-archivo"></span>
+    <span class="quitar" id="quitar-archivo">✕ quitar</span>
+  </div>
+
+  <button class="btn-subir" id="btn-subir" disabled>Subir archivo</button>
+
+  <div class="resultado" id="resultado"></div>
+
+  <div class="info-card">
+    <b>Cómo funciona</b>
+    <ul>
+      <li>Reemplaza el archivo <b>Datos_Duros_Inventario.xlsx</b> completo — sube siempre la versión completa, no solo lo que cambió.</li>
+      <li>El orden de las columnas no importa — el sistema las identifica por su nombre exacto (CODIGO, FAMILIA, SUBFAMILIA, GRUPO, y cualquier columna que empiece con "VENTA MENSUAL").</li>
+      <li>Para agregar una sucursal nueva (ej. Maipú), agrega su columna "VENTA MENSUAL &lt;SUCURSAL&gt;" tal cual — el sistema la detecta sola.</li>
+      <li><b>No actualiza Postgres al instante</b> — Familia/Subfamilia/Grupo/Venta Mensual llegan al dashboard en la próxima vez que se suba el stock en "Subir Inventario" (que ya cruza automáticamente contra este archivo).</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+  const dropZone   = document.getElementById('drop-zone');
+  const inputFile  = document.getElementById('input-archivo');
+  const elegido     = document.getElementById('archivo-elegido');
+  const nombreEl    = document.getElementById('nombre-archivo');
+  const quitarBtn   = document.getElementById('quitar-archivo');
+  const btnSubir    = document.getElementById('btn-subir');
+  const resultadoEl = document.getElementById('resultado');
+
+  let archivoActual = null;
+
+  function elegirArchivo(file) {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      mostrarResultado(false, 'El archivo debe ser .xlsx.');
+      return;
+    }
+    archivoActual = file;
+    nombreEl.textContent = file.name;
+    elegido.classList.add('mostrar');
+    btnSubir.disabled = false;
+    resultadoEl.classList.remove('mostrar');
+  }
+
+  dropZone.addEventListener('click', () => inputFile.click());
+  inputFile.addEventListener('change', (e) => elegirArchivo(e.target.files[0]));
+
+  ['dragover', 'dragenter'].forEach(ev => dropZone.addEventListener(ev, (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  }));
+  ['dragleave', 'drop'].forEach(ev => dropZone.addEventListener(ev, (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+  }));
+  dropZone.addEventListener('drop', (e) => elegirArchivo(e.dataTransfer.files[0]));
+
+  quitarBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    archivoActual = null;
+    inputFile.value = '';
+    elegido.classList.remove('mostrar');
+    btnSubir.disabled = true;
+  });
+
+  function mostrarResultado(ok, msg) {
+    resultadoEl.textContent = msg;
+    resultadoEl.className = 'resultado mostrar ' + (ok ? 'ok' : 'error');
+  }
+
+  btnSubir.addEventListener('click', async () => {
+    if (!archivoActual) return;
+    btnSubir.disabled = true;
+    btnSubir.textContent = 'Subiendo...';
+    resultadoEl.classList.remove('mostrar');
+
+    const formData = new FormData();
+    formData.append('archivo', archivoActual);
+
+    try {
+      const r = await fetch('/api/subir_datos_duros', { method: 'POST', body: formData });
+      const d = await r.json();
+      mostrarResultado(d.ok, d.msg);
+      if (d.ok) {
+        archivoActual = null;
+        inputFile.value = '';
+        elegido.classList.remove('mostrar');
+      }
+    } catch (e) {
+      mostrarResultado(false, 'Error de conexión al subir el archivo.');
+    } finally {
+      btnSubir.disabled = !archivoActual;
+      btnSubir.textContent = 'Subir archivo';
+    }
+  });
+</script>
+{% endblock %}
