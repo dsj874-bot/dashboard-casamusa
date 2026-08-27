@@ -49,10 +49,10 @@ def get_nivel_servicio_pg():
             stock_combinado = dopg._stock_combinado_pg(datos, cod_obl, cod_equiv, suc)
 
             # Sin el ajuste de CD para San Isidro -- solo su propia
-            # venta local, igual que cualquier otra sucursal. Maipu no
-            # tiene columna de venta mensual propia (dli.VENTA_MENSUAL_COL):
-            # demanda queda en 0, no aporta ni resta nada (no hace falta
-            # excluirla a mano).
+            # venta local, igual que cualquier otra sucursal. Si alguna
+            # sucursal no tiene columna de venta mensual propia
+            # (dli.VENTA_MENSUAL_COL), demanda queda en 0 -- no aporta
+            # ni resta nada (no hace falta excluirla a mano).
             tiene_venta = suc in dli.VENTA_MENSUAL_COL
             venta_combinada = dopg._venta_combinada_pg(datos, cod_obl, cod_equiv, suc) if tiene_venta else 0.0
             demanda_diaria = venta_combinada / 30
@@ -84,3 +84,31 @@ def get_nivel_servicio_pg():
         },
         "por_sucursal": por_sucursal,
     }
+
+
+def guardar_snapshot_diario_pg():
+    """Guarda en nivel_servicio_historico el estado actual (general +
+    por sucursal) para la fecha de HOY -- pensado para llamarse una vez
+    al dia desde un cron (ver /api/cron/nivel_servicio_snapshot en
+    app.py). UPSERT por (fecha, sucursal): si el cron corriera dos
+    veces el mismo dia (o el snapshot se dispara a mano de nuevo), no
+    duplica fila -- pisa con el valor mas reciente de ese dia."""
+    d = get_nivel_servicio_pg()
+
+    filas = [("TOTAL", d["general"]["valor_inventario"], d["general"]["nivel_servicio"])]
+    filas += [(r["sucursal"], r["valor_inventario"], r["nivel_servicio"]) for r in d["por_sucursal"]]
+
+    with db.get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """INSERT INTO nivel_servicio_historico (fecha, sucursal, valor_inventario, nivel_servicio)
+                   VALUES (CURRENT_DATE, %s, %s, %s)
+                   ON CONFLICT (fecha, sucursal) DO UPDATE SET
+                       valor_inventario = excluded.valor_inventario,
+                       nivel_servicio   = excluded.nivel_servicio,
+                       capturado_en     = now()""",
+                filas,
+            )
+        conn.commit()
+
+    return {"filas_guardadas": len(filas)}

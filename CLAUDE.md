@@ -478,6 +478,30 @@ Mismo patrón que Comercial: `USAR_POSTGRES_INVENTARIO` (default "1"),
   (Inventario Total $, Nivel de Servicio % general) + gráfico combo
   Chart.js (barras=$ eje izq., línea=% eje der. 0-100) por sucursal.
   Verificado visualmente en navegador (2026-08-27, tras el traslado).
+  **2026-08-27, histórico diario**: pedido explícito del usuario ("no
+  tenemos una estadística o historia... necesito ver este dato
+  histórico") — tabla `nivel_servicio_historico` (migrations/
+  011_nivel_servicio_historico.sql), una fila por (fecha, sucursal) +
+  una fila `sucursal='TOTAL'` para el general, mismo shape que
+  `get_nivel_servicio_pg()`. Se llena con `guardar_snapshot_diario_pg()`
+  (UPSERT por fecha+sucursal, así correr el cron 2 veces el mismo día
+  no duplica) desde `/api/cron/nivel_servicio_snapshot`, invocado por
+  un Vercel Cron (`vercel.json` → `crons`, `"0 3 * * *"` ≈ 11pm hora de
+  Chile — se corre ~1h por el cambio de horario de verano/invierno, no
+  afecta la utilidad del dato). **Esta ruta NO lleva `@login_requerido`**
+  (el cron no tiene sesión) — se protege con `CRON_SECRET`: si esa
+  variable de entorno está seteada, exige
+  `Authorization: Bearer <CRON_SECRET>` (mismo mecanismo que documenta
+  Vercel para proteger crons); si no está seteada (dev local), no exige
+  nada, para poder probar el endpoint a mano. **Falta agregar
+  `CRON_SECRET` como variable de entorno en Vercel** para que quede
+  protegido en producción (avisado al usuario, pendiente que él lo
+  haga — Claude no tiene acceso al dashboard de Vercel). No se puede
+  reconstruir histórico anterior a cuando se activó esto — 
+  `inventario_stock` es una foto que se reemplaza entera en cada carga,
+  no queda rastro de días previos. Sin pantalla/gráfico para verlo
+  todavía (a propósito — "guardar el dato primero, gráfico después");
+  próximo paso cuando el usuario lo pida.
 
 ### Páginas de autoservicio de Inventario (sidebar "Administración", solo `admin: True`)
 - **`/subir_inventario`**: sube el Inventario.xlsx (foto completa,

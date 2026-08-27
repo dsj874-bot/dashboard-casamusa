@@ -5,5 +5,11 @@
       "maxDuration": 300,
       "excludeFiles": "{data/**,static/**,.claude/**,*.bat,*.log}"
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/nivel_servicio_snapshot",
+      "schedule": "0 3 * * *"
+    }
+  ]
 }

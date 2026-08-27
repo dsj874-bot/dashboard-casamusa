@@ -807,6 +807,28 @@ def api_forecast_nivel_servicio():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/cron/nivel_servicio_snapshot")
+def api_cron_nivel_servicio_snapshot():
+    """Guarda el snapshot diario de Nivel de Servicio (nivel_servicio_historico) --
+    llamado por el cron de Vercel (ver vercel.json), no por un usuario
+    logeado -- por eso NO lleva @login_requerido. Se protege con
+    CRON_SECRET en su lugar: Vercel manda automaticamente
+    "Authorization: Bearer <CRON_SECRET>" en cada invocacion de cron
+    cuando esa variable de entorno esta seteada en el proyecto (ver
+    https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs).
+    Si CRON_SECRET no esta seteado (ej. dev local), no se exige --
+    para poder probar el endpoint a mano sin configurar nada."""
+    secreto_esperado = os.environ.get("CRON_SECRET")
+    if secreto_esperado:
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {secreto_esperado}":
+            return jsonify({"ok": False, "msg": "No autorizado."}), 401
+    try:
+        return jsonify({"ok": True, **data_loader_nivel_servicio.guardar_snapshot_diario_pg()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
 @app.route("/api/inventario/resumen")
 @login_requerido
 def api_inventario_resumen():
