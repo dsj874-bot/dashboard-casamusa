@@ -155,10 +155,12 @@ PREFIJOS_RESTRINGIDOS_INV_ADQ = (
     "/gestionar_productos_compra", "/api/gestionar_productos_compra",
     "/gestionar_prioridad", "/api/gestionar_prioridad",
     "/admin/actualizar_inventario",
-    # Plan de Compra vive en Forecast pero sigue siendo solo para
-    # dsepulveda (pedido explicito) -- Forecast en si es de gerencia
-    # (ver PREFIJOS_SOLO_GERENCIA), esto lo restringe un paso mas.
+    # Plan de Compra y Nivel de Servicio viven en Forecast pero siguen
+    # siendo solo para dsepulveda (pedido explicito) -- Forecast en si
+    # es de gerencia (ver PREFIJOS_SOLO_GERENCIA), esto los restringe
+    # un paso mas.
     "/forecast/plan_compra", "/api/forecast/plan_compras",
+    "/forecast/nivel_servicio", "/api/forecast/nivel_servicio",
 )
 
 
@@ -788,17 +790,17 @@ def api_forecast_plan_compras_2l_exportar():
 #  demanda, general y por sucursal, sobre Productos Prioritarios (ver
 #  data_loader_nivel_servicio.py).
 # ══════════════════════════════════════════════════════
-@app.route("/inventario/nivel_servicio")
+@app.route("/forecast/nivel_servicio")
 @login_requerido
-def inventario_nivel_servicio():
-    return render_template("inventario_nivel_servicio.html",
-                           active="inventario_nivel_servicio",
+def forecast_nivel_servicio():
+    return render_template("forecast_nivel_servicio.html",
+                           active="forecast_nivel_servicio",
                            session_nombre=session.get("nombre"))
 
 
-@app.route("/api/inventario/nivel_servicio")
+@app.route("/api/forecast/nivel_servicio")
 @login_requerido
-def api_inventario_nivel_servicio():
+def api_forecast_nivel_servicio():
     try:
         return jsonify(data_loader_nivel_servicio.get_nivel_servicio_pg())
     except Exception as e:
@@ -899,7 +901,7 @@ def bodega():
 @app.route("/forecast")
 @login_requerido
 def forecast():
-    return redirect(url_for("forecast_plan_compra"))
+    return redirect(url_for("forecast_nivel_servicio"))
 
 
 @app.route("/tareas")

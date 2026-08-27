@@ -4,7 +4,7 @@
 {% block page_title %}Nivel de Servicio{% endblock %}
 {% block page_subtitle %}¿Alcanza el stock actual para cubrir la demanda? — Productos Prioritarios{% endblock %}
 
-{% block sidebar_nav %}{% include "_inventario_sidebar.html" %}{% endblock %}
+{% block sidebar_nav %}{% include "_forecast_sidebar.html" %}{% endblock %}
 
 {% block boton_actualizar %}{% endblock %}
 
@@ -71,7 +71,7 @@ function claseNivel(pct) {
   return "nivel-bajo";
 }
 
-fetch("/api/inventario/nivel_servicio")
+fetch("/api/forecast/nivel_servicio")
   .then(r => r.json())
   .then(d => {
     document.getElementById("kpi-inventario").textContent = fmtCLP(d.general.valor_inventario);

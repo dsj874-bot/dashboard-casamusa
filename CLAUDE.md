@@ -151,12 +151,14 @@ Dashboard/
     │   # forecast_plan_compra.html / forecast_plan_compra_2l.html mas
     │   # abajo. Sigue restringido solo a dsepulveda (PREFIJOS_
     │   # RESTRINGIDOS_INV_ADQ), aunque Forecast en si es de gerencia.
-    ├── inventario_nivel_servicio.html  # /inventario/nivel_servicio, Chart.js
-    │                                     # combo bar($)+linea(%) por sucursal
     ├── subir_inventario.html    # /subir_inventario (autoservicio, admin)
     ├── gestionar_productos_compra.html  # /gestionar_productos_compra (admin)
     ├── gestionar_prioridad.html # /gestionar_prioridad (admin)
-    ├── _forecast_sidebar.html   # sidebar de Forecast (solo 2 links)
+    ├── _forecast_sidebar.html   # sidebar de Forecast (3 links, en ese orden)
+    ├── forecast_nivel_servicio.html  # /forecast/nivel_servicio -- ex
+    │   # inventario_nivel_servicio.html, movido 2026-08-27, PRIMERA
+    │   # pantalla de Forecast (/forecast redirige acá). Chart.js combo
+    │   # bar($)+linea(%) por sucursal.
     └── forecast_plan_compra.html, forecast_plan_compra_2l.html
         # /forecast/plan_compra(_2da_linea) -- ex inventario_compras(.html/_2l.html),
         # movidos 2026-08-27. Mismo data_loader_obligatorios_pg /
@@ -440,10 +442,13 @@ Mismo patrón que Comercial: `USAR_POSTGRES_INVENTARIO` (default "1"),
     aparecen en Alertas/Distribución, pero excluidos SOLO de las
     sugerencias de Plan de Compra ("son productos importados que no
     tengo ingerencia de compra" — decisión explícita del usuario).
-- **Nivel de Servicio** (`/inventario/nivel_servicio`, sección propia en
-  el sidebar, sin filtros): fill rate = `Σ min(stock_combinado,
-  demanda_diaria) / Σ demanda_diaria`, sobre Productos Prioritarios.
-  Reusa los helpers internos de `data_loader_obligatorios_pg.py`
+- **Nivel de Servicio** (`/forecast/nivel_servicio` — movido de
+  `/inventario/nivel_servicio` el 2026-08-27, mismo pedido y mismo
+  candado de acceso que Plan de Compra, ver sección "Forecast" más
+  abajo; es la PRIMERA pantalla de Forecast, `/forecast` redirige acá):
+  fill rate = `Σ min(stock_combinado, demanda_diaria) / Σ
+  demanda_diaria`, sobre Productos Prioritarios. Reusa los helpers
+  internos de `data_loader_obligatorios_pg.py`
   (`_stock_combinado_pg`/`_venta_combinada_pg`/`_cargar_stock_pg`) con
   `cod_equiv=None` (no hay par equivalente en este contexto). San Isidro
   se trata como sucursal independiente (solo su propia venta, sin ajuste
@@ -452,9 +457,7 @@ Mismo patrón que Comercial: `USAR_POSTGRES_INVENTARIO` (default "1"),
   especial) — así es como debe funcionar la fórmula. Página de 2 KPIs
   (Inventario Total $, Nivel de Servicio % general) + gráfico combo
   Chart.js (barras=$ eje izq., línea=% eje der. 0-100) por sucursal.
-  **Nunca verificado visualmente en navegador** (preview_start falló:
-  puerto 5000 reservado por el OS) — solo verificado vía Flask
-  `test_client()` + llamada directa a la función con números plausibles.
+  Verificado visualmente en navegador (2026-08-27, tras el traslado).
 
 ### Páginas de autoservicio de Inventario (sidebar "Administración", solo `admin: True`)
 - **`/subir_inventario`**: sube el Inventario.xlsx (foto completa,
@@ -862,18 +865,21 @@ confundir uno con otro:
   `@login_requerido`). Ojo con este patrón al agregar cualquier área
   nueva: el prefijo de página Y el de `/api/` van SEPARADOS en la
   tupla, no basta con listar uno.
-- **Plan de Compra dentro de Forecast — dos restricciones apiladas**:
-  `/forecast/plan_compra` y `/api/forecast/plan_compras` (prefijo que
-  también cubre las variantes `_2da_linea`, por diseño) están en AMBAS
-  tuplas: `PREFIJOS_SOLO_GERENCIA` (como todo `/forecast`) Y
-  `PREFIJOS_RESTRINGIDOS_INV_ADQ` (agregado ahí explícitamente). El
-  resultado es la intersección: solo `dsepulveda` — los otros 4 de
-  gerencia ven el tile "Forecast" ocultarse para ellos (filtrado en
-  `areas_visibles` de `/inicio`, mismo patrón que Inventario/
-  Adquisiciones) y, si entraran por URL directa, quedan bloqueados por
-  el segundo hook. Pedido explícito del usuario: "solo utilizo yo ese
-  plan de compras" — no perder este candado si se reorganiza Forecast
-  más adelante con más pantallas que sí sean para toda gerencia.
+- **Forecast — dos restricciones apiladas**: `/forecast/plan_compra`
+  (prefijo que también cubre `_2da_linea`, por diseño) Y
+  `/forecast/nivel_servicio` + sus `/api/forecast/*` equivalentes
+  están en AMBAS tuplas: `PREFIJOS_SOLO_GERENCIA` (como todo
+  `/forecast`) Y `PREFIJOS_RESTRINGIDOS_INV_ADQ` (agregado ahí
+  explícitamente, ruta por ruta). El resultado es la intersección:
+  solo `dsepulveda` — los otros 4 de gerencia ven el tile "Forecast"
+  ocultarse para ellos (filtrado en `areas_visibles` de `/inicio`,
+  mismo patrón que Inventario/Adquisiciones) y, si entraran por URL
+  directa, quedan bloqueados por el segundo hook. Pedido explícito del
+  usuario: "solo utilizo yo ese plan de compras" — no perder este
+  candado si se reorganiza Forecast más adelante con más pantallas que
+  sí sean para toda gerencia (ahí habría que sacarlas de
+  `PREFIJOS_RESTRINGIDOS_INV_ADQ` una por una, no todo el prefijo
+  `/forecast`).
 
 ### NE x Facturar: acceso por Jefe de Sucursal (extendido más allá de admin)
 `/cargar_ne` y `/api/cargar_ne` usan el decorador
