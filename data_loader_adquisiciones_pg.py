@@ -223,6 +223,32 @@ def get_por_proveedor_combinado_pg(tipo_compra=None):
             )
             recepcion_por_prov = {r["nombre_proveedor"]: r for r in cur.fetchall()}
 
+            # Compra/Recepcion por proveedor x mes (año actual) -- para
+            # las columnas Ene..Dic de estacionalidad en la tabla.
+            cur.execute(
+                f"""SELECT nombre_proveedor, extract(month from fecha_creacion)::int AS mes,
+                      sum(precio_total) AS total
+                    FROM compras
+                    WHERE ano = 2026 AND nombre_proveedor IS NOT NULL {frag_c}
+                    GROUP BY nombre_proveedor, mes""",
+                params,
+            )
+            c_por_prov_mes = {}
+            for r in cur.fetchall():
+                c_por_prov_mes.setdefault(r["nombre_proveedor"], {})[r["mes"]] = float(r["total"])
+
+            cur.execute(
+                f"""SELECT nombre_proveedor, extract(month from fecha_recepcion)::int AS mes,
+                      sum(total_clp) AS total
+                    FROM recepciones
+                    WHERE ano = 2026 AND nombre_proveedor IS NOT NULL {frag_r}
+                    GROUP BY nombre_proveedor, mes""",
+                params,
+            )
+            r_por_prov_mes = {}
+            for r in cur.fetchall():
+                r_por_prov_mes.setdefault(r["nombre_proveedor"], {})[r["mes"]] = float(r["total"])
+
     total_compra_26 = sum(float(r["c_26"]) for r in compra_por_prov.values())
     nombres = set(compra_por_prov) | set(recepcion_por_prov)
 
@@ -234,25 +260,29 @@ def get_por_proveedor_combinado_pg(tipo_compra=None):
         c25 = float(rc["c_25"]) if rc else 0.0
         r26 = float(rr["r_26"]) if rr else 0.0
         r25 = float(rr["r_25"]) if rr else 0.0
+        meses_c = c_por_prov_mes.get(nombre, {})
+        meses_r = r_por_prov_mes.get(nombre, {})
+        fila_comprado = {
+            "categoria":      "Comprado",
+            "v_ano_actual":   round(c26, 0),
+            "v_ano_anterior": round(c25, 0),
+            "var_ano":        var_pct(c26, c25),
+        }
+        fila_recibido = {
+            "categoria":      "Recibido",
+            "v_ano_actual":   round(r26, 0),
+            "v_ano_anterior": round(r25, 0),
+            "var_ano":        var_pct(r26, r25),
+        }
+        for mes in range(1, 13):
+            fila_comprado[f"mes_{mes}"] = round(meses_c.get(mes, 0.0), 0)
+            fila_recibido[f"mes_{mes}"] = round(meses_r.get(mes, 0.0), 0)
         proveedores.append({
             "nombre":        nombre,
             "n_oc":          int(rc["n_oc"]) if rc else 0,
             "n_recepciones": int(rr["n_rec"]) if rr else 0,
             "participacion": round(c26 / total_compra_26 * 100, 2) if total_compra_26 > 0 else 0.0,
-            "filas": [
-                {
-                    "categoria":      "Comprado",
-                    "v_ano_actual":   round(c26, 0),
-                    "v_ano_anterior": round(c25, 0),
-                    "var_ano":        var_pct(c26, c25),
-                },
-                {
-                    "categoria":      "Recibido",
-                    "v_ano_actual":   round(r26, 0),
-                    "v_ano_anterior": round(r25, 0),
-                    "var_ano":        var_pct(r26, r25),
-                },
-            ],
+            "filas": [fila_comprado, fila_recibido],
         })
 
     proveedores.sort(key=lambda p: -p["filas"][0]["v_ano_actual"])

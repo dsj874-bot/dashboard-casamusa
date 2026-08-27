@@ -76,10 +76,22 @@
           <th class="text-right" data-key="v_ano_anterior" id="th-ano-ant">Año Ant.</th>
           <th class="text-right" data-key="var_ano">Var. Año</th>
           <th class="text-right" data-key="participacion">Participación</th>
+          <th class="text-right">Ene</th>
+          <th class="text-right">Feb</th>
+          <th class="text-right">Mar</th>
+          <th class="text-right">Abr</th>
+          <th class="text-right">May</th>
+          <th class="text-right">Jun</th>
+          <th class="text-right">Jul</th>
+          <th class="text-right">Ago</th>
+          <th class="text-right">Sep</th>
+          <th class="text-right">Oct</th>
+          <th class="text-right">Nov</th>
+          <th class="text-right">Dic</th>
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Cargando...</td></tr>
+        <tr><td colspan="19" style="text-align:center;color:var(--muted);padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -206,7 +218,7 @@ fetch(`/api/adquisiciones/por_proveedor?tipo=${encodeURIComponent(TIPO_COMPRA)}`
 function renderTabla() {
   if (_items.length === 0) {
     document.getElementById("tabla-body").innerHTML =
-      `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Sin datos para este tipo de compra.</td></tr>`;
+      `<tr><td colspan="19" style="text-align:center;color:var(--muted);padding:32px;">Sin datos para este tipo de compra.</td></tr>`;
     return;
   }
 
@@ -219,6 +231,9 @@ function renderTabla() {
     return 0;
   });
 
+  const fmtMes = v => v > 0 ? fmtCLP(v) : "—";
+  const celdasMeses = f => Array.from({length: 12}, (_, i) => `<td class="text-right text-muted">${fmtMes(f[`mes_${i+1}`])}</td>`).join("");
+
   const rows = ordenados.map(p => {
     const c = p.filas[0], r = p.filas[1];
     return `
@@ -230,6 +245,7 @@ function renderTabla() {
         <td class="text-right text-muted">${fmtCLP(c.v_ano_anterior)}</td>
         <td class="text-right ${clsPct(c.var_ano)}">${fmtPct(c.var_ano)}</td>
         <td class="text-right text-amber" rowspan="2">${p.participacion.toFixed(1)}%</td>
+        ${celdasMeses(c)}
       </tr>
       <tr class="fila-recibido">
         <td class="categoria">Recibido</td>
@@ -237,6 +253,7 @@ function renderTabla() {
         <td class="text-right">${fmtCLP(r.v_ano_actual)}</td>
         <td class="text-right text-muted">${fmtCLP(r.v_ano_anterior)}</td>
         <td class="text-right ${clsPct(r.var_ano)}">${fmtPct(r.var_ano)}</td>
+        ${celdasMeses(r)}
       </tr>
     `;
   }).join("");
