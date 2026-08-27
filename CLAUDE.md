@@ -144,16 +144,23 @@ Dashboard/
     ├── inventario_resumen.html, inventario_bodegas.html,
     │   inventario_familia.html, inventario_marca.html,
     │   inventario_clasificacion.html, inventario_procedencia.html  # 6 core
-    ├── inventario_alertas.html, inventario_compras.html,
-    │   inventario_distribucion.html  # "Plan de Compra Prioritarios"
-    ├── inventario_alertas_segunda_linea.html,
-    │   inventario_compras_segunda_linea.html,
-    │   inventario_distribucion_segunda_linea.html  # "2a Linea"
+    ├── inventario_alertas.html, inventario_distribucion.html  # "Prioritarios"
+    ├── inventario_alertas_2l.html, inventario_distribucion_2l.html  # "2a Linea"
+    │   # Plan de Compra (ambos niveles) se movio a Forecast 2026-08-27
+    │   # (pedido explicito del usuario) -- ver _forecast_sidebar.html /
+    │   # forecast_plan_compra.html / forecast_plan_compra_2l.html mas
+    │   # abajo. Sigue restringido solo a dsepulveda (PREFIJOS_
+    │   # RESTRINGIDOS_INV_ADQ), aunque Forecast en si es de gerencia.
     ├── inventario_nivel_servicio.html  # /inventario/nivel_servicio, Chart.js
     │                                     # combo bar($)+linea(%) por sucursal
     ├── subir_inventario.html    # /subir_inventario (autoservicio, admin)
     ├── gestionar_productos_compra.html  # /gestionar_productos_compra (admin)
-    └── gestionar_prioridad.html # /gestionar_prioridad (admin)
+    ├── gestionar_prioridad.html # /gestionar_prioridad (admin)
+    ├── _forecast_sidebar.html   # sidebar de Forecast (solo 2 links)
+    └── forecast_plan_compra.html, forecast_plan_compra_2l.html
+        # /forecast/plan_compra(_2da_linea) -- ex inventario_compras(.html/_2l.html),
+        # movidos 2026-08-27. Mismo data_loader_obligatorios_pg /
+        # data_loader_segunda_linea de siempre, solo cambio la URL/sidebar.
 ```
 
 ## Columnas SAP B1 (Ventas_20XX.xlsx)
@@ -406,12 +413,23 @@ Mismo patrón que Comercial: `USAR_POSTGRES_INVENTARIO` (default "1"),
   producto+bodega, reemplazada entera en cada carga — foto, no
   histórico) + `inventario_control` (equivalente a `control_datos`,
   guarda la fecha de la última foto cargada).
-- **Productos Prioritarios ("Plan de Compra Prioritarios")**: Alertas de
-  Quiebre / Plan de Compra / Distribución desde CD, sobre la tabla
+- **Productos Prioritarios ("Prioritarios")**: Alertas de Quiebre /
+  Plan de Compra / Distribución desde CD, sobre la tabla
   `productos_obligatorios` (curada originalmente en Excel, ver más
-  abajo) — `data_loader_obligatorios_pg.py`.
+  abajo) — `data_loader_obligatorios_pg.py`. **2026-08-27: Plan de
+  Compra (ambos niveles) se movió al área Forecast** (pedido explicito
+  del usuario, "eso quizás debe ir en Forecast") — ver sección
+  "Forecast" más abajo. Alertas y Distribución se quedan en Inventario
+  (son diagnóstico/operación de HOY, no proyección). El cálculo de
+  Plan de Compra en sí NO cambió — mismas constantes fijas
+  (`LEAD_TIME_DIAS_NACIONAL`, `DIAS_HABILES_MES`) y misma fuente de
+  venta (`inventario_stock.venta_mensual`); el traslado fue solo de
+  ubicación/URL. Conectarlo con datos reales de Adquisiciones (lead
+  time/OTIF) y Comercial (venta en vivo) queda como mejora futura
+  aparte, NO hecha todavía.
 - **"2ª Línea"** (`data_loader_segunda_linea.py`, **100% Postgres-only,
-  sin equivalente Excel**): mismo trio de pantallas pero para productos
+  sin equivalente Excel**): mismo dueto Alertas/Distribución (Plan de
+  Compra también se movió a Forecast, ver arriba) pero para productos
   AAA/M05 que NO están en `productos_obligatorios`. Reglas de negocio
   explícitas del usuario:
   - Código que empieza en **6** (`PREFIJOS_FUERA_SEGUNDA_LINEA` en
@@ -838,6 +856,24 @@ confundir uno con otro:
   FMUSA, DSEPULVEDA, MALVARADO y JSANTANA. Todos los demas son jefes de
   sucursales"). `admin` sigue siendo un flag totalmente distinto (visibilidad
   del menú "Administración"), no tocar ese significado.
+  **2026-08-27**: se agregó `/api/forecast` a `PREFIJOS_SOLO_GERENCIA`
+  (faltaba — solo tenía `/forecast`, así que cualquier API nueva bajo
+  `/api/forecast/*` habría quedado sin restringir a gerencia, con solo
+  `@login_requerido`). Ojo con este patrón al agregar cualquier área
+  nueva: el prefijo de página Y el de `/api/` van SEPARADOS en la
+  tupla, no basta con listar uno.
+- **Plan de Compra dentro de Forecast — dos restricciones apiladas**:
+  `/forecast/plan_compra` y `/api/forecast/plan_compras` (prefijo que
+  también cubre las variantes `_2da_linea`, por diseño) están en AMBAS
+  tuplas: `PREFIJOS_SOLO_GERENCIA` (como todo `/forecast`) Y
+  `PREFIJOS_RESTRINGIDOS_INV_ADQ` (agregado ahí explícitamente). El
+  resultado es la intersección: solo `dsepulveda` — los otros 4 de
+  gerencia ven el tile "Forecast" ocultarse para ellos (filtrado en
+  `areas_visibles` de `/inicio`, mismo patrón que Inventario/
+  Adquisiciones) y, si entraran por URL directa, quedan bloqueados por
+  el segundo hook. Pedido explícito del usuario: "solo utilizo yo ese
+  plan de compras" — no perder este candado si se reorganiza Forecast
+  más adelante con más pantallas que sí sean para toda gerencia.
 
 ### NE x Facturar: acceso por Jefe de Sucursal (extendido más allá de admin)
 `/cargar_ne` y `/api/cargar_ne` usan el decorador

@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}2ª Línea — Plan de Compra{% endblock %}
-{% block page_title %}2ª Línea — Plan de Compra{% endblock %}
-{% block page_subtitle %}Cuánto comprar para llegar a 1 mes de cobertura, como máximo{% endblock %}
+{% block title %}Prioritarios — Plan de Compra{% endblock %}
+{% block page_title %}Plan de Compra Prioritarios{% endblock %}
+{% block page_subtitle %}Cuánto comprar (Nacional) para llegar a 2 meses de cobertura{% endblock %}
 
-{% block sidebar_nav %}{% include "_inventario_sidebar.html" %}{% endblock %}
+{% block sidebar_nav %}{% include "_forecast_sidebar.html" %}{% endblock %}
 
 {% block boton_actualizar %}
 {% if es_admin %}
@@ -83,7 +83,7 @@
 
 <div class="kpi-grid" id="kpi-grid" style="margin-bottom:20px;">
   <div class="kpi-card">
-    <div class="kpi-label">Productos Segunda Línea</div>
+    <div class="kpi-label">Productos Obligatorios</div>
     <div class="kpi-value" id="kpi-total">—</div>
   </div>
   <div class="kpi-card">
@@ -99,9 +99,13 @@
   </div>
   <div class="filtro-item">
     <label>Meses de Inventario Objetivo</label>
-    <select id="f-meses" title="Tope de 1 mes para productos de Segunda Línea">
-      <option value="0.5">0,5 mes</option>
-      <option value="1" selected>1 mes (default / máximo)</option>
+    <select id="f-meses" title="Reemplaza el default de 2 meses para calcular cuánto comprar. No aplica a productos con meta propia definida en la planilla (ej. MatixGo Gris)">
+      <option value="1">1 mes</option>
+      <option value="1.5">1,5 meses</option>
+      <option value="2" selected>2 meses (default)</option>
+      <option value="2.5">2,5 meses</option>
+      <option value="3">3 meses</option>
+      <option value="4">4 meses</option>
     </select>
   </div>
   <div class="filtro-item" id="comparativo-meses" style="display:flex;gap:10px;">
@@ -110,7 +114,7 @@
 
 <div class="table-card" style="margin-bottom:20px;">
   <div class="table-header" style="display:flex;align-items:center;justify-content:space-between;">
-    <div class="table-header-title">Cantidad a Comprar</div>
+    <div class="table-header-title">Cantidad a Comprar (Nacional)</div>
     <button id="btn-exportar-excel" class="btn-filter" style="padding:8px 14px;font-size:12px;">
       📥 Exportar Excel
     </button>
@@ -120,7 +124,7 @@
       <thead>
         <tr>
           <th>Producto</th>
-          <th class="text-right">Código</th>
+          <th class="text-right">Código a Comprar (Nacional)</th>
           <th class="text-right">Embalaje</th>
           <th class="text-right">Cantidad a Comprar</th>
         </tr>
@@ -162,7 +166,7 @@ const fmtUnid = v => Math.round(v).toLocaleString("es-CL");
 document.getElementById("btn-exportar-excel").addEventListener("click", () => {
   const familia = document.getElementById("f-familia").value;
   const meses = document.getElementById("f-meses").value;
-  window.location.href = `/api/inventario/segunda_linea/compras/exportar?familia=${encodeURIComponent(familia)}&meses=${encodeURIComponent(meses)}`;
+  window.location.href = `/api/forecast/plan_compras/exportar?familia=${encodeURIComponent(familia)}&meses=${encodeURIComponent(meses)}`;
 });
 
 function cargarDatos() {
@@ -172,10 +176,10 @@ function cargarDatos() {
   document.getElementById("tabla-body").innerHTML =
     '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px;">Cargando...</td></tr>';
 
-  fetch(`/api/inventario/segunda_linea/compras?familia=${encodeURIComponent(familia)}&meses=${encodeURIComponent(meses)}`)
+  fetch(`/api/forecast/plan_compras?familia=${encodeURIComponent(familia)}&meses=${encodeURIComponent(meses)}`)
     .then(r => r.json())
     .then(renderTodo)
-    .catch(err => console.error("Error plan de compras segunda linea:", err));
+    .catch(err => console.error("Error plan de compras:", err));
 
   cargarComparativo();
 }
@@ -184,7 +188,7 @@ const fmtValor = v => "$" + Math.round(v).toLocaleString("es-CL");
 
 function cargarComparativo() {
   const familia = document.getElementById("f-familia").value;
-  fetch(`/api/inventario/segunda_linea/compras/resumen_valor?familia=${encodeURIComponent(familia)}`)
+  fetch(`/api/forecast/plan_compras/resumen_valor?familia=${encodeURIComponent(familia)}`)
     .then(r => r.json())
     .then(renderComparativo)
     .catch(err => console.error("Error resumen valor compra:", err));
@@ -217,16 +221,19 @@ function renderComparativo(d) {
 }
 
 function renderTodo(d) {
-  document.getElementById("kpi-total").textContent      = fmtUnid(d.resumen.total_candidatos);
+  document.getElementById("kpi-total").textContent      = fmtUnid(d.resumen.total_obligatorios);
   document.getElementById("kpi-necesidad").textContent   = fmtUnid(d.resumen.con_necesidad_compra);
 
   if (d.productos.length === 0) {
     document.getElementById("tabla-body").innerHTML =
-      `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:32px;">No hay productos de segunda línea para esta familia.</td></tr>`;
+      `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:32px;">No hay productos obligatorios definidos para esta familia.</td></tr>`;
     return;
   }
 
   let html = "";
+  // Agrupar productos por subfamilia -- y, si el producto trae
+  // "grupo" (ej. diametro 16/20/25mm en Conduit PVC), un segundo
+  // nivel de agrupacion adentro de la subfamilia.
   const grupos = [];
   const indice = {};
   d.productos.forEach(p => {
@@ -248,6 +255,10 @@ function renderTodo(d) {
     }
   });
 
+  // Orden de los subgrupos: numericos (1P, 2P, 3P... o medidas como
+  // 16mm/20mm) de menor a mayor, y cualquier grupo no numerico (ej.
+  // "Diferenciales", "Accesorios") siempre al final -- no depende del
+  // orden en que se fueron agregando los productos a la planilla.
   function claveOrdenGrupo(nombreGrupo) {
     const m = /^(\d+)/.exec(nombreGrupo);
     return m ? parseInt(m[1], 10) : Infinity;
@@ -259,6 +270,16 @@ function renderTodo(d) {
   });
 
   function filaProducto(p, attrs) {
+    if (p.sin_opcion_nacional) {
+      return `
+        <tr class="fila-producto-compra" ${attrs}>
+          <td>${p.descripcion}</td>
+          <td class="text-right">—</td>
+          <td class="text-right">—</td>
+          <td class="text-right sin-opcion" title="Este producto no tiene version Nacional -- solo existe Importado (60 dias)">Sin opción Nacional</td>
+        </tr>
+      `;
+    }
     if (p.excluido_compra) {
       return `
         <tr class="fila-producto-compra" ${attrs}>
@@ -353,7 +374,7 @@ function renderTodo(d) {
   });
 }
 
-fetch("/api/inventario/segunda_linea/familias")
+fetch("/api/inventario/alertas_familias")
   .then(r => r.json())
   .then(familias => {
     const sel = document.getElementById("f-familia");

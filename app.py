@@ -155,6 +155,10 @@ PREFIJOS_RESTRINGIDOS_INV_ADQ = (
     "/gestionar_productos_compra", "/api/gestionar_productos_compra",
     "/gestionar_prioridad", "/api/gestionar_prioridad",
     "/admin/actualizar_inventario",
+    # Plan de Compra vive en Forecast pero sigue siendo solo para
+    # dsepulveda (pedido explicito) -- Forecast en si es de gerencia
+    # (ver PREFIJOS_SOLO_GERENCIA), esto lo restringe un paso mas.
+    "/forecast/plan_compra", "/api/forecast/plan_compras",
 )
 
 
@@ -204,7 +208,7 @@ USUARIOS_GERENCIA = {
     "malvarado@casamusa.cl", "jsantana@casamusa.cl",
 }
 
-PREFIJOS_SOLO_GERENCIA = ("/finanzas", "/logistica", "/bodega", "/forecast", "/tareas")
+PREFIJOS_SOLO_GERENCIA = ("/finanzas", "/logistica", "/bodega", "/forecast", "/api/forecast", "/tareas")
 
 
 @app.before_request
@@ -313,7 +317,7 @@ AREAS = [
     {"slug": "inventario",    "nombre": "Inventario",    "icono": "🗄️", "url": "/inventario",    "activo": True},
     {"slug": "logistica",     "nombre": "Logística",     "icono": "🚚", "url": "/logistica",     "activo": False},
     {"slug": "bodega",        "nombre": "Bodega",        "icono": "🏭", "url": "/bodega",        "activo": False},
-    {"slug": "forecast",      "nombre": "Forecast",      "icono": "🔮", "url": "/forecast",      "activo": False},
+    {"slug": "forecast",      "nombre": "Forecast",      "icono": "🔮", "url": "/forecast",      "activo": True},
     {"slug": "tareas",        "nombre": "Tareas Pendientes de Gerencia", "icono": "📋", "url": "/tareas", "activo": False},
 ]
 
@@ -329,7 +333,7 @@ def inicio():
     else:
         areas_visibles = [
             a for a in AREAS
-            if a["slug"] not in ("inventario", "adquisiciones") or session.get("usuario") in USUARIOS_INVENTARIO_ADQUISICIONES
+            if a["slug"] not in ("inventario", "adquisiciones", "forecast") or session.get("usuario") in USUARIOS_INVENTARIO_ADQUISICIONES
         ]
     return render_template("inicio.html", areas=areas_visibles, session_nombre=session.get("nombre"))
 
@@ -554,14 +558,6 @@ def api_inventario_alertas_quiebre_exportar():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/inventario/compras")
-@login_requerido
-def inventario_compras():
-    return render_template("inventario_compras.html",
-                           active="inventario_compras",
-                           session_nombre=session.get("nombre"))
-
-
 @app.route("/inventario/distribucion")
 @login_requerido
 def inventario_distribucion():
@@ -602,9 +598,17 @@ def api_inventario_distribucion_exportar():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/inventario/plan_compras")
+@app.route("/forecast/plan_compra")
 @login_requerido
-def api_inventario_plan_compras():
+def forecast_plan_compra():
+    return render_template("forecast_plan_compra.html",
+                           active="forecast_plan_compra",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/forecast/plan_compras")
+@login_requerido
+def api_forecast_plan_compras():
     try:
         familia = request.args.get("familia", "") or None
         meses = request.args.get("meses", type=float)
@@ -615,9 +619,9 @@ def api_inventario_plan_compras():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/inventario/plan_compras/resumen_valor")
+@app.route("/api/forecast/plan_compras/resumen_valor")
 @login_requerido
-def api_inventario_plan_compras_resumen_valor():
+def api_forecast_plan_compras_resumen_valor():
     try:
         familia = request.args.get("familia", "") or None
         if USAR_POSTGRES_INVENTARIO:
@@ -627,9 +631,9 @@ def api_inventario_plan_compras_resumen_valor():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/inventario/plan_compras/exportar")
+@app.route("/api/forecast/plan_compras/exportar")
 @login_requerido
-def api_inventario_plan_compras_exportar():
+def api_forecast_plan_compras_exportar():
     try:
         familia = request.args.get("familia", "") or None
         meses = request.args.get("meses", type=float)
@@ -666,14 +670,6 @@ def inventario_alertas_segunda_linea():
 def inventario_distribucion_segunda_linea():
     return render_template("inventario_distribucion_2l.html",
                            active="inventario_distribucion_2l",
-                           session_nombre=session.get("nombre"))
-
-
-@app.route("/inventario/compras_segunda_linea")
-@login_requerido
-def inventario_compras_segunda_linea():
-    return render_template("inventario_compras_2l.html",
-                           active="inventario_compras_2l",
                            session_nombre=session.get("nombre"))
 
 
@@ -740,9 +736,17 @@ def api_segunda_linea_distribucion_exportar():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/inventario/segunda_linea/compras")
+@app.route("/forecast/plan_compra_2da_linea")
 @login_requerido
-def api_segunda_linea_compras():
+def forecast_plan_compra_2l():
+    return render_template("forecast_plan_compra_2l.html",
+                           active="forecast_plan_compra_2l",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/forecast/plan_compras_2da_linea")
+@login_requerido
+def api_forecast_plan_compras_2l():
     try:
         familia = request.args.get("familia", "") or None
         meses = request.args.get("meses", type=float)
@@ -751,9 +755,9 @@ def api_segunda_linea_compras():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/inventario/segunda_linea/compras/resumen_valor")
+@app.route("/api/forecast/plan_compras_2da_linea/resumen_valor")
 @login_requerido
-def api_segunda_linea_compras_resumen_valor():
+def api_forecast_plan_compras_2l_resumen_valor():
     try:
         familia = request.args.get("familia", "") or None
         return jsonify(data_loader_segunda_linea.get_resumen_valor_compra_segunda_linea(familia))
@@ -761,9 +765,9 @@ def api_segunda_linea_compras_resumen_valor():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/inventario/segunda_linea/compras/exportar")
+@app.route("/api/forecast/plan_compras_2da_linea/exportar")
 @login_requerido
-def api_segunda_linea_compras_exportar():
+def api_forecast_plan_compras_2l_exportar():
     try:
         familia = request.args.get("familia", "") or None
         meses = request.args.get("meses", type=float)
@@ -895,7 +899,7 @@ def bodega():
 @app.route("/forecast")
 @login_requerido
 def forecast():
-    return _area_en_construccion("forecast")
+    return redirect(url_for("forecast_plan_compra"))
 
 
 @app.route("/tareas")
