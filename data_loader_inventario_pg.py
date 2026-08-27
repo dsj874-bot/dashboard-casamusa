@@ -9,8 +9,11 @@ Reusa las constantes puras (BODEGAS, VENTA_MENSUAL_COL, IDS_IMPORTADO,
 ORDEN_CLASIFICACION) directamente desde data_loader_inventario -- son
 solo Python, no dependen de leer ningun Excel.
 """
+import pandas as pd
+
 import db
 import data_loader_inventario as dli
+import data_loader_pg as dlpg
 
 
 def _stock_por_bodega_pg(cur):
@@ -459,3 +462,128 @@ def sincronizar_inventario_pg(df):
     import scripts.backfill_inventario as bi
     bi.cargar_productos(df.copy())
     bi.cargar_stock(df, archivo_origen="subir_inventario_web")
+
+
+def fusionar_datos_duros_pg(df):
+    """Equivalente Postgres de data_loader_inventario.fusionar_datos_duros
+    -- cruza FAMILIA/SUBFAMILIA/GRUPO/"VENTA MENSUAL *" (de las tablas
+    datos_duros/datos_duros_venta_mensual, ver migrations/010_datos_duros.sql)
+    sobre un df ya leido del export SAP, por CODIGO. Misma semantica que
+    la version Excel: si no hay nada cargado todavia, simplemente no hay
+    apertura por Familia (no es un error)."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute("select codigo, familia, subfamilia, grupo from datos_duros")
+            dd = cur.fetchall()
+            cur.execute("select codigo, sucursal, venta_mensual from datos_duros_venta_mensual")
+            vm = cur.fetchall()
+
+    if not dd:
+        df["FAMILIA"] = None
+        df["SUBFAMILIA"] = None
+        df["GRUPO"] = None
+        return df
+
+    dd_df = pd.DataFrame(dd).rename(
+        columns={"codigo": "CODIGO", "familia": "FAMILIA", "subfamilia": "SUBFAMILIA", "grupo": "GRUPO"}
+    )
+    df = df.merge(dd_df, on="CODIGO", how="left")
+
+    if vm:
+        vm_df = pd.DataFrame(vm)
+        vm_wide = vm_df.pivot(index="codigo", columns="sucursal", values="venta_mensual")
+        vm_wide.columns = [f"VENTA MENSUAL {s}" for s in vm_wide.columns]
+        vm_wide = vm_wide.reset_index().rename(columns={"codigo": "CODIGO"})
+        df = df.merge(vm_wide, on="CODIGO", how="left")
+
+    return df
+
+
+def sincronizar_datos_duros_pg(df):
+    """Reemplaza COMPLETO el contenido de datos_duros/datos_duros_venta_mensual
+    desde un dataframe con forma CODIGO/FAMILIA/SUBFAMILIA/GRUPO + columnas
+    "VENTA MENSUAL *" (mismo shape que se lee del Excel via
+    data_loader_inventario._leer_hoja_con_datos). Full replace -- Datos
+    Duros no es incremental, cada subida reemplaza todo (a diferencia de
+    Compras/Recepciones de Adquisiciones, que sincronizan por clave --
+    ver Gotcha grave en CLAUDE.md).
+
+    Usa COPY (no executemany fila por fila) -- con ~19000 codigos x hasta
+    7 columnas de venta ("VENTA MENSUAL *") son ~130000 filas en la
+    tabla larga; executemany tardaba varios MINUTOS por lote de 5000
+    contra el pooler de Supabase (medido en la practica, 2026-08-27),
+    muy por encima del limite de 60s de la funcion serverless en Vercel
+    (ver vercel.json). COPY es una sola transmision en streaming, no un
+    round-trip por fila -- corre en segundos. Igual se hace por lotes
+    con commit y reintento (Gotcha Postgres #2), por si el pooler corta
+    la conexion a mitad de un lote."""
+    cols_venta = [c for c in df.columns if c.startswith("VENTA MENSUAL")]
+    registros = df.to_dict("records")
+
+    filas_dd = [
+        (int(r["CODIGO"]), dlpg.valor_sql(r.get("FAMILIA")), dlpg.valor_sql(r.get("SUBFAMILIA")), dlpg.valor_sql(r.get("GRUPO")))
+        for r in registros
+    ]
+    # Ocasionalmente el Excel trae un codigo de clasificacion (ej. "SM0")
+    # metido por error en una celda de venta mensual en vez de un numero
+    # -- problema de calidad de datos de origen, no algo que deba tumbar
+    # toda la carga (encontrado 2026-08-27: 2 codigos de ~19000). Se
+    # descarta esa celda puntual (queda None) en vez de fallar el COPY.
+    filas_vm = []
+    valores_invalidos = []
+    for r in registros:
+        codigo = int(r["CODIGO"])
+        for col in cols_venta:
+            crudo = r.get(col)
+            valor = dlpg.valor_sql(crudo)
+            if valor is None:
+                continue
+            try:
+                valor = float(valor)
+            except (TypeError, ValueError):
+                valores_invalidos.append((codigo, col, crudo))
+                continue
+            filas_vm.append((codigo, col.replace("VENTA MENSUAL ", "").strip(), valor))
+    if valores_invalidos:
+        print(f"  datos_duros: {len(valores_invalidos)} valores de venta mensual no numericos descartados: {valores_invalidos[:10]}")
+
+    with db.get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("delete from datos_duros")
+            cur.execute("delete from datos_duros_venta_mensual")
+        conn.commit()
+    conn.close()
+
+    def _copiar(tabla, columnas, filas, tamano_lote=20000, reintentos=3):
+        cols_sql = ", ".join(columnas)
+        sql = f"copy {tabla} ({cols_sql}) from stdin"
+        conn = db.get_connection()
+        total = 0
+        try:
+            for i in range(0, len(filas), tamano_lote):
+                lote = filas[i:i + tamano_lote]
+                for intento in range(1, reintentos + 1):
+                    try:
+                        with conn.cursor() as cur:
+                            with cur.copy(sql) as copy:
+                                for fila in lote:
+                                    copy.write_row(fila)
+                        conn.commit()
+                        total += len(lote)
+                        break
+                    except Exception:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        if intento == reintentos:
+                            raise
+                        conn = db.get_connection()
+        finally:
+            conn.close()
+        return total
+
+    _copiar("datos_duros", ["codigo", "familia", "subfamilia", "grupo"], filas_dd)
+    _copiar("datos_duros_venta_mensual", ["codigo", "sucursal", "venta_mensual"], filas_vm)
+
+    return len(filas_dd)

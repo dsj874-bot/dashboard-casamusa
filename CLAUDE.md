@@ -461,9 +461,57 @@ Mismo patrón que Comercial: `USAR_POSTGRES_INVENTARIO` (default "1"),
 
 ### Páginas de autoservicio de Inventario (sidebar "Administración", solo `admin: True`)
 - **`/subir_inventario`**: sube el Inventario.xlsx (foto completa,
-  reemplaza `inventario_stock` entero) — reusa
-  `data_loader_inventario.fusionar_datos_duros(df)` (extraída como
-  helper reusable, antes vivía inline en `_leer_inventario()`).
+  reemplaza `inventario_stock` entero). Fusiona Familia/Subfamilia/
+  Grupo/Venta Mensual antes de subir a Postgres — con
+  `USAR_POSTGRES_INVENTARIO` (default) usa
+  `data_loader_inventario_pg.fusionar_datos_duros_pg(df)` (lee de las
+  tablas `datos_duros`/`datos_duros_venta_mensual`, funciona igual en
+  Vercel que en local); en modo Excel usa
+  `data_loader_inventario.fusionar_datos_duros(df)` (archivo local,
+  extraída como helper reusable, antes vivía inline en
+  `_leer_inventario()`).
+- **`/subir_datos_duros`** (`Datos_Duros_Inventario.xlsx` — Familia/
+  Subfamilia/Grupo/"VENTA MENSUAL &lt;sucursal&gt;" por código, cruzado
+  contra el stock en la SIGUIENTE subida de `/subir_inventario`, NO al
+  instante): tablas `datos_duros` (codigo/familia/subfamilia/grupo,
+  PK codigo) y `datos_duros_venta_mensual` (codigo/sucursal/
+  venta_mensual, PK compuesta — formato LARGO a propósito, para poder
+  agregar una sucursal nueva sin `ALTER TABLE`; "sucursal" es el sufijo
+  literal de la columna del Excel, ej. "MAIPU", "CONSOLIDADA").
+  Migración `010_datos_duros.sql`. Antes esto vivía SOLO en un Excel
+  local — bug real 2026-08-27: en Vercel el filesystem del proyecto es
+  de solo lectura fuera de `/tmp`, así que ese archivo no podía
+  persistir entre una subida de Datos Duros y la siguiente subida de
+  Inventario (dos requests separados) — el usuario lo encontró en
+  producción ("No se pudo guardar el archivo... filesystem de solo
+  lectura"). El guardado local ahora es best-effort (igual que Compras/
+  Recepciones de Adquisiciones, ver Gotcha grave más abajo); Postgres
+  es la fuente real.
+  **Gotcha de performance — `executemany` vs `COPY`**: Datos Duros son
+  ~19000 códigos x hasta 7 columnas de venta ≈ 130000-150000 filas en
+  la tabla larga. Con `cur.executemany()` (patrón usado en todo el
+  resto del proyecto) esto proyectaba VARIAS HORAS contra el pooler de
+  Supabase desde Chile (medido: solo 15000 filas en 15 minutos) — muy
+  por encima del límite de la función serverless. `sincronizar_datos_duros_pg()`
+  usa `cur.copy(...)` (streaming, no un round-trip por fila) en su
+  lugar — el mismo volumen baja a ~190 segundos totales. **Si algún
+  otro bulk-load futuro maneja decenas de miles de filas o más,
+  preferir `COPY` sobre `executemany` desde el diseño, no como arreglo
+  posterior.** Aun con `COPY`, el rol de Postgres tiene
+  `statement_timeout = 2min` — cada lote debe terminar antes de eso (un
+  intento de `COPY` sin batching para las 133614 filas fue cancelado a
+  los 2 minutos, a ~86% de completitud); por eso `sincronizar_datos_duros_pg()`
+  sigue yendo por lotes (20000 filas) con commit-y-reintento (Gotcha
+  Postgres #2), y `vercel.json` subió `maxDuration` de 60 a 300 para
+  que el sync completo (~190s medidos desde Chile) quepa con margen en
+  una sola invocación serverless.
+  **Calidad de datos**: el Excel de origen trae 2 códigos (691883,
+  691884) con "SM0" (un código de clasificación, no un número) metido
+  por error en varias celdas de venta mensual — `sincronizar_datos_duros_pg()`
+  descarta esa celda puntual (queda `None`) en vez de fallar todo el
+  COPY; el camino Excel (`fusionar_datos_duros`) no valida esto y
+  simplemente arrastra el string tal cual, sin fallar pero sin ser
+  correcto tampoco.
 - **`/gestionar_productos_compra`** ("Productos No Comprar"): excluye un
   producto SOLO del Plan de Compra (Prioritarios y 2ª Línea) — NO de
   Alertas ni Distribución, a propósito ("no vamos a comprar los conduit
@@ -537,6 +585,21 @@ muerta, `rollback()` también lanza) — solo `conn.close()` envuelto en
 `scripts/backfill_adquisiciones.py` para el patrón correcto (encontrado
 y corregido 2026-08-26, la versión con `rollback()` tumbaba el script
 entero en el primer corte de conexión).
+
+**Dentro de cada lote: `COPY`, no `executemany`, si son muchas filas.**
+`cur.executemany()` (usado en todos los ejemplos de arriba) manda un
+round-trip por fila -- funciona bien para cientos/pocos miles de filas,
+pero para decenas de miles se vuelve inviable desde Chile contra
+Supabase (medido: ~15000 filas en 15 minutos, proyectando VARIAS
+HORAS para ~130000 filas de `datos_duros_venta_mensual`). `cur.copy()`
+transmite en streaming, no por statement -- el mismo volumen bajo a
+~190 segundos. Ver `sincronizar_datos_duros_pg()` en
+`data_loader_inventario_pg.py` (encontrado y corregido 2026-08-27) para
+el patrón: `COPY` por lote (no una sola llamada sin batching -- el rol
+de Postgres tiene `statement_timeout = 2min`, y una `COPY` sin cortar
+en lotes fue cancelada a mitad de camino). Para cualquier carga nueva
+de decenas de miles de filas o más, partir de `COPY`, no de
+`executemany`.
 
 ## Gotcha grave — subida web "por año completo" borra lo que el archivo no trae
 `cargar_ano_pg()` (DELETE WHERE ano=X + INSERT) sirve para una carga

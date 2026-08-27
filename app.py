@@ -1547,11 +1547,17 @@ def api_subir_inventario():
         return jsonify({"ok": False, "msg": "El archivo esta vacio (0 filas)."}), 400
 
     df["CUP"] = pd.to_numeric(df["CUP"], errors="coerce").fillna(0)
-    # Fusiona Datos_Duros_Inventario.xlsx si existe en este servidor (la
-    # maquina local lo tiene; Vercel no) -- si no existe, cargar_productos/
-    # cargar_stock conservan FAMILIA/SUBFAMILIA/GRUPO/venta_mensual que ya
-    # estaban en Postgres en vez de borrarlos (ver backfill_inventario.py).
-    df = data_loader_inventario.fusionar_datos_duros(df)
+    # Fusiona Datos Duros (Familia/Subfamilia/Grupo/Venta Mensual) --
+    # en Postgres desde datos_duros/datos_duros_venta_mensual (funciona
+    # igual en Vercel que en local, ver migrations/010_datos_duros.sql);
+    # en modo Excel, del archivo local (solo existe en esta maquina). Si
+    # no hay nada cargado todavia, cargar_productos/cargar_stock
+    # conservan FAMILIA/SUBFAMILIA/GRUPO/venta_mensual que ya estaban en
+    # Postgres en vez de borrarlos (ver backfill_inventario.py).
+    if USAR_POSTGRES_INVENTARIO:
+        df = data_loader_inventario_pg.fusionar_datos_duros_pg(df)
+    else:
+        df = data_loader_inventario.fusionar_datos_duros(df)
 
     try:
         data_loader_inventario_pg.sincronizar_inventario_pg(df)
@@ -1619,22 +1625,28 @@ def api_subir_datos_duros():
 
     cols_venta = [c for c in dd.columns if c.startswith("VENTA MENSUAL")]
 
-    # Datos Duros no tiene tabla en Postgres (a diferencia de Compras/
-    # Recepciones) -- el Excel local ES la fuente de verdad, asi que si
-    # no se puede escribir (p.ej. filesystem de solo lectura en Vercel)
-    # hay que avisarlo claro, no dejar que crashee sin JSON de vuelta.
+    # Guarda tambien una copia local del Excel -- best-effort. En
+    # Vercel el filesystem del proyecto es de solo lectura (Gotcha
+    # grave en CLAUDE.md), asi que esto falla ahi; no debe abortar la
+    # carga real a Postgres (datos_duros/datos_duros_venta_mensual,
+    # ver migrations/010_datos_duros.sql), que es la fuente de verdad
+    # en produccion desde 2026-08-27. En local (modo Excel,
+    # USAR_POSTGRES_INVENTARIO=0) el archivo local SI es necesario.
     try:
         os.makedirs(data_loader_inventario.DATA_DIR_INVENTARIO, exist_ok=True)
-        shutil.move(tmp_path, data_loader_inventario.DATOS_DUROS_XLSX)
-    except OSError as e:
+        shutil.copy(tmp_path, data_loader_inventario.DATOS_DUROS_XLSX)
+        data_loader_inventario._cache["mod_time_dd"] = None  # forzar relectura la proxima vez
+    except OSError:
+        pass
+    finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-        return jsonify({
-            "ok": False,
-            "msg": f"No se pudo guardar el archivo en el servidor (filesystem de solo lectura): {e}. "
-                   "Esta pantalla requiere ejecutarse localmente hasta que Datos Duros tenga tabla en Postgres.",
-        }), 500
-    data_loader_inventario._cache["mod_time_dd"] = None  # forzar relectura la proxima vez
+
+    if USAR_POSTGRES_INVENTARIO:
+        try:
+            data_loader_inventario_pg.sincronizar_datos_duros_pg(dd)
+        except Exception as e:
+            return jsonify({"ok": False, "msg": f"Archivo leido, pero fallo la carga a Postgres: {e}"}), 500
 
     n_filas = len(dd)
     filas_fmt = f"{n_filas:,}".replace(",", ".")
