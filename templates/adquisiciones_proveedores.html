@@ -13,6 +13,17 @@
   #tabla-body td.categoria { color: var(--muted2); font-size: 12px; }
   #tabla-body tr.fila-comprado td { border-top: 1px solid var(--border); }
   #tabla-body tr.fila-recibido td { border-top: none; padding-top: 2px; padding-bottom: 10px; }
+
+  /* Columna Proveedor fija al hacer scroll horizontal */
+  th.sticky-col, td.sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    box-shadow: 2px 0 4px rgba(0,0,0,0.18);
+  }
+  thead th.sticky-col { background: var(--surface2); z-index: 3; }
+  #tabla-body tr:hover td.sticky-col { background: var(--surface2); }
 </style>
 {% endblock %}
 
@@ -27,7 +38,7 @@
     <table>
       <thead>
         <tr>
-          <th data-key="nombre">Proveedor</th>
+          <th data-key="nombre" class="sticky-col">Proveedor</th>
           <th></th>
           <th class="text-right" data-key="n">N°</th>
           <th class="text-right" data-key="v_ano_actual" id="th-ano-actual">Año Actual</th>
@@ -133,7 +144,7 @@ function renderTabla() {
     const c = p.filas[0], r = p.filas[1];
     return `
       <tr class="fila-comprado">
-        <td class="fw-bold" rowspan="2">${p.nombre}</td>
+        <td class="fw-bold sticky-col" rowspan="2">${p.nombre}</td>
         <td class="categoria">Comprado</td>
         <td class="text-right">${fmtUnid(p.n_oc)}</td>
         <td class="text-right fw-bold">${fmtCLP(c.v_ano_actual)}</td>
