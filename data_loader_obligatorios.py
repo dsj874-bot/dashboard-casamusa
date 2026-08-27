@@ -841,6 +841,9 @@ def _construir_excel_plan_compras(resultado):
             "Descripcion":        p["descripcion"],
             "Codigo a Comprar":   p["codigo_a_comprar"],
             "Embalaje":           p["embalaje"],
+            "Lead Time (dias habiles)": p.get("lead_time_dias_habiles"),
+            "Lead Time Real":     "Si" if p.get("lead_time_es_real") else "No (default)",
+            "Proveedor (Lead Time)": p.get("lead_time_proveedor") or "",
             "Cantidad a Comprar": p["cantidad_a_comprar"],
         }
         for p in resultado["productos"]
@@ -848,7 +851,8 @@ def _construir_excel_plan_compras(resultado):
     ]
     df = pd.DataFrame(filas, columns=[
         "Familia", "Subfamilia", "Grupo", "Descripcion",
-        "Codigo a Comprar", "Embalaje", "Cantidad a Comprar",
+        "Codigo a Comprar", "Embalaje", "Lead Time (dias habiles)",
+        "Lead Time Real", "Proveedor (Lead Time)", "Cantidad a Comprar",
     ])
 
     buffer = io.BytesIO()

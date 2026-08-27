@@ -15,6 +15,13 @@ import db
 import data_loader_inventario as dli
 import data_loader_obligatorios as do
 import data_loader_exclusion_compra as dec
+import data_loader_adquisiciones_pg as dap
+
+# Bajo esto, el promedio de lead time de un proveedor es muy ruidoso
+# (ej. un proveedor con 1 sola recepcion y 30 dias no deberia disparar
+# el calculo) -- se usa el default LEAD_TIME_DIAS_NACIONAL en su lugar.
+# Pedido explicito del usuario 2026-08-27.
+UMBRAL_MIN_OC_LEAD_TIME_REAL = 3
 
 
 def get_familias_obligatorios_pg():
@@ -354,6 +361,61 @@ def _cargar_productos_extra_pg(cur, codigos):
     return {r["codigo"]: r for r in cur.fetchall()}
 
 
+def _dominante_proveedor_por_codigo_pg(cur, codigos):
+    """Proveedor con mas lineas de compra (2025+2026) para cada codigo
+    -- proxy simple de "quien nos vende esto" (la mayoria de los
+    productos obligatorios tienen un solo proveedor real; para los que
+    tienen mas de uno, se usa el que mas se repite)."""
+    if not codigos:
+        return {}
+    cur.execute(
+        """SELECT DISTINCT ON (codigo) codigo, nombre_proveedor
+           FROM (
+               SELECT codigo, nombre_proveedor, count(*) AS n
+               FROM compras
+               WHERE codigo = ANY(%(codigos)s) AND ano IN (2025, 2026) AND nombre_proveedor IS NOT NULL
+               GROUP BY codigo, nombre_proveedor
+           ) t
+           ORDER BY codigo, n DESC""",
+        {"codigos": list(codigos)},
+    )
+    return {r["codigo"]: r["nombre_proveedor"] for r in cur.fetchall()}
+
+
+def _lead_time_real_por_producto_pg(cur, codigos):
+    """Lead time real por producto -- via el proveedor dominante de
+    cada codigo (_dominante_proveedor_por_codigo_pg) y el Lead Time ya
+    calculado en Adquisiciones (data_loader_adquisiciones_pg). El Lead
+    Time de Adquisiciones se mide en DIAS CALENDARIO (fecha_recepcion -
+    fecha_creacion); do.LEAD_TIME_DIAS_NACIONAL/DIAS_HABILES_MES estan
+    en dias HABILES -- se convierte a habiles (x 5/7) antes de usarlo,
+    para no mezclar unidades ni tener que retocar el default.
+
+    Si no hay proveedor identificado, el proveedor no tiene lead time
+    calculado, o tiene menos de UMBRAL_MIN_OC_LEAD_TIME_REAL recepciones
+    (promedio muy ruidoso), cae al default LEAD_TIME_DIAS_NACIONAL --
+    mismo comportamiento que existia antes de este cambio."""
+    proveedor_por_codigo = _dominante_proveedor_por_codigo_pg(cur, codigos)
+
+    lt = dap.get_lead_time_combinado_pg()
+    lead_time_por_proveedor = {item["nombre"]: item for item in lt["items"]}
+
+    resultado = {}
+    for codigo in codigos:
+        proveedor = proveedor_por_codigo.get(codigo)
+        info = lead_time_por_proveedor.get(proveedor) if proveedor else None
+        if (
+            info is not None
+            and info["lead_time_actual"] is not None
+            and info["n_oc_recibidas"] >= UMBRAL_MIN_OC_LEAD_TIME_REAL
+        ):
+            dias_habiles = float(info["lead_time_actual"]) * 5 / 7
+            resultado[codigo] = {"dias_habiles": dias_habiles, "proveedor": proveedor, "es_real": True}
+        else:
+            resultado[codigo] = {"dias_habiles": float(do.LEAD_TIME_DIAS_NACIONAL), "proveedor": proveedor, "es_real": False}
+    return resultado
+
+
 def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
     meses_default = meses_objetivo_default if meses_objetivo_default is not None else do.MESES_OBJETIVO_COMPRA
 
@@ -370,6 +432,7 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
             bodegas = [n for n, _, _, _ in do.SUCURSALES_CRITICAS] + ["Todas"]
             datos = _cargar_stock_pg(cur, codigos_necesarios, bodegas)
             productos_extra = _cargar_productos_extra_pg(cur, codigos_necesarios)
+            lead_time_real = _lead_time_real_por_producto_pg(cur, codigos_necesarios)
 
     codigos_excluidos = dec.codigos_excluidos_compra()
 
@@ -394,6 +457,9 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
                 "cantidad_a_comprar": None,
                 "sin_opcion_nacional": True,
                 "excluido_compra":    False,
+                "lead_time_dias_habiles": None,
+                "lead_time_proveedor":    None,
+                "lead_time_es_real":      False,
             })
             continue
 
@@ -408,7 +474,8 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
         meses_col = fila["meses_objetivo"]
         meses_objetivo = float(meses_col) if meses_col is not None else meses_default
 
-        colchon_lead_time = (venta_consolidada / do.DIAS_HABILES_MES) * do.LEAD_TIME_DIAS_NACIONAL
+        lt = lead_time_real.get(cod_a_comprar) or {"dias_habiles": do.LEAD_TIME_DIAS_NACIONAL, "proveedor": None, "es_real": False}
+        colchon_lead_time = (venta_consolidada / do.DIAS_HABILES_MES) * lt["dias_habiles"]
 
         pedido_total = (
             float(extra_comprar["pedido_total"])
@@ -439,6 +506,9 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
             "cantidad_a_comprar": cantidad_a_comprar,
             "sin_opcion_nacional": False,
             "excluido_compra":    excluido_compra,
+            "lead_time_dias_habiles": round(lt["dias_habiles"], 1),
+            "lead_time_proveedor":    lt["proveedor"],
+            "lead_time_es_real":      lt["es_real"],
         })
 
     productos.sort(key=lambda p: -(p["cantidad_a_comprar"] or 0))

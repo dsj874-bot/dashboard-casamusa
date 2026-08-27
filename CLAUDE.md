@@ -422,13 +422,33 @@ Mismo patrón que Comercial: `USAR_POSTGRES_INVENTARIO` (default "1"),
   Compra (ambos niveles) se movió al área Forecast** (pedido explicito
   del usuario, "eso quizás debe ir en Forecast") — ver sección
   "Forecast" más abajo. Alertas y Distribución se quedan en Inventario
-  (son diagnóstico/operación de HOY, no proyección). El cálculo de
-  Plan de Compra en sí NO cambió — mismas constantes fijas
-  (`LEAD_TIME_DIAS_NACIONAL`, `DIAS_HABILES_MES`) y misma fuente de
-  venta (`inventario_stock.venta_mensual`); el traslado fue solo de
-  ubicación/URL. Conectarlo con datos reales de Adquisiciones (lead
-  time/OTIF) y Comercial (venta en vivo) queda como mejora futura
-  aparte, NO hecha todavía.
+  (son diagnóstico/operación de HOY, no proyección).
+  **2026-08-27, Fase 2 — Lead Time real conectado** (la venta en vivo
+  de Comercial sigue pendiente, no hecha): `colchon_lead_time` ya NO
+  usa `LEAD_TIME_DIAS_NACIONAL=5` fijo para todos los productos —
+  `_lead_time_real_por_producto_pg()` en `data_loader_obligatorios_pg.py`
+  busca el proveedor dominante de cada código (más líneas en `compras`,
+  2025+2026) y usa su Lead Time real ya calculado en Adquisiciones
+  (`data_loader_adquisiciones_pg.get_lead_time_combinado_pg()`). Ojo
+  con la conversión de unidades: el Lead Time de Adquisiciones se mide
+  en **días calendario** (`fecha_recepcion - fecha_creacion`), pero
+  `LEAD_TIME_DIAS_NACIONAL`/`DIAS_HABILES_MES` están en **días
+  hábiles** — se convierte `dias_calendario * 5/7` antes de usarlo, en
+  vez de cambiar la base de todo el cálculo (así el fallback no se
+  toca). Cae al default fijo (5 días hábiles) si: el código no tiene
+  proveedor identificable en `compras`, el proveedor no tiene Lead
+  Time calculado, o tiene menos de `UMBRAL_MIN_OC_LEAD_TIME_REAL = 3`
+  recepciones (promedio muy ruidoso con pocos datos — pedido explícito
+  del usuario). Mismo mecanismo reusado por `data_loader_segunda_linea.py`
+  (ambos módulos ya comparten las constantes de
+  `data_loader_obligatorios.py`, así que un solo cambio cubre las 2
+  pantallas). La tabla de Plan de Compra (ambos niveles) y el Excel
+  exportado muestran qué Lead Time se usó por producto y de qué
+  proveedor (o "(default)" si no había dato confiable) — pedido
+  explícito del usuario, para poder confiar en el número sin adivinar
+  de dónde salió. Verificado: 473/501 productos Prioritarios y 417/739
+  de 2ª Línea usan Lead Time real; el resto cae al default por falta
+  de historial de compra suficiente.
 - **"2ª Línea"** (`data_loader_segunda_linea.py`, **100% Postgres-only,
   sin equivalente Excel**): mismo dueto Alertas/Distribución (Plan de
   Compra también se movió a Forecast, ver arriba) pero para productos

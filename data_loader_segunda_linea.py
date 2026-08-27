@@ -354,6 +354,7 @@ def get_plan_compra_segunda_linea(familia=None, meses_objetivo_default=None):
             codigos = {c["codigo"] for c in candidatos}
             bodegas = [n for n, _, _, _ in do.SUCURSALES_CRITICAS] + ["Todas"]
             datos = dopg._cargar_stock_pg(cur, codigos, bodegas)
+            lead_time_real = dopg._lead_time_real_por_producto_pg(cur, codigos)
 
     codigos_excluidos = dec.codigos_excluidos_compra()
 
@@ -367,7 +368,8 @@ def get_plan_compra_segunda_linea(familia=None, meses_objetivo_default=None):
             for nombre, _, _, _ in do.SUCURSALES_CRITICAS
         )
 
-        colchon_lead_time = (venta_consolidada / do.DIAS_HABILES_MES) * do.LEAD_TIME_DIAS_NACIONAL
+        lt = lead_time_real.get(cod) or {"dias_habiles": do.LEAD_TIME_DIAS_NACIONAL, "proveedor": None, "es_real": False}
+        colchon_lead_time = (venta_consolidada / do.DIAS_HABILES_MES) * lt["dias_habiles"]
         pedido_total = float(c["pedido_total"]) if c["pedido_total"] is not None else 0.0
 
         objetivo_empresa = (meses_objetivo * venta_consolidada) + colchon_lead_time
@@ -399,6 +401,9 @@ def get_plan_compra_segunda_linea(familia=None, meses_objetivo_default=None):
             "cantidad_a_comprar": cantidad_a_comprar,
             "sin_opcion_nacional": False,  # siempre False: no hay eleccion Nacional/Importado en Segunda Linea
             "excluido_compra":    excluido_compra,
+            "lead_time_dias_habiles": round(lt["dias_habiles"], 1),
+            "lead_time_proveedor":    lt["proveedor"],
+            "lead_time_es_real":      lt["es_real"],
         })
 
     productos.sort(key=lambda p: -(p["cantidad_a_comprar"] or 0))
