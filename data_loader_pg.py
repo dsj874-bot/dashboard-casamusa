@@ -628,7 +628,7 @@ def get_proyeccion_pg(filtros=None):
     return {"kpis": kpis, "filas": filas}
 
 
-def sincronizar_ventas_pg(df, fechas, tamano_lote=5000, reintentos=3):
+def sincronizar_ventas_pg(df, fechas, tamano_lote=1500, reintentos=3):
     """Sincroniza en Postgres las filas de `df` que caen en `fechas`:
     delete-by-fecha + insert -- mismo criterio de dedupe por rango de
     fecha que usa el cache local (actualizar_desde_archivo_mensual) y
@@ -638,6 +638,25 @@ def sincronizar_ventas_pg(df, fechas, tamano_lote=5000, reintentos=3):
     callback on_nuevo en data_loader.actualizar_desde_archivo_mensual,
     que relee via get_df_2026() antes de llamar esto).
 
+    Usa COPY (no executemany fila por fila) -- normalmente esto solo
+    sincroniza el dia nuevo (pocos cientos de filas, executemany andaba
+    bien), pero una resincronizacion de un mes completo (~11000 filas,
+    ej. tras sacar la correccion de mal_total 2026-08-28) con
+    executemany se cuelga por minutos: cada fila es un round-trip
+    cliente-servidor, y la latencia real Chile-Supabase(Oregon) lo hace
+    inviable a este volumen (mismo Gotcha que datos_duros_venta_mensual,
+    ver Gotcha Postgres #2 en CLAUDE.md).
+
+    tamano_lote mas chico que datos_duros_venta_mensual (1500 vs 20000)
+    a proposito: `ventas` tiene 38 columnas (varias de texto largo,
+    nombre_cliente/descripcion/etc.) contra las 3 columnas angostas de
+    datos_duros_venta_mensual -- medido en la practica: un lote de
+    ~11000 filas anchas se tardo tanto que el propio statement_timeout
+    de Postgres (2min, aunque en este caso corto a los ~256s) lo
+    cancelo a mitad de camino (rendimiento ~20 filas/seg contra las
+    ~700-900 filas/seg de las filas angostas). 1500 filas anchas por
+    lote se queda con margen debajo de ese limite.
+
     Commit por lote + reintento con reconexion si un lote falla --
     mismo patron que backfill_ventas() en backfill_fase1_comercial.py.
     Antes esto era un solo commit al final de todo (delete + todos los
@@ -646,14 +665,21 @@ def sincronizar_ventas_pg(df, fechas, tamano_lote=5000, reintentos=3):
     ver backfill_ventas), la excepcion sin manejar tumbaba la conexion
     HTTP completa -- el navegador lo ve como "sin conexion", no como
     un error normal con mensaje. Detectado en un intento real de subir
-    ventas desde /subir_ventas."""
+    ventas desde /subir_ventas.
+
+    OJO al depurar esto a mano (matar el proceso Python desde afuera):
+    matar el proceso de Windows NO cierra limpiamente la conexion del
+    lado de Supabase -- la sesion queda "zombie" (state='active' o
+    'idle in transaction (aborted)', bloqueando intentos siguientes).
+    Hay que terminarla explicitamente con
+    `select pg_terminate_backend(pid)` (ver pg_stat_activity), no basta
+    con volver a matar el proceso de SO. Encontrado 2026-08-28."""
     fechas = list(fechas)
     if not fechas:
         return
 
     cols_sql = ", ".join(VENTAS_COLUMNAS)
-    placeholders = ", ".join(["%s"] * len(VENTAS_COLUMNAS))
-    sql = f"insert into ventas ({cols_sql}) values ({placeholders})"
+    sql = f"copy ventas ({cols_sql}) from stdin"
     filas = [tuple(valor_sql(getattr(r, c)) for c in VENTAS_DF_COLS) for r in df.itertuples(index=False)]
 
     conn = db.get_connection()
@@ -667,7 +693,9 @@ def sincronizar_ventas_pg(df, fechas, tamano_lote=5000, reintentos=3):
             for intento in range(1, reintentos + 1):
                 try:
                     with conn.cursor() as cur:
-                        cur.executemany(sql, lote)
+                        with cur.copy(sql) as copy:
+                            for fila in lote:
+                                copy.write_row(fila)
                     conn.commit()
                     break
                 except Exception:

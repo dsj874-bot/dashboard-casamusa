@@ -179,6 +179,19 @@ Notas:
   `_normalizar_df()`, si no pyarrow falla al escribir el cache parquet.
 - Se agregan columnas: ANO, MES, DIA (desde FECHA_CONTA), SUCURSAL_LOGICA,
   VENDEDOR_RPT.
+- **TOTAL se usa TAL CUAL viene de SAP, sin corregir.** Hasta
+  2026-08-28 había una corrección en `_normalizar_df()` que recalculaba
+  TOTAL = CANTIDAD × PRECIO_UNITARIO para filas donde SAP trae
+  CANTIDAD/PRECIO_UNITARIO cargados pero TOTAL en $0 (un defecto real
+  de cálculo de SAP, ~58 filas/mes, ~$475K/mes en Agosto 2026). Se
+  sacó a pedido explícito del usuario ("quiero que lo dejes tal como
+  está en SAP y Biwiser") tras detectar que el dashboard no calzaba
+  con el reporte oficial de SAP/Biwizer por esa diferencia exacta —
+  el usuario prefiere que el dashboard coincida al peso con el reporte
+  oficial, aunque eso signifique arrastrar el mismo defecto de SAP
+  (esas ~58 líneas de venta real quedan en $0, igual que en SAP). **No
+  reintroducir esta corrección sin volver a preguntar** — ya se sacó
+  una vez a pedido explícito.
 
 ## Cache
 - data_loader crea automáticamente Ventas_20XX.parquet (pyarrow instalado)
@@ -644,6 +657,35 @@ de Postgres tiene `statement_timeout = 2min`, y una `COPY` sin cortar
 en lotes fue cancelada a mitad de camino). Para cualquier carga nueva
 de decenas de miles de filas o más, partir de `COPY`, no de
 `executemany`.
+
+**El tamaño de lote de `COPY` depende del ANCHO de la fila, no solo de
+la cantidad.** `sincronizar_ventas_pg()` (`data_loader_pg.py`) usaba
+`tamano_lote=20000` copiado del patrón de `datos_duros_venta_mensual`
+(3 columnas angostas) -- pero `ventas` tiene 38 columnas, varias de
+texto largo (nombre_cliente, descripcion, etc.). Medido en la práctica
+2026-08-28: ~20 filas/seg para `ventas` contra ~700-900 filas/seg para
+`datos_duros_venta_mensual` -- un solo lote de ~11000 filas de `ventas`
+tardó tanto que el `statement_timeout` de Postgres lo canceló a mitad
+de camino (a los ~256s, con solo ~5000 de 11000 filas transmitidas).
+Bajado a `tamano_lote=1500` para `ventas`, que completa cada lote con
+margen. **Al ajustar el tamaño de lote de una `COPY` nueva, medir el
+throughput real de ESA tabla (columnas anchas de texto son mucho más
+lentas que columnas numéricas angostas), no asumir que el mismo
+`tamano_lote` que funcionó en otra tabla sirve aquí.**
+
+**Matar el proceso de Windows NO cierra la conexión de Supabase —
+queda "zombie".** Si interrumpís un script de carga a mitad de camino
+matando el proceso Python (`Stop-Process`/Task Manager), la sesión del
+lado de Postgres puede quedar viva (`state='active'` o `'idle in
+transaction (aborted)'` en `pg_stat_activity`), bloqueando intentos
+posteriores (locks sobre la tabla, o el reintento del propio script
+reconectando pero chocando con la sesión vieja). Encontrado 2026-08-28
+depurando `sincronizar_ventas_pg`: dos reintentos seguidos parecían
+"colgados" hasta terminar la sesión vieja a mano. Solución: terminarla
+explícitamente por SQL --
+`select pg_terminate_backend(pid)` (buscar el `pid` en
+`pg_stat_activity where datname=current_database() and state !=
+'idle'`) -- no basta con volver a matar el proceso de Windows.
 
 ## Gotcha grave — subida web "por año completo" borra lo que el archivo no trae
 `cargar_ano_pg()` (DELETE WHERE ano=X + INSERT) sirve para una carga
