@@ -62,9 +62,13 @@ if USAR_POSTGRES_ADQUISICIONES:
 # Canales de venta (tipo_venta) que conforman "E-commerce" para el
 # perfil de Elennys Perez -- definido a mano con el usuario, no se
 # deduce de ningun patron (ver tipo_venta real en ventas: NORMAL,
-# MERCADO LIBRE CM/SC, CASAMUSA.CL, VENTA ASISTIDA, SODIMAC/LEGRAND,
+# MERCADO LIBRE CM/SC/LB, CASAMUSA.CL, VENTA ASISTIDA, SODIMAC/LEGRAND,
 # SPAZIO BTICINO, MKT PLACE). Deja fuera NORMAL y SPAZIO BTICINO.
-CANALES_ECOMMERCE = ["CASAMUSA.CL", "MERCADO LIBRE CM", "MERCADO LIBRE SC", "MKT PLACE", "VENTA ASISTIDA", "SODIMAC/LEGRAND"]
+# MERCADO LIBRE LB agregado 2026-08-29 -- canal nuevo, activo recien
+# desde agosto 2026 (no existe en meses anteriores). Probablemente
+# ligado a la bodega "Mercado Libre Full" ya existente en Inventario
+# (ver data_loader_inventario.py) -- confirmado con el usuario.
+CANALES_ECOMMERCE = ["CASAMUSA.CL", "MERCADO LIBRE CM", "MERCADO LIBRE SC", "MERCADO LIBRE LB", "MKT PLACE", "VENTA ASISTIDA", "SODIMAC/LEGRAND"]
 
 GERENTES = {
     "dsepulveda@casamusa.cl": {"password": "Admin2026",         "nombre": "Administrador", "admin": True},
@@ -83,6 +87,13 @@ GERENTES = {
     # sucursal, rompiendo el filtro de canal que la deja ver e-commerce
     # de toda la empresa). sucursal_ne solo se usa para /cargar_ne.
     "eperez@casamusa.cl":     {"password": "Ecommerce2026",     "nombre": "E-commerce", "canal": CANALES_ECOMMERCE, "sucursal_ne": "CANAL DIGITAL"},
+    # admin_inventario/admin_adquisiciones (distinto de "admin"): dan
+    # permiso de subir/gestionar datos SOLO en esa area especifica (ver
+    # admin_area_requerido) -- no heredan el admin global, que tambien
+    # desbloquea subir ventas, cargar metas y gestionar vendedores de
+    # Comercial.
+    "adquisiciones@casamusa.cl": {"password": "Adquisiciones2026", "nombre": "Adquisiciones", "admin_adquisiciones": True},
+    "caliaga@casamusa.cl":       {"password": "Inventario2026",    "nombre": "C. Aliaga",      "admin_inventario": True},
 }
 
 # ══════════════════════════════════════════════════════
@@ -121,6 +132,34 @@ def admin_requerido(f):
 
 
 # ══════════════════════════════════════════════════════
+#  DECORADOR: admin de UN AREA especifica (Inventario o Adquisiciones)
+#  -- permite que una cuenta con admin_inventario/admin_adquisiciones
+#  (ver GERENTES) suba/gestione datos SOLO de su propia area, sin
+#  heredar el admin global (que ademas desbloquea subir ventas, cargar
+#  metas y gestionar vendedores de Comercial). Un admin global
+#  (admin=True) sigue pudiendo usar estas rutas en cualquier area.
+# ══════════════════════════════════════════════════════
+def admin_area_requerido(area):
+    def decorador(f):
+        @wraps(f)
+        def decorado(*args, **kwargs):
+            if "usuario" not in session:
+                return redirect(url_for("login"))
+            if session["usuario"] not in GERENTES:
+                session.clear()
+                return redirect(url_for("login"))
+            if not session.get("admin") and not session.get(f"admin_{area}"):
+                return jsonify({"ok": False, "msg": "No tienes permiso para esta accion."}), 403
+            return f(*args, **kwargs)
+        return decorado
+    return decorador
+
+
+admin_inventario_requerido = admin_area_requerido("inventario")
+admin_adquisiciones_requerido = admin_area_requerido("adquisiciones")
+
+
+# ══════════════════════════════════════════════════════
 #  DECORADOR: admin, o Jefe de Sucursal (ej. NE x Facturar -- cada uno
 #  carga solo lo suyo, el filtrado real por sucursal lo hace cada ruta)
 # ══════════════════════════════════════════════════════
@@ -139,26 +178,36 @@ def admin_o_jefe_sucursal_requerido(f):
 
 
 # ══════════════════════════════════════════════════════
-#  ACCESO RESTRINGIDO: Inventario y Adquisiciones -- por ahora solo
-#  el usuario dueño del proyecto puede verlas (pedido explicito).
-#  Para agregar a alguien mas, sumarlo a este set -- no hace falta
-#  tocar ninguna ruta individual.
+#  ACCESO RESTRINGIDO: Inventario y Adquisiciones -- cada area tiene su
+#  propio set de usuarios autorizados (antes era un solo set combinado;
+#  separado 2026-08-29 para poder dar acceso a UNA sola de las dos
+#  areas, ej. una cuenta solo de Adquisiciones y otra solo de
+#  Inventario, pedido explicito del usuario). Para agregar a alguien
+#  mas a una de las dos areas, sumarlo al set correspondiente -- no
+#  hace falta tocar ninguna ruta individual.
 # ══════════════════════════════════════════════════════
-USUARIOS_INVENTARIO_ADQUISICIONES = {"dsepulveda@casamusa.cl"}
+USUARIOS_INVENTARIO = {"dsepulveda@casamusa.cl", "caliaga@casamusa.cl"}
+USUARIOS_ADQUISICIONES = {"dsepulveda@casamusa.cl", "adquisiciones@casamusa.cl"}
+# Plan de Compra y Nivel de Servicio viven en Forecast pero siguen
+# siendo solo para dsepulveda (pedido explicito, sin relacion con quien
+# tenga acceso a Inventario/Adquisiciones en general) -- Forecast en si
+# es de gerencia (ver PREFIJOS_SOLO_GERENCIA), esto los restringe un
+# paso mas.
+USUARIOS_FORECAST = {"dsepulveda@casamusa.cl"}
 
-PREFIJOS_RESTRINGIDOS_INV_ADQ = (
+PREFIJOS_RESTRINGIDOS_INVENTARIO = (
     "/inventario", "/api/inventario",
-    "/adquisiciones", "/api/adquisiciones",
     "/subir_inventario", "/api/subir_inventario",
     "/subir_datos_duros", "/api/subir_datos_duros",
-    "/subir_compras", "/api/subir_compras", "/api/subir_recepciones",
     "/gestionar_productos_compra", "/api/gestionar_productos_compra",
     "/gestionar_prioridad", "/api/gestionar_prioridad",
     "/admin/actualizar_inventario",
-    # Plan de Compra y Nivel de Servicio viven en Forecast pero siguen
-    # siendo solo para dsepulveda (pedido explicito) -- Forecast en si
-    # es de gerencia (ver PREFIJOS_SOLO_GERENCIA), esto los restringe
-    # un paso mas.
+)
+PREFIJOS_RESTRINGIDOS_ADQUISICIONES = (
+    "/adquisiciones", "/api/adquisiciones",
+    "/subir_compras", "/api/subir_compras", "/api/subir_recepciones",
+)
+PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA = (
     "/forecast/plan_compra", "/api/forecast/plan_compras",
     "/forecast/nivel_servicio", "/api/forecast/nivel_servicio",
 )
@@ -166,13 +215,20 @@ PREFIJOS_RESTRINGIDOS_INV_ADQ = (
 
 @app.before_request
 def _restringir_inventario_adquisiciones():
-    if not request.path.startswith(PREFIJOS_RESTRINGIDOS_INV_ADQ):
+    path = request.path
+    if path.startswith(PREFIJOS_RESTRINGIDOS_INVENTARIO):
+        permitidos = USUARIOS_INVENTARIO
+    elif path.startswith(PREFIJOS_RESTRINGIDOS_ADQUISICIONES):
+        permitidos = USUARIOS_ADQUISICIONES
+    elif path.startswith(PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA):
+        permitidos = USUARIOS_FORECAST
+    else:
         return None
     if "usuario" not in session:
         return None  # el login_requerido/admin_requerido de la ruta se encarga del redirect a /login
-    if session["usuario"] in USUARIOS_INVENTARIO_ADQUISICIONES:
+    if session["usuario"] in permitidos:
         return None
-    if request.path.startswith("/api/"):
+    if path.startswith("/api/"):
         return jsonify({"ok": False, "msg": "No tienes acceso a esta sección."}), 403
     return redirect(url_for("inicio"))
 
@@ -234,6 +290,12 @@ def inject_es_admin():
     canal_label = session.get("nombre") if session.get("canal") else None
     return {
         "es_admin": session.get("admin", False),
+        # OR con el admin global -- una cuenta admin=True (dsepulveda,
+        # emusa, jsantana) sigue viendo los botones de gestion de datos
+        # de cualquier area, ademas de las cuentas admin_inventario/
+        # admin_adquisiciones especificas de esa area.
+        "es_admin_inventario":    session.get("admin", False) or session.get("admin_inventario", False),
+        "es_admin_adquisiciones": session.get("admin", False) or session.get("admin_adquisiciones", False),
         "sucursal_sesion": suc_label,
         "canal_sesion": canal_label,
         # Jefe de Sucursal real, o un perfil sin sucursal general que
@@ -299,6 +361,8 @@ def login():
             session["usuario"]  = email
             session["nombre"]   = gerente["nombre"]
             session["admin"]    = gerente.get("admin", False)
+            session["admin_inventario"]    = gerente.get("admin_inventario", False)
+            session["admin_adquisiciones"] = gerente.get("admin_adquisiciones", False)
             session["sucursal"] = gerente.get("sucursal")
             session["canal"]    = gerente.get("canal")
             session["sucursal_ne"] = gerente.get("sucursal_ne")
@@ -327,15 +391,26 @@ AREAS = [
 @app.route("/inicio")
 @login_requerido
 def inicio():
-    if session.get("usuario") not in USUARIOS_GERENCIA:
-        # No es gerencia (Jefe de Sucursal, E-commerce, etc) -- solo ve
-        # Comercial, ni siquiera como tile deshabilitado. Pedido
-        # explicito del usuario.
-        areas_visibles = [a for a in AREAS if a["slug"] == "comercial"]
+    usuario = session.get("usuario")
+    if usuario not in USUARIOS_GERENCIA:
+        # No es gerencia (Jefe de Sucursal, E-commerce, etc) -- ve
+        # Comercial siempre, ni siquiera como tile deshabilitado
+        # (pedido explicito), mas Inventario/Adquisiciones si tiene
+        # acceso especifico a esa area (cuentas admin_inventario/
+        # admin_adquisiciones, ver USUARIOS_INVENTARIO/USUARIOS_ADQUISICIONES).
+        areas_visibles = [
+            a for a in AREAS
+            if a["slug"] == "comercial"
+            or (a["slug"] == "inventario" and usuario in USUARIOS_INVENTARIO)
+            or (a["slug"] == "adquisiciones" and usuario in USUARIOS_ADQUISICIONES)
+        ]
     else:
         areas_visibles = [
             a for a in AREAS
-            if a["slug"] not in ("inventario", "adquisiciones", "forecast") or session.get("usuario") in USUARIOS_INVENTARIO_ADQUISICIONES
+            if a["slug"] not in ("inventario", "adquisiciones", "forecast")
+            or (a["slug"] == "inventario" and usuario in USUARIOS_INVENTARIO)
+            or (a["slug"] == "adquisiciones" and usuario in USUARIOS_ADQUISICIONES)
+            or (a["slug"] == "forecast" and usuario in USUARIOS_FORECAST)
         ]
     return render_template("inicio.html", areas=areas_visibles, session_nombre=session.get("nombre"))
 
@@ -1347,7 +1422,7 @@ def api_gestionar_vendedores():
 #  Reemplaza tener que pedir un filtro SQL nuevo cada vez.
 # ══════════════════════════════════════════════════════
 @app.route("/gestionar_productos_compra")
-@admin_requerido
+@admin_inventario_requerido
 def gestionar_productos_compra():
     return render_template("gestionar_productos_compra.html",
                            active="gestionar_productos_compra",
@@ -1355,7 +1430,7 @@ def gestionar_productos_compra():
 
 
 @app.route("/api/gestionar_productos_compra/datos")
-@admin_requerido
+@admin_inventario_requerido
 def api_gestionar_productos_compra_datos():
     try:
         return jsonify({"ok": True, "excluidos": data_loader_exclusion_compra.get_productos_no_comprar()})
@@ -1364,7 +1439,7 @@ def api_gestionar_productos_compra_datos():
 
 
 @app.route("/api/gestionar_productos_compra/familias")
-@admin_requerido
+@admin_inventario_requerido
 def api_gestionar_productos_compra_familias():
     try:
         return jsonify({"ok": True, "familias": data_loader_exclusion_compra.get_familias_productos()})
@@ -1373,7 +1448,7 @@ def api_gestionar_productos_compra_familias():
 
 
 @app.route("/api/gestionar_productos_compra/buscar")
-@admin_requerido
+@admin_inventario_requerido
 def api_gestionar_productos_compra_buscar():
     try:
         q = request.args.get("q", "")
@@ -1385,7 +1460,7 @@ def api_gestionar_productos_compra_buscar():
 
 
 @app.route("/api/gestionar_productos_compra", methods=["POST"])
-@admin_requerido
+@admin_inventario_requerido
 def api_gestionar_productos_compra():
     body = request.get_json(silent=True) or {}
     accion = body.get("accion")
@@ -1418,7 +1493,7 @@ def api_gestionar_productos_compra():
 #  Reemplaza editar Productos_Obligatorios.xlsx a mano.
 # ══════════════════════════════════════════════════════
 @app.route("/gestionar_prioridad")
-@admin_requerido
+@admin_inventario_requerido
 def gestionar_prioridad():
     return render_template("gestionar_prioridad.html",
                            active="gestionar_prioridad",
@@ -1426,7 +1501,7 @@ def gestionar_prioridad():
 
 
 @app.route("/api/gestionar_prioridad/datos")
-@admin_requerido
+@admin_inventario_requerido
 def api_gestionar_prioridad_datos():
     if not USAR_POSTGRES_INVENTARIO:
         return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_INVENTARIO=1)."}), 400
@@ -1437,7 +1512,7 @@ def api_gestionar_prioridad_datos():
 
 
 @app.route("/api/gestionar_prioridad/familias")
-@admin_requerido
+@admin_inventario_requerido
 def api_gestionar_prioridad_familias():
     try:
         return jsonify({"ok": True, "familias": data_loader_exclusion_compra.get_familias_productos()})
@@ -1446,7 +1521,7 @@ def api_gestionar_prioridad_familias():
 
 
 @app.route("/api/gestionar_prioridad/buscar")
-@admin_requerido
+@admin_inventario_requerido
 def api_gestionar_prioridad_buscar():
     try:
         q = request.args.get("q", "")
@@ -1476,7 +1551,7 @@ def api_gestionar_prioridad_buscar():
 
 
 @app.route("/api/gestionar_prioridad", methods=["POST"])
-@admin_requerido
+@admin_inventario_requerido
 def api_gestionar_prioridad():
     if not USAR_POSTGRES_INVENTARIO:
         return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_INVENTARIO=1)."}), 400
@@ -1513,7 +1588,7 @@ def api_gestionar_prioridad():
 
 
 @app.route("/admin/actualizar_inventario", methods=["POST"])
-@admin_requerido
+@admin_inventario_requerido
 def admin_actualizar_inventario():
     try:
         resultado = data_loader_inventario.actualizar_desde_archivo()
@@ -1527,7 +1602,7 @@ def admin_actualizar_inventario():
 #  archivo en data/inventario/ + boton "Actualizar datos")
 # ══════════════════════════════════════════════════════
 @app.route("/subir_inventario")
-@admin_requerido
+@admin_inventario_requerido
 def subir_inventario():
     return render_template("subir_inventario.html",
                            active="subir_inventario",
@@ -1535,7 +1610,7 @@ def subir_inventario():
 
 
 @app.route("/api/subir_inventario", methods=["POST"])
-@admin_requerido
+@admin_inventario_requerido
 def api_subir_inventario():
     if not USAR_POSTGRES_INVENTARIO:
         return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_INVENTARIO=1)."}), 400
@@ -1604,7 +1679,7 @@ def api_subir_inventario():
 #  aqui.
 # ══════════════════════════════════════════════════════
 @app.route("/subir_datos_duros")
-@admin_requerido
+@admin_inventario_requerido
 def subir_datos_duros():
     return render_template("subir_datos_duros.html",
                            active="subir_datos_duros",
@@ -1612,7 +1687,7 @@ def subir_datos_duros():
 
 
 @app.route("/api/subir_datos_duros", methods=["POST"])
-@admin_requerido
+@admin_inventario_requerido
 def api_subir_datos_duros():
     archivo = request.files.get("archivo")
     if not archivo or not archivo.filename:
@@ -1692,7 +1767,7 @@ def api_subir_datos_duros():
 #  como en Postgres.
 # ══════════════════════════════════════════════════════
 @app.route("/subir_compras")
-@admin_requerido
+@admin_adquisiciones_requerido
 def subir_compras():
     return render_template("subir_compras.html",
                            active="subir_compras",
@@ -1707,7 +1782,7 @@ def _leer_archivo_subido(archivo, tmp_suffix=".xlsx"):
 
 
 @app.route("/api/subir_compras", methods=["POST"])
-@admin_requerido
+@admin_adquisiciones_requerido
 def api_subir_compras():
     if not USAR_POSTGRES_ADQUISICIONES:
         return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_ADQUISICIONES=1)."}), 400
@@ -1787,7 +1862,7 @@ def api_subir_compras():
 
 
 @app.route("/api/subir_recepciones", methods=["POST"])
-@admin_requerido
+@admin_adquisiciones_requerido
 def api_subir_recepciones():
     if not USAR_POSTGRES_ADQUISICIONES:
         return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_ADQUISICIONES=1)."}), 400

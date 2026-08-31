@@ -7,7 +7,7 @@
 {% block sidebar_nav %}{% include "_inventario_sidebar.html" %}{% endblock %}
 
 {% block boton_actualizar %}
-{% if es_admin %}
+{% if es_admin_inventario %}
 <button id="btn-actualizar-inv" class="btn-filter" style="padding:8px 14px;font-size:12px;"
         title="Busca un archivo AAMMDD_Inventario.xlsx en data/inventario/ y reemplaza el inventario completo">
   🔄 Actualizar Inventario

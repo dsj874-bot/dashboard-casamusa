@@ -462,6 +462,18 @@ Mismo patrón que Comercial: `USAR_POSTGRES_INVENTARIO` (default "1"),
   de dónde salió. Verificado: 473/501 productos Prioritarios y 417/739
   de 2ª Línea usan Lead Time real; el resto cae al default por falta
   de historial de compra suficiente.
+  **2026-08-29 — Fórmula de San Isidro (CD) en Alertas de Quiebre
+  Crítico cambiada** (pedido explícito del usuario, solo aplica a
+  Alertas de Productos Prioritarios; Segunda Línea y Distribución NO
+  se tocaron): antes, la demanda que San Isidro debía cubrir era
+  `venta consolidada de la empresa − venta local de San Isidro`. Ahora
+  es `venta local de San Isidro + COLCHON_SAN_ISIDRO_PCT (0.5) ×
+  venta consolidada de la empresa` (`data_loader_obligatorios.py`,
+  constante `COLCHON_SAN_ISIDRO_PCT`, usada también en
+  `data_loader_obligatorios_pg.py`). A propósito cuenta la venta de
+  San Isidro dos veces (una directa, otra dentro del 50% del total) —
+  colchón deliberadamente generoso, no un reparto exacto. Semáforo
+  rojo/amarillo (15/25 días) sin cambios.
 - **"2ª Línea"** (`data_loader_segunda_linea.py`, **100% Postgres-only,
   sin equivalente Excel**): mismo dueto Alertas/Distribución (Plan de
   Compra también se movió a Forecast, ver arriba) pero para productos
@@ -967,10 +979,18 @@ lo suyo, sin "Administración"):
 | jvillegas@casamusa.cl | Express | sucursal CH+MP | idem (lista) |
 | eperez@casamusa.cl | E-commerce | canal e-commerce (todas las sucursales) | `canal: CANALES_ECOMMERCE` + `sucursal_ne: "CANAL DIGITAL"` |
 
-`CANALES_ECOMMERCE = ["CASAMUSA.CL", "MERCADO LIBRE CM", "MERCADO LIBRE SC", "MKT PLACE", "VENTA ASISTIDA", "SODIMAC/LEGRAND"]`
+`CANALES_ECOMMERCE = ["CASAMUSA.CL", "MERCADO LIBRE CM", "MERCADO LIBRE SC", "MERCADO LIBRE LB", "MKT PLACE", "VENTA ASISTIDA", "SODIMAC/LEGRAND"]`
 (Elennys es la encargada de E-commerce en general — se fue agregando
 canal por canal en la conversación real con el usuario, ojo si aparece
 un canal e-commerce nuevo en SAP, hay que agregarlo a esta lista a mano).
+**2026-08-29: agregado MERCADO LIBRE LB** — canal nuevo, activo recien
+desde agosto 2026 (no existe en meses anteriores, confirmado por el
+usuario). Detectado porque 14 filas de Daniel Gatica en agosto traían
+TIPO_VENTA en blanco en el export crudo de SAP (el campo se completo
+en SAP DESPUES de que se exporto/proceso el archivo que tenemos) --
+esas filas quedan pendientes de corregir cuando el usuario reexporte
+esos documentos (folios 112665, 112990, 113033, 113070, 113072,
+113135) con el campo ya completo.
 
 Las claves siguen el patrón `Rol2026` (ej. `Admin2026`, `Ecommerce2026`,
 `Comercial2026`, `GGeneral2026`). **naguilera@casamusa.cl fue eliminado

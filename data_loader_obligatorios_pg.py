@@ -117,15 +117,17 @@ def get_alertas_quiebre_critico_pg(familia=None):
         for nombre, _, _, es_cd in do.SUCURSALES_CRITICAS:
             stock_combinado = _stock_combinado_pg(datos, cod_obl, cod_equiv, nombre)
 
-            # San Isidro (es_cd): usa la venta CONSOLIDADA (bodega "Todas")
-            # menos su propia venta local -- misma aproximacion que el
-            # original (ver docstring de get_alertas_quiebre_critico en
-            # data_loader_obligatorios.py). Las demas: su propia columna
-            # de venta mensual, si existe (Maipu no tiene).
+            # San Isidro (es_cd): venta local propia + colchon del 50%
+            # de la venta CONSOLIDADA (bodega "Todas", incluida la
+            # propia San Isidro) -- misma logica que el original (ver
+            # COLCHON_SAN_ISIDRO_PCT y su comentario en
+            # get_alertas_quiebre_critico, data_loader_obligatorios.py).
+            # Las demas: su propia columna de venta mensual, si existe
+            # (Maipu no tiene).
             if es_cd:
                 venta_combinada = _venta_combinada_pg(datos, cod_obl, cod_equiv, "Todas")
                 venta_local_si = _venta_combinada_pg(datos, cod_obl, cod_equiv, "San Isidro")
-                venta_combinada = max(0.0, venta_combinada - venta_local_si)
+                venta_combinada = venta_local_si + do.COLCHON_SAN_ISIDRO_PCT * venta_combinada
                 tiene_venta = True
             else:
                 tiene_venta = nombre in dli.VENTA_MENSUAL_COL

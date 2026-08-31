@@ -142,6 +142,11 @@ def _venta_combinada(fila_obl, fila_equiv, col):
 UMBRAL_QUIEBRE_CRITICO_DIAS = 15    # rojo
 UMBRAL_ALERTA_TEMPRANA_DIAS = 25    # amarillo (entre este y el rojo)
 
+# Colchon de San Isidro (como CD) sobre la venta consolidada de toda
+# la empresa -- pedido explicito del usuario 2026-08-29. Reemplaza el
+# criterio anterior (venta consolidada MENOS su propia venta local).
+COLCHON_SAN_ISIDRO_PCT = 0.5
+
 
 def _clasificar_nivel(alcance, stock_combinado):
     """Clasifica una celda (sucursal o total) en 3 niveles segun
@@ -209,16 +214,17 @@ def get_alertas_quiebre_critico(familia=None):
 
             # San Isidro es el CD que reabastece a todas las demas
             # sucursales -- no tenemos el dato real de cuanto transfiere
-            # a cada una, asi que se aproxima con "venta consolidada
-            # menos su propia venta local": lo que las OTRAS sucursales
-            # necesitan reponer (San Isidro tambien vende directo, no
-            # es un CD puro -- su venta local es ~36% del total, y no
-            # tiene sentido exigirle stock para cubrir su propia venta
-            # DOS veces: una como "sucursal" y otra de nuevo dentro del
-            # total consolidado). Sigue siendo una aproximacion (no hay
-            # forma de saber cuanto va a cada sucursal especifica), pero
-            # ya no compara su stock contra el 100% de la demanda de
-            # toda la empresa incluyendose a si misma.
+            # a cada una, asi que se aproxima exigiendole cubrir su
+            # propia venta local MAS un colchon de COLCHON_SAN_ISIDRO_PCT
+            # (50%) de la venta consolidada de TODA la empresa (incluida
+            # la propia San Isidro) como respaldo para las demas
+            # sucursales. A proposito se cuenta la venta de San Isidro
+            # dos veces (una directa, otra dentro del colchon del 50%
+            # del total) -- es un colchon deliberadamente generoso, no
+            # un reparto exacto de a cuanto tiene que llegar cada
+            # sucursal (pedido explicito del usuario 2026-08-29,
+            # reemplaza el criterio anterior de "consolidada menos
+            # propia").
             venta_col = dli.VENTA_MENSUAL_TODAS if es_cd else dli.VENTA_MENSUAL_COL.get(nombre)
             alcance = None
             if venta_col:
@@ -227,7 +233,7 @@ def get_alertas_quiebre_critico(familia=None):
                     venta_local_si = _venta_combinada(
                         fila_stock_obl, fila_stock_equiv, dli.VENTA_MENSUAL_COL["San Isidro"]
                     )
-                    venta_combinada = max(0.0, venta_combinada - venta_local_si)
+                    venta_combinada = venta_local_si + COLCHON_SAN_ISIDRO_PCT * venta_combinada
                 if venta_combinada > 0:
                     # Alcance en DIAS de cobertura (mes de 30 dias
                     # corridos, mismo criterio ya usado en el resto
