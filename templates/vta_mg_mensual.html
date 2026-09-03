@@ -99,6 +99,14 @@
 .tbl-mg tbody .pct     { text-align: right; color: var(--green); font-weight: 600; }
 .tbl-mg tbody .mes-sep { border-left: 1px solid var(--border); }
 .tbl-mg .total-row td  { background: rgba(245,158,11,0.08); font-weight: 700; color: var(--amber); }
+/* Primera columna (categoria) fija al hacer scroll horizontal -- el
+   encabezado usa rowspan=2 en la 1ra fila, por eso se apunta a
+   "tr:first-child th:first-child" (si no, :first-child tambien
+   agarraria la 1ra sub-columna "Vta" de la 2da fila del thead). */
+.tbl-mg thead tr:first-child th:first-child { position: sticky; left: 0; z-index: 2; background: var(--surface2); }
+.tbl-mg tbody td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+.tbl-mg tbody tr:hover td:first-child { background: var(--surface2); }
+.tbl-mg .total-row td:first-child { background: linear-gradient(rgba(245,158,11,0.08), rgba(245,158,11,0.08)), var(--surface); }
 
 /* ── Variacion colores ──────────────────────────── */
 .vpos { color: var(--pos); }
@@ -137,6 +145,10 @@
 .tbl-sm .col-cat { font-weight: 600; color: var(--text); min-width: 120px; }
 .tbl-sm .num     { text-align: right; }
 .tbl-sm .total-row td { background: rgba(245,158,11,0.08); font-weight: 700; color: var(--amber); }
+.tbl-sm thead th:first-child { position: sticky; left: 0; z-index: 2; background: var(--surface2); }
+.tbl-sm tbody td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+.tbl-sm tbody tr:hover td:first-child { background: var(--surface2); }
+.tbl-sm .total-row td:first-child { background: linear-gradient(rgba(245,158,11,0.08), rgba(245,158,11,0.08)), var(--surface); }
 </style>
 {% endblock %}
 

@@ -95,20 +95,22 @@
     color: var(--muted); background: var(--surface2);
     border-bottom: 1px solid var(--border); white-space: nowrap;
   }
-  .main-table thead th:first-child { text-align: left; }
+  .main-table thead th:first-child { text-align: left; position: sticky; left: 0; z-index: 2; background: var(--surface2); }
   .main-table thead th[data-key] { cursor: pointer; user-select: none; }
   .main-table thead th[data-key]:hover { color: var(--text); }
   .main-table tbody td {
     padding: 9px 12px; border-bottom: 1px solid rgba(30,42,58,0.5);
     white-space: nowrap; text-align: right;
   }
-  .main-table tbody td:first-child { text-align: left; }
+  .main-table tbody td:first-child { text-align: left; position: sticky; left: 0; z-index: 1; background: var(--surface); }
   .main-table tbody tr:hover { background: var(--surface2); }
+  .main-table tbody tr:hover td:first-child { background: var(--surface2); }
   .row-total td {
     background: rgba(245,158,11,0.07); font-weight: 700;
     color: var(--amber); border-top: 2px solid rgba(245,158,11,0.25);
     border-bottom: 2px solid rgba(245,158,11,0.25);
   }
+  .main-table .row-total td:first-child { background: linear-gradient(rgba(245,158,11,0.07), rgba(245,158,11,0.07)), var(--surface); }
   .share-bar {
     display: inline-flex; align-items: center; gap: 6px;
   }

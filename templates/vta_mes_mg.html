@@ -85,6 +85,11 @@
 .tbl-sm .col-cat { font-weight: 600; color: var(--text); min-width: 120px; }
 .tbl-sm .num     { text-align: right; }
 .tbl-sm .total-row td { background: rgba(245,158,11,0.08); font-weight: 700; color: var(--amber); }
+/* Primera columna (categoria) fija al hacer scroll horizontal */
+.tbl-sm thead th:first-child { position: sticky; left: 0; z-index: 2; background: var(--surface2); }
+.tbl-sm tbody td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+.tbl-sm tbody tr:hover td:first-child { background: var(--surface2); }
+.tbl-sm .total-row td:first-child { background: linear-gradient(rgba(245,158,11,0.08), rgba(245,158,11,0.08)), var(--surface); }
 
 /* ── Variacion colores ──────────────────────────── */
 .vpos { color: var(--pos); }

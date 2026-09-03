@@ -555,6 +555,27 @@
     .table-header-title { font-size: 14px; font-weight: 700; }
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; }
+
+    /* Primera columna fija al hacer scroll horizontal -- se activa
+       agregando la clase "col1-fija" al .table-wrap (pedido explicito
+       del usuario, pantallas de Analisis). Necesita un fondo solido
+       explicito en cada celda (no transparente) para que las columnas
+       de atras no se transparenten al quedar debajo. */
+    .table-wrap.col1-fija thead th:first-child {
+      position: sticky; left: 0; z-index: 2; background: var(--surface2);
+    }
+    .table-wrap.col1-fija tbody td:first-child {
+      position: sticky; left: 0; z-index: 1; background: var(--surface);
+    }
+    .table-wrap.col1-fija tbody tr:hover td:first-child { background: var(--surface2); }
+    /* fondo compuesto: la capa de color va ENCIMA de un fondo solido
+       (var(--surface)) para que el resultado sea opaco -- si se deja
+       el rgba solo, al ser sticky dejaba "transparentar" el texto de
+       las columnas que quedan debajo al hacer scroll (bug real visto
+       en pantalla, fila Total General). */
+    .table-wrap.col1-fija .row-total td:first-child {
+      background: linear-gradient(rgba(220,38,38,0.06), rgba(220,38,38,0.06)), var(--surface);
+    }
     thead th {
       padding: 10px 16px;
       text-align: left;
