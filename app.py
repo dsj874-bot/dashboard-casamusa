@@ -296,6 +296,13 @@ def inject_es_admin():
         # admin_adquisiciones especificas de esa area.
         "es_admin_inventario":    session.get("admin", False) or session.get("admin_inventario", False),
         "es_admin_adquisiciones": session.get("admin", False) or session.get("admin_adquisiciones", False),
+        # Selector "Datos al" (fecha de corte) solo tiene sentido en
+        # Comercial -- Inventario/Adquisiciones/Finanzas/Logistica/
+        # Bodega/Forecast/Tareas no usan este mecanismo. Cualquier ruta
+        # que NO caiga en esos prefijos ya restringidos es Comercial.
+        "es_pantalla_comercial": not request.path.startswith(
+            PREFIJOS_RESTRINGIDOS_INVENTARIO + PREFIJOS_RESTRINGIDOS_ADQUISICIONES + PREFIJOS_SOLO_GERENCIA
+        ),
         "sucursal_sesion": suc_label,
         "canal_sesion": canal_label,
         # Jefe de Sucursal real, o un perfil sin sucursal general que
@@ -325,6 +332,18 @@ def _sucursal_ne_forzada():
     NE vive bajo "CANAL DIGITAL" en vendedor_home aunque sus reportes
     de Comercial no esten restringidos por sucursal)."""
     return session.get("sucursal") or session.get("sucursal_ne")
+
+
+def _fecha_corte_sesion():
+    """Fecha de corte manual elegida por el usuario (selector "Datos al"),
+    o None si no eligio ninguna -- en ese caso cada get_*_pg cae en su
+    comportamiento normal (ultima fecha real cargada). Mismo mecanismo
+    de override por sesion que _sucursal_forzada()/_canal_forzado(),
+    pedido explicito del usuario 2026-09-02 para poder ver el dashboard
+    "como se veia" en una fecha anterior a la ultima carga (ej. seguir
+    viendo el 31-08 aunque ya se haya subido el 01-09)."""
+    valor = session.get("fecha_corte")
+    return date.fromisoformat(valor) if valor else None
 
 
 # ══════════════════════════════════════════════════════
@@ -1061,7 +1080,7 @@ def vendedores():
 def api_ventas_por_vendedor():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_vendedor_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
+            return jsonify(data_loader_pg.get_ventas_por_vendedor_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(), fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_ventas_por_vendedor(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1080,7 +1099,7 @@ def canal():
 def api_ventas_por_canal():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_canal_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
+            return jsonify(data_loader_pg.get_ventas_por_canal_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(), fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_ventas_por_canal(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1100,7 +1119,7 @@ def api_ventas_por_familia():
     try:
         agrupar_por = request.args.get("agrupar_por", "familia")
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_familia_pg(agrupar_por, filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
+            return jsonify(data_loader_pg.get_ventas_por_familia_pg(agrupar_por, filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(), fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_ventas_por_familia(agrupar_por, filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1119,7 +1138,7 @@ def procedencia():
 def api_ventas_por_procedencia():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_procedencia_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
+            return jsonify(data_loader_pg.get_ventas_por_procedencia_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(), fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_ventas_por_procedencia(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1138,7 +1157,7 @@ def clientes():
 def api_ventas_por_cliente():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_cliente_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
+            return jsonify(data_loader_pg.get_ventas_por_cliente_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(), fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_ventas_por_cliente(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1157,7 +1176,7 @@ def productos():
 def api_ventas_por_producto():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_producto_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
+            return jsonify(data_loader_pg.get_ventas_por_producto_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(), fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_ventas_por_producto(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1927,6 +1946,47 @@ def api_subir_recepciones():
 
 
 # ══════════════════════════════════════════════════════
+#  FECHA DE CORTE ("Datos al") -- selector global para ver el
+#  dashboard Comercial como se veia en una fecha anterior a la ultima
+#  carga. Guardado en sesion (mismo mecanismo que _sucursal_forzada()/
+#  _canal_forzado()), leido por cada get_*_pg via _fecha_corte_sesion().
+#  Pedido explicito del usuario 2026-09-02.
+# ══════════════════════════════════════════════════════
+@app.route("/api/fecha_corte", methods=["GET", "POST"])
+@login_requerido
+def api_fecha_corte():
+    if not USAR_POSTGRES_COMERCIAL:
+        return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_COMERCIAL=1)."}), 400
+    try:
+        fecha_real = data_loader_pg.fecha_datos_real_pg()
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+    if request.method == "GET":
+        return jsonify({
+            "ok": True,
+            "fecha_real": fecha_real.isoformat(),
+            "fecha_corte": session.get("fecha_corte"),
+        })
+
+    body = request.get_json(silent=True) or {}
+    valor = body.get("fecha_corte")
+    if not valor:
+        session.pop("fecha_corte", None)
+        return jsonify({"ok": True, "fecha_real": fecha_real.isoformat(), "fecha_corte": None})
+
+    try:
+        elegida = date.fromisoformat(valor)
+    except ValueError:
+        return jsonify({"ok": False, "msg": "Fecha invalida."}), 400
+    if elegida > fecha_real:
+        return jsonify({"ok": False, "msg": f"No puedes elegir una fecha posterior a la ultima cargada ({fecha_real.strftime('%d/%m/%Y')})."}), 400
+
+    session["fecha_corte"] = elegida.isoformat()
+    return jsonify({"ok": True, "fecha_real": fecha_real.isoformat(), "fecha_corte": session["fecha_corte"]})
+
+
+# ══════════════════════════════════════════════════════
 #  API — DATOS REALES
 # ══════════════════════════════════════════════════════
 @app.route("/api/resumen")
@@ -1934,7 +1994,7 @@ def api_subir_recepciones():
 def api_resumen():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_resumen_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
+            return jsonify(data_loader_pg.get_resumen_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(), fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_resumen(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1945,7 +2005,7 @@ def api_resumen():
 def api_ventas_por_mes():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_mes_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
+            return jsonify(data_loader_pg.get_ventas_por_mes_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(), fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_ventas_por_mes(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1956,7 +2016,7 @@ def api_ventas_por_mes():
 def api_ventas_por_sucursal():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_ventas_por_sucursal_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
+            return jsonify(data_loader_pg.get_ventas_por_sucursal_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(), fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_ventas_por_sucursal(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1983,7 +2043,7 @@ def api_proyeccion():
         if _canal_forzado():
             filtros["tipo_venta"] = _canal_forzado()
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_proyeccion_pg(filtros))
+            return jsonify(data_loader_pg.get_proyeccion_pg(filtros, fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_proyeccion(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1999,7 +2059,7 @@ def api_metas():
         if _canal_forzado():
             filtros["tipo_venta"] = _canal_forzado()
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_seguimiento_metas_pg(filtros))
+            return jsonify(data_loader_pg.get_seguimiento_metas_pg(filtros, fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_seguimiento_metas(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2018,7 +2078,7 @@ def ppto():
 def api_ppto():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_seguimiento_ppto_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
+            return jsonify(data_loader_pg.get_seguimiento_ppto_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(), fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_seguimiento_ppto(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2054,7 +2114,7 @@ def api_vta_acum():
         if _canal_forzado():
             filtros["tipo_venta"] = _canal_forzado()
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_vta_acum_pg(filtros))
+            return jsonify(data_loader_pg.get_vta_acum_pg(filtros, fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_vta_acum(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2078,7 +2138,7 @@ def api_vta_mes_mg():
         if _canal_forzado():
             filtros["tipo_venta"] = _canal_forzado()
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_vta_mes_mg_acum_pg(filtros))
+            return jsonify(data_loader_pg.get_vta_mes_mg_acum_pg(filtros, fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_vta_mes_mg_acum(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2102,7 +2162,7 @@ def api_vta_mg_mensual():
         if _canal_forzado():
             filtros["tipo_venta"] = _canal_forzado()
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_vta_mg_mensual_pg(filtros))
+            return jsonify(data_loader_pg.get_vta_mg_mensual_pg(filtros, fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_vta_mg_mensual(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2126,7 +2186,7 @@ def api_vta_mg():
         if _canal_forzado():
             filtros["tipo_venta"] = _canal_forzado()
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_vta_mg_pg(filtros))
+            return jsonify(data_loader_pg.get_vta_mg_pg(filtros, fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_vta_mg(filtros))
     except Exception as e:
         return jsonify({"error": str(e)}), 500

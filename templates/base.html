@@ -322,6 +322,60 @@
       color: var(--muted2);
     }
 
+    /* Selector de fecha de corte ("Datos al") -- ver /api/fecha_corte */
+    .fecha-corte-wrap { position: relative; }
+    .fecha-corte-btn {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: var(--muted2);
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .fecha-corte-btn:hover { border-color: var(--accent); color: var(--text); }
+    .fecha-corte-btn strong { color: var(--text); }
+    .fecha-corte-btn.activo {
+      background: rgba(245,158,11,0.12);
+      border-color: var(--amber);
+      color: var(--amber);
+    }
+    .fecha-corte-btn.activo strong { color: var(--amber); }
+    .fecha-corte-panel {
+      display: none;
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      z-index: 100;
+      width: 240px;
+    }
+    .fecha-corte-panel.abierto { display: block; }
+    .fecha-corte-panel label {
+      display: block; font-size: 11px; color: var(--muted); margin-bottom: 6px;
+      text-transform: uppercase; letter-spacing: 0.4px;
+    }
+    .fecha-corte-panel input[type="date"] {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); font-size: 13px; padding: 8px 10px;
+      margin-bottom: 10px; font-family: inherit;
+    }
+    .fecha-corte-panel .fila-botones { display: flex; gap: 8px; }
+    .fecha-corte-panel button {
+      flex: 1; border: none; border-radius: 6px; padding: 8px 10px;
+      font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .fecha-corte-panel .btn-aplicar { background: var(--accent); color: #fff; }
+    .fecha-corte-panel .btn-quitar { background: var(--surface2); color: var(--muted2); border: 1px solid var(--border); }
+    .fecha-corte-panel .btn-quitar:disabled { opacity: 0.4; cursor: not-allowed; }
+    .fecha-corte-panel .error { color: var(--red); font-size: 11px; margin: -4px 0 8px; }
+
     /* Selector de tema (Oscuro / Claro / Sistema) */
     .theme-switch {
       display: flex;
@@ -739,6 +793,20 @@
         📥 Descargar Excel
       </button>
       {% endblock %}
+      {% if es_pantalla_comercial %}
+      <div class="fecha-corte-wrap">
+        <button type="button" class="fecha-corte-btn" id="fecha-corte-btn">📅 Datos al <strong id="fecha-corte-label">…</strong></button>
+        <div class="fecha-corte-panel" id="fecha-corte-panel">
+          <label for="fecha-corte-input">Ver el dashboard como estaba al</label>
+          <input type="date" id="fecha-corte-input">
+          <div class="error" id="fecha-corte-error" style="display:none;"></div>
+          <div class="fila-botones">
+            <button type="button" class="btn-quitar" id="fecha-corte-quitar">Volver a hoy</button>
+            <button type="button" class="btn-aplicar" id="fecha-corte-aplicar">Aplicar</button>
+          </div>
+        </div>
+      </div>
+      {% endif %}
       <div class="theme-switch" id="theme-switch">
         <button type="button" data-tema="dark"   title="Tema oscuro">🌙</button>
         <button type="button" data-tema="light"  title="Tema claro">☀️</button>
@@ -760,6 +828,77 @@
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   });
   document.getElementById('fecha-hoy').textContent = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+
+  // Selector de fecha de corte ("Datos al") -- solo existe en pantallas
+  // de Comercial (ver es_pantalla_comercial en app.py). Cambiar la
+  // fecha guarda el corte en la sesion (backend) y recarga la pagina
+  // -- cada pantalla vuelve a pedir sus propios datos, ya acotados al
+  // nuevo corte, sin duplicar logica de fetch aqui.
+  (function () {
+    const btn     = document.getElementById('fecha-corte-btn');
+    if (!btn) return; // pantalla no-Comercial, el bloque ni se renderizo
+
+    const label   = document.getElementById('fecha-corte-label');
+    const panel   = document.getElementById('fecha-corte-panel');
+    const input   = document.getElementById('fecha-corte-input');
+    const errorEl = document.getElementById('fecha-corte-error');
+    const btnAplicar = document.getElementById('fecha-corte-aplicar');
+    const btnQuitar  = document.getElementById('fecha-corte-quitar');
+
+    function fmtCL(iso) {
+      const [y, m, d] = iso.split('-');
+      return `${d}/${m}/${y}`;
+    }
+
+    function mostrarError(msg) {
+      errorEl.textContent = msg;
+      errorEl.style.display = 'block';
+    }
+
+    fetch('/api/fecha_corte').then(r => r.json()).then(d => {
+      if (!d.ok) return;
+      input.max = d.fecha_real;
+      if (d.fecha_corte) {
+        label.textContent = fmtCL(d.fecha_corte);
+        btn.classList.add('activo');
+        input.value = d.fecha_corte;
+        btnQuitar.disabled = false;
+      } else {
+        label.textContent = fmtCL(d.fecha_real);
+        input.value = d.fecha_real;
+        btnQuitar.disabled = true;
+      }
+    });
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      panel.classList.toggle('abierto');
+    });
+    document.addEventListener('click', (e) => {
+      if (!panel.contains(e.target) && e.target !== btn) panel.classList.remove('abierto');
+    });
+
+    function guardar(fechaCorte) {
+      errorEl.style.display = 'none';
+      fetch('/api/fecha_corte', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fecha_corte: fechaCorte }),
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (!d.ok) { mostrarError(d.msg || 'No se pudo guardar.'); return; }
+          location.reload();
+        })
+        .catch(() => mostrarError('Error de conexión.'));
+    }
+
+    btnAplicar.addEventListener('click', () => {
+      if (!input.value) { mostrarError('Elige una fecha.'); return; }
+      guardar(input.value);
+    });
+    btnQuitar.addEventListener('click', () => guardar(null));
+  })();
 
   // Colapsar/expandir barra lateral (icono-only), estado guardado en el navegador
   const btnToggleSidebar = document.getElementById('sidebar-toggle');

@@ -167,11 +167,23 @@ def _hoy():
     return datetime.now().date()
 
 
-def _fecha_datos_pg(cur):
+def _fecha_datos_pg(cur, fecha_corte=None):
     """Equivalente Postgres de data_loader._fecha_datos(): en vez de
     leer data/comercial/fecha_confirmada.txt, lee la tabla
     control_datos (fila area='comercial'). Reutiliza el cursor que le
-    pasa el caller (misma conexion, no abre una nueva)."""
+    pasa el caller (misma conexion, no abre una nueva).
+
+    fecha_corte (opcional): si el usuario eligio una fecha de corte
+    manual (selector "Datos al", ver session["fecha_corte"] en app.py),
+    se retorna tal cual -- bypasea el calculo de max_fecha/confirmada
+    por completo. OJO: esto SOLO fija mes_actual/dia_actual para los
+    callers; cada query que suma "ano = 2026" sin acotar por dia debe
+    ademas agregar el mismo corte (mes < mes_actual OR (mes=mes_actual
+    AND dia<=dia_actual)) a su WHERE, o el corte no tiene efecto real
+    sobre el numero -- ver auditoria 2026-09-03, cada get_*_pg fue
+    revisado a mano para esto."""
+    if fecha_corte is not None:
+        return fecha_corte
     hoy = _hoy()
     cur.execute(
         """SELECT
@@ -187,6 +199,17 @@ def _fecha_datos_pg(cur):
     if confirmada and confirmada > fecha_real:
         return confirmada
     return fecha_real
+
+
+def fecha_datos_real_pg():
+    """fecha_datos SIN override -- para el selector "Datos al" (app.py):
+    valida que la fecha de corte elegida por el usuario no sea futura
+    respecto a lo realmente cargado, y sirve de tope maximo (`max`) en
+    el input de fecha del frontend. Abre su propia conexion (no se
+    reutiliza cursor de otro caller)."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            return _fecha_datos_pg(cur)
 
 
 def _filtro_sucursal_sql(filtro_sucursal):
@@ -209,7 +232,7 @@ def _filtro_canal_sql(filtro_canal):
     return " AND tipo_venta = ANY(%(canal)s)", valores
 
 
-def get_resumen_pg(filtro_sucursal=None, filtro_canal=None):
+def get_resumen_pg(filtro_sucursal=None, filtro_canal=None, fecha_corte=None):
     frag_suc, suc = _filtro_sucursal_sql(filtro_sucursal)
     frag_canal, canal = _filtro_canal_sql(filtro_canal)
     params = {}
@@ -220,7 +243,7 @@ def get_resumen_pg(filtro_sucursal=None, filtro_canal=None):
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            fecha_datos = _fecha_datos_pg(cur)
+            fecha_datos = _fecha_datos_pg(cur, fecha_corte)
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
             mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
@@ -228,12 +251,14 @@ def get_resumen_pg(filtro_sucursal=None, filtro_canal=None):
 
             cur.execute(
                 f"""SELECT
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS venta_ano_26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS venta_ano_26,
                       coalesce(sum(total) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS venta_ano_25,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS venta_mes_26,
-                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS utilidad_mes,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS venta_mes_26,
+                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS utilidad_mes,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS venta_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS venta_mes_ant
                     FROM v_ventas
@@ -268,7 +293,7 @@ def get_resumen_pg(filtro_sucursal=None, filtro_canal=None):
     }
 
 
-def get_ventas_por_mes_pg(filtro_sucursal=None, filtro_canal=None):
+def get_ventas_por_mes_pg(filtro_sucursal=None, filtro_canal=None, fecha_corte=None):
     frag_suc, suc = _filtro_sucursal_sql(filtro_sucursal)
     frag_canal, canal = _filtro_canal_sql(filtro_canal)
     params = {}
@@ -279,9 +304,18 @@ def get_ventas_por_mes_pg(filtro_sucursal=None, filtro_canal=None):
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
+            # 2025 no lleva tope de dia -- es un ano cerrado, cada mes ya
+            # esta completo independiente del corte elegido. 2026 si lo
+            # necesita: el mes en curso (mes_actual) esta en progreso, y
+            # sin este tope un dia de mas cargado por error se cuela en
+            # la barra del mes (mismo caso real 2026-09-02).
+            fecha_datos = _fecha_datos_pg(cur, fecha_corte)
+            params.update({"mes_actual": fecha_datos.month, "dia_actual": fecha_datos.day})
             cur.execute(
                 f"""SELECT mes,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS v26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025), 0) AS v25
                     FROM v_ventas
                     WHERE ano IN (2025, 2026) {frag_suc} {frag_canal}
@@ -304,7 +338,7 @@ def get_ventas_por_mes_pg(filtro_sucursal=None, filtro_canal=None):
     return {"meses": meses, "ano_actual": 2026, "ano_anterior": 2025}
 
 
-def get_ventas_por_campo_pg(campo, orden_map=None, top_n=None, filtro_sucursal=None, filtro_canal=None):
+def get_ventas_por_campo_pg(campo, orden_map=None, top_n=None, filtro_sucursal=None, filtro_canal=None, fecha_corte=None):
     if campo not in COLUMNAS_AGRUPABLES:
         raise ValueError(f"Columna no permitida para agrupar: {campo}")
     campo_col = COLUMNAS_AGRUPABLES[campo]
@@ -319,7 +353,7 @@ def get_ventas_por_campo_pg(campo, orden_map=None, top_n=None, filtro_sucursal=N
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            fecha_datos = _fecha_datos_pg(cur)
+            fecha_datos = _fecha_datos_pg(cur, fecha_corte)
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
             mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
@@ -334,12 +368,14 @@ def get_ventas_por_campo_pg(campo, orden_map=None, top_n=None, filtro_sucursal=N
             # anterior) se calcula en la misma pasada con FILTER.
             cur.execute(
                 f"""SELECT {campo_col} AS val,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v_ano_26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS v_ano_26,
                       coalesce(sum(total) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS v_ano_25,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
-                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS util_mes,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_26,
+                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS util_mes,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_prev
                     FROM v_ventas
                     WHERE {campo_col} IS NOT NULL {frag_suc} {frag_canal}
@@ -404,14 +440,14 @@ def get_ventas_por_campo_pg(campo, orden_map=None, top_n=None, filtro_sucursal=N
     }
 
 
-def get_ventas_por_sucursal_pg(filtro_sucursal=None, filtro_canal=None):
+def get_ventas_por_sucursal_pg(filtro_sucursal=None, filtro_canal=None, fecha_corte=None):
     # Sin orden_map -- get_ventas_por_campo_pg ordena por defecto de
     # mayor a menor venta del mes (ver su "else: sort by -v_mes_actual"),
     # que es justo lo que se quiere aca: la sucursal que mas vende
     # arriba, no un orden fijo MT/LC/MR/.../CANAL DIGITAL que deja
     # siempre al final a la que mas vende si no es una sucursal fisica
     # tradicional (pedido explicito del usuario).
-    data = get_ventas_por_campo_pg("SUCURSAL_LOGICA", filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
+    data = get_ventas_por_campo_pg("SUCURSAL_LOGICA", filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal, fecha_corte=fecha_corte)
     return {
         "sucursales":   [{**r, "sucursal": r["nombre"]} for r in data["items"]],
         "total":        data["total"],
@@ -422,26 +458,26 @@ def get_ventas_por_sucursal_pg(filtro_sucursal=None, filtro_canal=None):
     }
 
 
-def get_ventas_por_vendedor_pg(filtro_sucursal=None, filtro_canal=None):
+def get_ventas_por_vendedor_pg(filtro_sucursal=None, filtro_canal=None, fecha_corte=None):
     # Se agrupa por VENDEDOR (nombre real SAP), no VENDEDOR_RPT -- ver
     # docstring de data_loader.get_ventas_por_vendedor.
-    return get_ventas_por_campo_pg("VENDEDOR", filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
+    return get_ventas_por_campo_pg("VENDEDOR", filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal, fecha_corte=fecha_corte)
 
 
-def get_ventas_por_canal_pg(filtro_sucursal=None, filtro_canal=None):
-    return get_ventas_por_campo_pg("TIPO_VENTA", filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
+def get_ventas_por_canal_pg(filtro_sucursal=None, filtro_canal=None, fecha_corte=None):
+    return get_ventas_por_campo_pg("TIPO_VENTA", filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal, fecha_corte=fecha_corte)
 
 
-def get_ventas_por_procedencia_pg(filtro_sucursal=None, filtro_canal=None):
-    return get_ventas_por_campo_pg("PROCEDENCIA", filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
+def get_ventas_por_procedencia_pg(filtro_sucursal=None, filtro_canal=None, fecha_corte=None):
+    return get_ventas_por_campo_pg("PROCEDENCIA", filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal, fecha_corte=fecha_corte)
 
 
-def get_ventas_por_cliente_pg(filtro_sucursal=None, filtro_canal=None):
-    return get_ventas_por_campo_pg("NOMBRE_CLIENTE", top_n=15, filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
+def get_ventas_por_cliente_pg(filtro_sucursal=None, filtro_canal=None, fecha_corte=None):
+    return get_ventas_por_campo_pg("NOMBRE_CLIENTE", top_n=15, filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal, fecha_corte=fecha_corte)
 
 
-def get_ventas_por_producto_pg(filtro_sucursal=None, filtro_canal=None):
-    data = get_ventas_por_campo_pg("PRODUCTO_KEY", top_n=15, filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
+def get_ventas_por_producto_pg(filtro_sucursal=None, filtro_canal=None, fecha_corte=None):
+    data = get_ventas_por_campo_pg("PRODUCTO_KEY", top_n=15, filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal, fecha_corte=fecha_corte)
     for r in data["items"]:
         codigo, _, descripcion = r["nombre"].partition("||")
         r["codigo"] = codigo
@@ -449,10 +485,10 @@ def get_ventas_por_producto_pg(filtro_sucursal=None, filtro_canal=None):
     return data
 
 
-def get_ventas_por_familia_pg(agrupar_por="familia", filtro_sucursal=None, filtro_canal=None):
+def get_ventas_por_familia_pg(agrupar_por="familia", filtro_sucursal=None, filtro_canal=None, fecha_corte=None):
     campo = "MARCA" if agrupar_por == "marca" else "FAMILIA"
     top_n = 30 if campo == "MARCA" else None
-    return get_ventas_por_campo_pg(campo, top_n=top_n, filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal)
+    return get_ventas_por_campo_pg(campo, top_n=top_n, filtro_sucursal=filtro_sucursal, filtro_canal=filtro_canal, fecha_corte=fecha_corte)
 
 
 def get_filtros_proyeccion_pg(filtro_sucursal=None, filtro_canal=None):
@@ -498,12 +534,12 @@ def _leer_ne_x_facturar_pg(cur):
     return {(f["sucursal"], f["vendedor"]): float(f["monto_ne"]) for f in cur.fetchall()}
 
 
-def get_proyeccion_pg(filtros=None):
+def get_proyeccion_pg(filtros=None, fecha_corte=None):
     frag_filtros, params = _filtros_comunes_sql(filtros)
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            fecha_datos = _fecha_datos_pg(cur)
+            fecha_datos = _fecha_datos_pg(cur, fecha_corte)
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
             mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
@@ -511,11 +547,13 @@ def get_proyeccion_pg(filtros=None):
 
             cur.execute(
                 f"""SELECT
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v_ano_26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS v_ano_26,
                       coalesce(sum(total) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS v_ano_25,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
                     FROM v_ventas
@@ -562,13 +600,13 @@ def get_proyeccion_pg(filtros=None):
             # de la version pandas; coalesce cubre el fillna(0).
             cur.execute(
                 f"""SELECT sucursal_logica, vendedor_rpt,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS vta_mes,
-                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS mg_mes,
-                      count(DISTINCT (doc_sap, folio)) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s) AS nro_docs,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS vta_mes,
+                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS mg_mes,
+                      count(DISTINCT (doc_sap, folio)) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s) AS nro_docs,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS vta_ant
                     FROM v_ventas
                     WHERE (
-                      (ano = 2026 AND mes = %(mes_actual)s)
+                      (ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s)
                       OR (ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s)
                     ) {frag_filtros}
                     GROUP BY sucursal_logica, vendedor_rpt""",
@@ -710,12 +748,12 @@ def sincronizar_ventas_pg(df, fechas, tamano_lote=1500, reintentos=3):
         conn.close()
 
 
-def get_seguimiento_metas_pg(filtros=None):
+def get_seguimiento_metas_pg(filtros=None, fecha_corte=None):
     frag_filtros, params = _filtros_comunes_sql(filtros)
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            fecha_datos = _fecha_datos_pg(cur)
+            fecha_datos = _fecha_datos_pg(cur, fecha_corte)
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
             mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
@@ -723,11 +761,13 @@ def get_seguimiento_metas_pg(filtros=None):
 
             cur.execute(
                 f"""SELECT
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v_ano_26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS v_ano_26,
                       coalesce(sum(total) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS v_ano_25,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
                     FROM v_ventas
@@ -787,7 +827,7 @@ def get_seguimiento_metas_pg(filtros=None):
             cur.execute(
                 f"""SELECT sucursal_logica, vendedor_rpt, coalesce(sum(total), 0) AS vta
                     FROM v_ventas
-                    WHERE ano = 2026 AND mes = %(mes_actual)s {frag_filtros}
+                    WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s {frag_filtros}
                     GROUP BY sucursal_logica, vendedor_rpt""",
                 params,
             )
@@ -830,7 +870,7 @@ def get_seguimiento_metas_pg(filtros=None):
     return {"kpis": kpis, "filas": lista}
 
 
-def get_seguimiento_ppto_pg(filtro_sucursal=None, filtro_canal=None):
+def get_seguimiento_ppto_pg(filtro_sucursal=None, filtro_canal=None, fecha_corte=None):
     frag_suc, suc = _filtro_sucursal_sql(filtro_sucursal)
     frag_canal, canal = _filtro_canal_sql(filtro_canal)
     params = {}
@@ -841,7 +881,7 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None, filtro_canal=None):
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            fecha_datos = _fecha_datos_pg(cur)
+            fecha_datos = _fecha_datos_pg(cur, fecha_corte)
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
             mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
@@ -849,11 +889,13 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None, filtro_canal=None):
 
             cur.execute(
                 f"""SELECT
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v_ano_26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS v_ano_26,
                       coalesce(sum(total) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS v_ano_25,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
                     FROM v_ventas
@@ -898,7 +940,9 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None, filtro_canal=None):
             # 2025 (no aparece en df26, no deberia listarse).
             cur.execute(
                 f"""SELECT sucursal_logica,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS acum_26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS acum_26,
                       coalesce(sum(total) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS acum_25,
@@ -910,10 +954,17 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None, filtro_canal=None):
             )
             acumulados = {f["sucursal_logica"]: f for f in cur.fetchall()}
 
+            # mes en curso (2026) tope por dia -- mismo caso que
+            # get_ventas_por_mes_pg (grafico mensual, la barra del mes
+            # actual no debe pasarse del corte elegido). 2025 no lo
+            # necesita, ano cerrado.
             cur.execute(
                 f"""SELECT sucursal_logica, ano, mes, coalesce(sum(total), 0) AS v
                     FROM v_ventas
-                    WHERE ano IN (2025, 2026) AND sucursal_logica IS NOT NULL {frag_suc} {frag_canal}
+                    WHERE (
+                      ano = 2025
+                      OR (ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s)))
+                    ) AND sucursal_logica IS NOT NULL {frag_suc} {frag_canal}
                     GROUP BY sucursal_logica, ano, mes""",
                 params,
             )
@@ -922,7 +973,10 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None, filtro_canal=None):
             cur.execute(
                 f"""SELECT ano, mes, coalesce(sum(total), 0) AS v
                     FROM v_ventas
-                    WHERE ano IN (2025, 2026) {frag_suc} {frag_canal}
+                    WHERE (
+                      ano = 2025
+                      OR (ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s)))
+                    ) {frag_suc} {frag_canal}
                     GROUP BY ano, mes""",
                 params,
             )
@@ -1030,7 +1084,7 @@ def get_filtros_vta_acum_pg(filtro_sucursal=None, filtro_canal=None):
     }
 
 
-def get_vta_acum_pg(filtros=None):
+def get_vta_acum_pg(filtros=None, fecha_corte=None):
     f = filtros or {}
     frag_filtros, params = _filtros_vta_sql(f)
     categoria = f.get("categoria", "marca")
@@ -1038,7 +1092,7 @@ def get_vta_acum_pg(filtros=None):
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            fecha_datos = _fecha_datos_pg(cur)
+            fecha_datos = _fecha_datos_pg(cur, fecha_corte)
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
             mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
@@ -1050,11 +1104,13 @@ def get_vta_acum_pg(filtros=None):
 
             cur.execute(
                 f"""SELECT
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v_ano_26,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS v_ano_26,
                       coalesce(sum(total) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS v_ano_25,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
                     FROM v_ventas
@@ -1092,7 +1148,9 @@ def get_vta_acum_pg(filtros=None):
             # original, que no estan acotados a las categorias de grp26).
             cur.execute(
                 f"""SELECT {col_grupo} AS cat,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS vta,
+                      coalesce(sum(total) FILTER (
+                          WHERE ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
+                      ), 0) AS vta,
                       coalesce(sum(total) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS vta25_ytd,
@@ -1152,7 +1210,7 @@ def get_vta_acum_pg(filtros=None):
     }
 
 
-def get_vta_mes_mg_acum_pg(filtros=None):
+def get_vta_mes_mg_acum_pg(filtros=None, fecha_corte=None):
     f = filtros or {}
     frag_filtros, params = _filtros_vta_sql(f)
     categoria = f.get("categoria", "marca")
@@ -1160,19 +1218,23 @@ def get_vta_mes_mg_acum_pg(filtros=None):
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            fecha_datos = _fecha_datos_pg(cur)
+            fecha_datos = _fecha_datos_pg(cur, fecha_corte)
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
             mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
             params.update({"mes_actual": mes_actual, "dia_actual": dia_actual, "mes_anterior": mes_anterior})
+            # Reutilizado en cada "WHERE ano = 2026" de esta funcion --
+            # todas son sumas YTD 2026, necesitan el mismo tope de dia
+            # para respetar la fecha de corte elegida (ver _fecha_datos_pg).
+            corte_2026 = "(mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))"
 
             cur.execute(
                 f"""SELECT
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v_ano_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND {corte_2026}), 0) AS v_ano_26,
                       coalesce(sum(total) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS v_ano_25,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s), 0) AS v_mes_ant
                     FROM v_ventas
@@ -1202,20 +1264,20 @@ def get_vta_mes_mg_acum_pg(filtros=None):
                 "ano_anterior":        2025,
             }
 
-            cur.execute(f"SELECT DISTINCT mes FROM v_ventas WHERE ano = 2026 {frag_filtros}", params)
+            cur.execute(f"SELECT DISTINCT mes FROM v_ventas WHERE ano = 2026 AND {corte_2026} {frag_filtros}", params)
             meses_con_datos = sorted(row["mes"] for row in cur.fetchall())
             nombres_meses = [MESES.get(m, str(m)) for m in meses_con_datos]
 
             cur.execute(
                 f"""SELECT mes, coalesce(sum(total), 0) AS v
-                    FROM v_ventas WHERE ano = 2026 {frag_filtros} GROUP BY mes""",
+                    FROM v_ventas WHERE ano = 2026 AND {corte_2026} {frag_filtros} GROUP BY mes""",
                 params,
             )
             total_por_mes = {row["mes"]: round(float(row["v"]), 0) for row in cur.fetchall()}
 
             cur.execute(
                 f"""SELECT {col_grupo} AS cat, mes, coalesce(sum(total), 0) AS v
-                    FROM v_ventas WHERE ano = 2026 AND {col_grupo} IS NOT NULL {frag_filtros}
+                    FROM v_ventas WHERE ano = 2026 AND {corte_2026} AND {col_grupo} IS NOT NULL {frag_filtros}
                     GROUP BY {col_grupo}, mes""",
                 params,
             )
@@ -1224,14 +1286,14 @@ def get_vta_mes_mg_acum_pg(filtros=None):
             cur.execute(
                 f"""SELECT {col_grupo} AS cat,
                       coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
-                    FROM v_ventas WHERE ano = 2026 AND {col_grupo} IS NOT NULL {frag_filtros}
+                    FROM v_ventas WHERE ano = 2026 AND {corte_2026} AND {col_grupo} IS NOT NULL {frag_filtros}
                     GROUP BY {col_grupo} ORDER BY vta DESC""",
                 params,
             )
             grp_total_rows = cur.fetchall()
 
             cur.execute(
-                f"SELECT coalesce(sum(total), 0) AS t, coalesce(sum(utilidad_bruta), 0) AS m FROM v_ventas WHERE ano = 2026 {frag_filtros}",
+                f"SELECT coalesce(sum(total), 0) AS t, coalesce(sum(utilidad_bruta), 0) AS m FROM v_ventas WHERE ano = 2026 AND {corte_2026} {frag_filtros}",
                 params,
             )
             tot_row = cur.fetchone()
@@ -1276,7 +1338,7 @@ def get_vta_mes_mg_acum_pg(filtros=None):
     }
 
 
-def get_vta_mg_mensual_pg(filtros=None):
+def get_vta_mg_mensual_pg(filtros=None, fecha_corte=None):
     f = filtros or {}
     frag_filtros, params = _filtros_vta_sql(f)
     categoria = f.get("categoria", "marca")
@@ -1284,19 +1346,20 @@ def get_vta_mg_mensual_pg(filtros=None):
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            fecha_datos = _fecha_datos_pg(cur)
+            fecha_datos = _fecha_datos_pg(cur, fecha_corte)
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
             mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
             params.update({"mes_actual": mes_actual, "dia_actual": dia_actual, "mes_anterior": mes_anterior})
+            corte_2026 = "(mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))"
 
             cur.execute(
                 f"""SELECT
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v_ano_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND {corte_2026}), 0) AS v_ano_26,
                       coalesce(sum(total) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS v_ano_25,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s), 0) AS v_mes_ant
                     FROM v_ventas
@@ -1326,14 +1389,14 @@ def get_vta_mg_mensual_pg(filtros=None):
                 "ano_anterior":        2025,
             }
 
-            cur.execute(f"SELECT DISTINCT mes FROM v_ventas WHERE ano = 2026 {frag_filtros}", params)
+            cur.execute(f"SELECT DISTINCT mes FROM v_ventas WHERE ano = 2026 AND {corte_2026} {frag_filtros}", params)
             meses_con_datos = sorted(row["mes"] for row in cur.fetchall())
             nombres_meses = [MESES.get(m, str(m)) for m in meses_con_datos]
 
             cur.execute(
                 f"""SELECT {col_grupo} AS cat, mes,
                       coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
-                    FROM v_ventas WHERE ano = 2026 AND {col_grupo} IS NOT NULL {frag_filtros}
+                    FROM v_ventas WHERE ano = 2026 AND {corte_2026} AND {col_grupo} IS NOT NULL {frag_filtros}
                     GROUP BY {col_grupo}, mes""",
                 params,
             )
@@ -1342,7 +1405,7 @@ def get_vta_mg_mensual_pg(filtros=None):
             cur.execute(
                 f"""SELECT {col_grupo} AS cat,
                       coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
-                    FROM v_ventas WHERE ano = 2026 AND {col_grupo} IS NOT NULL {frag_filtros}
+                    FROM v_ventas WHERE ano = 2026 AND {corte_2026} AND {col_grupo} IS NOT NULL {frag_filtros}
                     GROUP BY {col_grupo} ORDER BY vta DESC""",
                 params,
             )
@@ -1351,13 +1414,13 @@ def get_vta_mg_mensual_pg(filtros=None):
             cur.execute(
                 f"""SELECT mes,
                       coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
-                    FROM v_ventas WHERE ano = 2026 {frag_filtros} GROUP BY mes""",
+                    FROM v_ventas WHERE ano = 2026 AND {corte_2026} {frag_filtros} GROUP BY mes""",
                 params,
             )
             tot_mes = {row["mes"]: (float(row["vta"]), float(row["mg"])) for row in cur.fetchall()}
 
             cur.execute(
-                f"SELECT coalesce(sum(total), 0) AS t, coalesce(sum(utilidad_bruta), 0) AS m FROM v_ventas WHERE ano = 2026 {frag_filtros}",
+                f"SELECT coalesce(sum(total), 0) AS t, coalesce(sum(utilidad_bruta), 0) AS m FROM v_ventas WHERE ano = 2026 AND {corte_2026} {frag_filtros}",
                 params,
             )
             tot_row = cur.fetchone()
@@ -1412,7 +1475,7 @@ def get_vta_mg_mensual_pg(filtros=None):
     }
 
 
-def get_vta_mg_pg(filtros=None):
+def get_vta_mg_pg(filtros=None, fecha_corte=None):
     """Equivalente Postgres de get_vta_mg() en data_loader.py."""
     f = filtros or {}
     frag_filtros, params = _filtros_vta_sql(f)
@@ -1421,11 +1484,12 @@ def get_vta_mg_pg(filtros=None):
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            fecha_datos = _fecha_datos_pg(cur)
+            fecha_datos = _fecha_datos_pg(cur, fecha_corte)
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
             mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
             params.update({"mes_actual": mes_actual, "dia_actual": dia_actual, "mes_anterior": mes_anterior})
+            corte_2026 = "(mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))"
 
             inicio_ano    = date(2026, 1, 1)
             doy           = (fecha_datos - inicio_ano).days + 1
@@ -1433,11 +1497,11 @@ def get_vta_mg_pg(filtros=None):
 
             cur.execute(
                 f"""SELECT
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS v_ano_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND {corte_2026}), 0) AS v_ano_26,
                       coalesce(sum(total) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS v_ano_25,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS v_mes_26,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_26,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS v_mes_25,
                       coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_anterior)s AND dia <= %(dia_actual)s), 0) AS v_mes_ant
                     FROM v_ventas
@@ -1469,17 +1533,17 @@ def get_vta_mg_pg(filtros=None):
 
             cur.execute(
                 f"""SELECT {col_grupo} AS cat,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026), 0) AS vta,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND {corte_2026}), 0) AS vta,
                       coalesce(sum(total) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS vta25_ytd,
-                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026), 0) AS mg,
+                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND {corte_2026}), 0) AS mg,
                       coalesce(sum(utilidad_bruta) FILTER (
                           WHERE ano = 2025 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s))
                       ), 0) AS mg25_ytd,
-                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS vta_mes,
+                      coalesce(sum(total) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS vta_mes,
                       coalesce(sum(total) FILTER (WHERE ano = 2025 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS vta_mes_ant,
-                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s), 0) AS mg_mes,
+                      coalesce(sum(utilidad_bruta) FILTER (WHERE ano = 2026 AND mes = %(mes_actual)s AND dia <= %(dia_actual)s), 0) AS mg_mes,
                       count(*) FILTER (WHERE ano = 2026) AS n26
                     FROM v_ventas
                     WHERE ano IN (2025, 2026) AND {col_grupo} IS NOT NULL {frag_filtros}
