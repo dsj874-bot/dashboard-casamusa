@@ -73,9 +73,10 @@
 .msel-opt {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 11px 12px;
-  font-size: 16px;
+  gap: 24px;
+  padding: 12px 14px;
+  font-size: 20px;
+  line-height: 1;
   color: var(--text);
   border-radius: 6px;
   cursor: pointer;
@@ -87,6 +88,7 @@
   flex-shrink: 0;
   width: 20px;
   height: 20px;
+  margin: 0;
 }
 .msel-opt-todo {
   font-weight: 600;
