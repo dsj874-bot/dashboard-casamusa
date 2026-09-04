@@ -1,5 +1,10 @@
 .msel { position: relative; }
 .msel select.msel-native { display: none; }
+/* Si Windows tiene Alto Contraste / Filtros de color activado, Chrome
+   ignora los estilos personalizados de scrollbar y checkbox (usa la
+   apariencia nativa del sistema, mas gruesa/con flechas) -- se le pide
+   explicitamente que respete nuestros colores en estos elementos. */
+.msel-list, .msel-opt input[type="checkbox"] { forced-color-adjust: none; }
 
 .msel-btn {
   width: 100%;
