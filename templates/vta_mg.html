@@ -5,6 +5,7 @@
 {% block page_subtitle %}Venta y margen, mes y acumulado, por categoría — actual vs año anterior{% endblock %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}">
 <style>
   /* Layout: filtros + contenido */
   .vmg-layout {
@@ -254,6 +255,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/multiselect.js') }}"></script>
 <script>
 const fmtN  = v => v == null ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
 const fmtPct = v => {
@@ -292,12 +294,14 @@ fetch('/api/filtros_vta_acum')
     };
     Object.entries(fillsSelect).forEach(([key, selId]) => {
       const s = document.getElementById(selId);
+      s.innerHTML = '';
       const vals = (data.filtros || {})[key] || [];
       vals.forEach(v => {
         const o = document.createElement('option');
         o.value = v; o.textContent = v;
         s.appendChild(o);
       });
+      initMultiSelect(s);
     });
 
     const fillsDatalist = {
@@ -318,9 +322,15 @@ fetch('/api/filtros_vta_acum')
 function getFiltros() {
   const v = id => document.getElementById(id)?.value || '';
   const f = { categoria: v('f-categoria') };
-  const keys = ['sucursal','vendedor','familia','marca','subfamilia','cliente',
-                'procedencia','descripcion_producto','tipo_venta','distribuidor'];
-  keys.forEach(k => { const val = v('f-'+k); if(val) f[k] = val; });
+  // cliente/descripcion_producto son texto libre con autocompletar, no multi-select
+  const keysTexto = ['cliente', 'descripcion_producto'];
+  keysTexto.forEach(k => { const val = v('f-'+k); if(val) f[k] = val; });
+  const keysMultiples = ['sucursal','vendedor','familia','marca','subfamilia',
+                          'procedencia','tipo_venta','distribuidor'];
+  keysMultiples.forEach(k => {
+    const vals = mselValores(document.getElementById('f-'+k));
+    if (vals.length) f[k] = vals;
+  });
   return f;
 }
 
@@ -348,9 +358,11 @@ function aplicar() {
 }
 
 function limpiar() {
-  ['f-sucursal','f-vendedor','f-familia','f-marca','f-subfamilia','f-cliente',
-   'f-procedencia','f-descripcion_producto','f-tipo_venta','f-distribuidor']
+  ['f-cliente','f-descripcion_producto']
     .forEach(id => { const s = document.getElementById(id); if(s) s.value = ''; });
+  ['f-sucursal','f-vendedor','f-familia','f-marca','f-subfamilia',
+   'f-procedencia','f-tipo_venta','f-distribuidor']
+    .forEach(id => mselLimpiar(document.getElementById(id)));
   aplicar();
 }
 

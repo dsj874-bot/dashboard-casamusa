@@ -5,6 +5,7 @@
 {% block page_subtitle %}Evolucion mensual de ventas y margen por categoria{% endblock %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}">
 <style>
 /* ── Layout dos paneles ─────────────────────────── */
 .vma-layout {
@@ -240,6 +241,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/multiselect.js') }}"></script>
 <script>
 // ── Formato ────────────────────────────────────────────────
 const fmtM   = v => (v == null || v === 0) ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
@@ -284,12 +286,13 @@ async function cargarFiltros() {
     const el = document.getElementById(elId);
     if(!el) continue;
     const vals = (d.filtros || {})[fk] || [];
-    el.innerHTML = `<option value="">Todos/Todas</option>`;
+    el.innerHTML = '';
     vals.forEach(v => {
       const o = document.createElement('option');
       o.value = v; o.textContent = v;
       el.appendChild(o);
     });
+    initMultiSelect(el);
   }
 
   aplicar();
@@ -297,17 +300,17 @@ async function cargarFiltros() {
 
 // ── Recoger filtros ───────────────────────────────────────
 function getFiltros() {
-  const g = id => document.getElementById(id)?.value || '';
+  const m = id => mselValores(document.getElementById(id));
   return {
-    categoria:   g('fp-categoria'),
-    sucursal:    g('fp-sucursal'),
-    vendedor:    g('fp-vendedor'),
-    familia:     g('fp-familia'),
-    marca:       g('fp-marca'),
-    subfamilia:  g('fp-subfamilia'),
-    tipo_venta:  g('fp-tipo_venta'),
-    procedencia: g('fp-procedencia'),
-    cond_pago:   g('fp-cond_pago'),
+    categoria:   document.getElementById('fp-categoria')?.value || '',
+    sucursal:    m('fp-sucursal'),
+    vendedor:    m('fp-vendedor'),
+    familia:     m('fp-familia'),
+    marca:       m('fp-marca'),
+    subfamilia:  m('fp-subfamilia'),
+    tipo_venta:  m('fp-tipo_venta'),
+    procedencia: m('fp-procedencia'),
+    cond_pago:   m('fp-cond_pago'),
   };
 }
 

@@ -5,6 +5,7 @@
 {% block page_subtitle %}Análisis acumulado por categoría — año en curso vs año anterior{% endblock %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}">
 <style>
   /* Layout: filtros + contenido */
   .acum-layout {
@@ -248,6 +249,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/multiselect.js') }}"></script>
 <script>
 const fmtN  = v => v == null ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
 const fmtPct = v => {
@@ -283,12 +285,14 @@ fetch('/api/filtros_vta_acum')
     };
     Object.entries(fills).forEach(([key, selId]) => {
       const s = document.getElementById(selId);
+      s.innerHTML = '';
       const vals = (data.filtros || {})[key] || [];
       vals.forEach(v => {
         const o = document.createElement('option');
         o.value = v; o.textContent = v;
         s.appendChild(o);
       });
+      initMultiSelect(s);
     });
 
     // Carga inicial
@@ -298,10 +302,12 @@ fetch('/api/filtros_vta_acum')
 
 
 function getFiltros() {
-  const v = id => document.getElementById(id)?.value || '';
-  const f = { categoria: v('f-categoria') };
+  const f = { categoria: document.getElementById('f-categoria')?.value || '' };
   const keys = ['sucursal','vendedor','familia','subfamilia','tipo_venta','procedencia','cond_pago'];
-  keys.forEach(k => { const val = v('f-'+k); if(val) f[k] = val; });
+  keys.forEach(k => {
+    const vals = mselValores(document.getElementById('f-'+k));
+    if (vals.length) f[k] = vals;
+  });
   return f;
 }
 
@@ -326,7 +332,7 @@ function aplicar() {
 function limpiar() {
   ['f-sucursal','f-vendedor','f-familia','f-subfamilia',
    'f-tipo_venta','f-procedencia','f-cond_pago']
-    .forEach(id => { const s = document.getElementById(id); if(s) s.value = ''; });
+    .forEach(id => mselLimpiar(document.getElementById(id)));
   aplicar();
 }
 

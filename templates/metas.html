@@ -5,6 +5,7 @@
 {% block page_subtitle %}Avance vs metas mensuales por sucursal y vendedor{% endblock %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}">
 <style>
   .proy-layout {
     display: grid;
@@ -316,6 +317,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/multiselect.js') }}"></script>
 <script>
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
 const fmtVar = v => (v >= 0 ? "▲ " : "▼ ") + Math.abs(v).toFixed(2) + "%";
@@ -353,13 +355,13 @@ function renderBarra(vta, meta) {
 // ──────────────────────────────────────────────
 function llenarSelect(id, opciones) {
   const sel = document.getElementById(id);
-  const primero = sel.options[0].outerHTML;
-  sel.innerHTML = primero;
+  sel.innerHTML = "";
   opciones.forEach(o => {
     const opt = document.createElement("option");
     opt.value = o; opt.textContent = o;
     sel.appendChild(opt);
   });
+  initMultiSelect(sel);
 }
 
 fetch("/api/filtros_proyeccion")
@@ -510,15 +512,16 @@ cargarMetas({}).then(renderTodo).catch(e => {
 // Filtros
 // ──────────────────────────────────────────────
 function getFiltros() {
-  const v = id => document.getElementById(id).value;
+  const v = id => mselValores(document.getElementById(id));
   const f = {};
-  if (v("f-sucursal"))    f.sucursal    = v("f-sucursal");
-  if (v("f-vendedor"))    f.vendedor    = v("f-vendedor");
-  if (v("f-tipoventa"))   f.tipo_venta  = v("f-tipoventa");
-  if (v("f-familia"))     f.familia     = v("f-familia");
-  if (v("f-marca"))       f.marca       = v("f-marca");
-  if (v("f-subfamilia"))  f.subfamilia  = v("f-subfamilia");
-  if (v("f-procedencia")) f.procedencia = v("f-procedencia");
+  const add = (id, key) => { const vals = v(id); if (vals.length) f[key] = vals; };
+  add("f-sucursal",    "sucursal");
+  add("f-vendedor",    "vendedor");
+  add("f-tipoventa",   "tipo_venta");
+  add("f-familia",     "familia");
+  add("f-marca",       "marca");
+  add("f-subfamilia",  "subfamilia");
+  add("f-procedencia", "procedencia");
   return f;
 }
 
@@ -530,7 +533,7 @@ function aplicarFiltros() {
 
 function limpiarFiltros() {
   ["f-sucursal","f-vendedor","f-tipoventa","f-familia","f-marca","f-subfamilia","f-procedencia"]
-    .forEach(id => document.getElementById(id).value = "");
+    .forEach(id => mselLimpiar(document.getElementById(id)));
   cargarMetas({}).then(renderTodo);
 }
 </script>
