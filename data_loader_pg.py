@@ -56,6 +56,20 @@ FILTROS_VTA_COL = {
 }
 
 
+# "SI" (San Isidro) es una sucursal pseudo -- SE y CMD son dos
+# sucursales logicas que en realidad son el mismo local fisico
+# (San Isidro). No existe como sucursal_logica real en v_ventas; al
+# elegirla en un filtro se expande a ambas (ver _expandir_pseudo_sucursal).
+PSEUDOS_SUCURSAL = {"SI": ["SE", "CMD"]}
+
+
+def _expandir_pseudo_sucursal(valores):
+    expandido = []
+    for v in valores:
+        expandido.extend(PSEUDOS_SUCURSAL.get(v, [v]))
+    return expandido
+
+
 def _filtros_vta_sql(filtros):
     f = filtros or {}
     frag = ""
@@ -64,6 +78,8 @@ def _filtros_vta_sql(filtros):
         valor = f.get(clave)
         if valor and valor not in ("todas", "todos", ""):
             valores = [str(v) for v in valor] if isinstance(valor, (list, tuple, set)) else [str(valor)]
+            if clave == "sucursal":
+                valores = _expandir_pseudo_sucursal(valores)
             frag += f" AND {columna} = ANY(%(vta_{clave})s)"
             params[f"vta_{clave}"] = valores
     return frag, params
@@ -158,6 +174,8 @@ def _filtros_comunes_sql(filtros):
         valor = f.get(clave, "todas")
         if valor and valor != "todas":
             valores = list(valor) if isinstance(valor, (list, tuple, set)) else [valor]
+            if clave == "sucursal":
+                valores = _expandir_pseudo_sucursal(valores)
             frag += f" AND {columna} = ANY(%({clave})s)"
             params[clave] = valores
     return frag, params
@@ -518,8 +536,12 @@ def get_filtros_proyeccion_pg(filtro_sucursal=None, filtro_canal=None):
             )
             r = cur.fetchone()
 
+    sucursales = sorted(r["sucursales"] or [], key=lambda s: orden.get(s, 99))
+    if "SE" in sucursales and "CMD" in sucursales:
+        sucursales.insert(sucursales.index("CMD") + 1, "SI")
+
     return {
-        "sucursales":   sorted(r["sucursales"] or [], key=lambda s: orden.get(s, 99)),
+        "sucursales":   sucursales,
         "vendedores":   sorted(r["vendedores"] or []),
         "tipo_venta":   sorted(r["tipo_venta"] or []),
         "familias":     sorted(r["familias"] or []),
@@ -1065,6 +1087,10 @@ def get_filtros_vta_acum_pg(filtro_sucursal=None, filtro_canal=None):
             r = cur.fetchone()
 
     orden = {s: i for i, s in enumerate(ORDEN_SUCURSALES)}
+    sucursal = sorted(r["sucursal"] or [], key=lambda s: orden.get(s, 99))
+    if "SE" in sucursal and "CMD" in sucursal:
+        sucursal.insert(sucursal.index("CMD") + 1, "SI")
+
     filtros_ok = {
         "vendedor":    sorted(r["vendedor"] or []),
         "familia":     sorted(r["familia"] or []),
@@ -1076,7 +1102,7 @@ def get_filtros_vta_acum_pg(filtro_sucursal=None, filtro_canal=None):
         "procedencia": sorted(r["procedencia"] or []),
         "cond_pago":   sorted(r["cond_pago"] or []),
         "distribuidor": sorted(r["distribuidor"] or []),
-        "sucursal":    sorted(r["sucursal"] or [], key=lambda s: orden.get(s, 99)),
+        "sucursal":    sucursal,
     }
     return {
         "categorias": {k: v[0] for k, v in CATEGORIAS_VTA.items()},
