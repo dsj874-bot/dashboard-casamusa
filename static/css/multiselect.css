@@ -36,7 +36,7 @@
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 30;
+  z-index: 9999;
   width: max(100%, 220px);
   background: var(--surface);
   border: 1px solid var(--border);
