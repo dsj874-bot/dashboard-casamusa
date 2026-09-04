@@ -5,6 +5,7 @@ import io
 import os
 import shutil
 import sys
+import time
 import pandas as pd
 import data_loader
 import data_loader_inventario
@@ -22,16 +23,23 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "casamusa_dashboard_2026_secreto")
 
 
-def _asset_v(ruta_relativa):
-    """Version para cache-busting de un archivo en static/ -- usar como
-    ?v={{ asset_v('css/x.css') }} en el <link>/<script>. Se basa en el
-    mtime del archivo: cada vez que se edita cambia el query string, asi
-    el navegador (y el CDN de Vercel) no siguen sirviendo una version
-    vieja cacheada con el mismo nombre de archivo."""
-    try:
-        return str(int(os.path.getmtime(os.path.join(app.static_folder, ruta_relativa))))
-    except OSError:
-        return "0"
+#  Version para cache-busting de archivos en static/ -- usar como
+#  ?v={{ asset_v() }} en el <link>/<script>. OJO: NO se puede usar el
+#  mtime del archivo (os.path.getmtime()) porque Vercel normaliza las
+#  fechas de modificacion al empaquetar el deploy (Last-Modified queda
+#  fijo en una fecha arbitraria de 2018 en TODOS los deploys) -- eso
+#  hacia que el query string diera siempre el mismo valor en produccion
+#  pese a que el archivo si habia cambiado, y el navegador seguia
+#  usando la copia vieja cacheada indefinidamente. Se usa en cambio el
+#  SHA del commit que Vercel expone automaticamente por deploy
+#  (VERCEL_GIT_COMMIT_SHA), que si cambia en cada push; en dev local
+#  (esa variable no existe) cae a la hora de arranque del proceso, que
+#  cambia cada vez que se reinicia el servidor tras editar un archivo.
+_ASSET_VERSION = os.environ.get("VERCEL_GIT_COMMIT_SHA", str(int(time.time())))[:12]
+
+
+def _asset_v(ruta_relativa=None):
+    return _ASSET_VERSION
 
 
 app.jinja_env.globals["asset_v"] = _asset_v
