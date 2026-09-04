@@ -26,6 +26,7 @@
 .msel-btn.msel-abierto { border-color: var(--accent); }
 .msel-btn.msel-activo { color: var(--accent); font-weight: 600; }
 
+.msel-panel[hidden] { display: none; }
 .msel-panel {
   position: absolute;
   top: calc(100% + 4px);
