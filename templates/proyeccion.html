@@ -5,7 +5,7 @@
 {% block page_subtitle %}Mes en curso — Proyección lineal por días hábiles{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}?v={{ asset_v('css/multiselect.css') }}">
 <style>
   /* Layout principal: sidebar de filtros + contenido */
   .proy-layout {
@@ -268,7 +268,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{{ url_for('static', filename='js/multiselect.js') }}"></script>
+<script src="{{ url_for('static', filename='js/multiselect.js') }}?v={{ asset_v('js/multiselect.js') }}"></script>
 <script>
 const fmtMM  = v => "$" + Math.round(v).toLocaleString("es-CL");
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");

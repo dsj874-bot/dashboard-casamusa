@@ -5,7 +5,7 @@
 {% block page_subtitle %}Venta y margen, mes y acumulado, por categoría — actual vs año anterior{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}?v={{ asset_v('css/multiselect.css') }}">
 <style>
   /* Layout: filtros + contenido */
   .vmg-layout {
@@ -255,7 +255,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{{ url_for('static', filename='js/multiselect.js') }}"></script>
+<script src="{{ url_for('static', filename='js/multiselect.js') }}?v={{ asset_v('js/multiselect.js') }}"></script>
 <script>
 const fmtN  = v => v == null ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
 const fmtPct = v => {

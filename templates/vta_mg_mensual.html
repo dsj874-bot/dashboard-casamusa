@@ -5,7 +5,7 @@
 {% block page_subtitle %}Detalle mensual de ventas y margen por categoria{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}?v={{ asset_v('css/multiselect.css') }}">
 <style>
 /* ── Layout ─────────────────────────────────────── */
 .vma-layout {
@@ -253,7 +253,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{{ url_for('static', filename='js/multiselect.js') }}"></script>
+<script src="{{ url_for('static', filename='js/multiselect.js') }}?v={{ asset_v('js/multiselect.js') }}"></script>
 <script>
 // ── Formato ────────────────────────────────────────────────
 const fmtM   = v => (v == null || v === 0) ? '—' : '$' + Math.round(v).toLocaleString('es-CL');

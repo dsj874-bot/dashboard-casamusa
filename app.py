@@ -21,6 +21,21 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "casamusa_dashboard_2026_secreto")
 
+
+def _asset_v(ruta_relativa):
+    """Version para cache-busting de un archivo en static/ -- usar como
+    ?v={{ asset_v('css/x.css') }} en el <link>/<script>. Se basa en el
+    mtime del archivo: cada vez que se edita cambia el query string, asi
+    el navegador (y el CDN de Vercel) no siguen sirviendo una version
+    vieja cacheada con el mismo nombre de archivo."""
+    try:
+        return str(int(os.path.getmtime(os.path.join(app.static_folder, ruta_relativa))))
+    except OSError:
+        return "0"
+
+
+app.jinja_env.globals["asset_v"] = _asset_v
+
 # ══════════════════════════════════════════════════════
 #  MIGRACION A POSTGRES (Fase 1, dominio Comercial)
 #  Flag para poder volver a la version Excel sin deploy (ver plan de
