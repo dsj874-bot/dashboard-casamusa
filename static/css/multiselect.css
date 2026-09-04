@@ -70,7 +70,15 @@
 .msel-list::-webkit-scrollbar-thumb { background: var(--muted2); border-radius: 8px; }
 .msel-list::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
-.msel-opt {
+/* .msel-list antepuesto a proposito: algunas pantallas (Proyeccion,
+   Seguimiento Metas) tienen su propia regla ".filtro-item label"
+   (para el texto "SUCURSAL"/"VENDEDOR") con especificidad (0,1,1),
+   mas alta que ".msel-opt" sola (0,1,0) -- como estas casillas
+   tambien son <label>, esa regla les ganaba y las dejaba chicas,
+   en display:block (por eso tambien se veian pegadas: gap no hace
+   nada en display:block) y pegadas al margen de esa otra regla.
+   ".msel-list .msel-opt" tiene especificidad (0,2,0), que le gana. */
+.msel-list .msel-opt {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -80,9 +88,13 @@
   color: var(--text);
   border-radius: 6px;
   cursor: pointer;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  margin-bottom: 0;
 }
-.msel-opt:hover { background: var(--surface2); }
-.msel-opt input[type="checkbox"] {
+.msel-list .msel-opt:hover { background: var(--surface2); }
+.msel-list .msel-opt input[type="checkbox"] {
   accent-color: var(--accent);
   cursor: pointer;
   flex-shrink: 0;
@@ -90,7 +102,7 @@
   height: 14px;
   margin: 0;
 }
-.msel-opt-todo {
+.msel-list .msel-opt-todo {
   font-weight: 600;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
