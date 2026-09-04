@@ -111,6 +111,19 @@
 
   function fmtInput(v) { return Math.round(v).toString(); }
 
+  function soloDigitos(v) { return v.replace(/\D/g, ''); }
+  function formatearMiles(digits) { return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+
+  tbody.addEventListener('input', (e) => {
+    const input = e.target;
+    if (!input.classList.contains('input-monto')) return;
+    const cursorFromEnd = input.value.length - input.selectionStart;
+    const digits = soloDigitos(input.value);
+    input.value = formatearMiles(digits);
+    const newPos = Math.max(0, input.value.length - cursorFromEnd);
+    input.setSelectionRange(newPos, newPos);
+  });
+
   function pintarFilas(filas) {
     tbody.innerHTML = '';
     let sucAnterior = null;
@@ -130,11 +143,12 @@
       const tdMonto = document.createElement('td');
       tdMonto.style.textAlign = 'right';
       const input = document.createElement('input');
-      input.type = 'number';
+      input.type = 'text';
+      input.inputMode = 'numeric';
       input.className = 'input-monto';
       input.dataset.sucursal = f.sucursal;
       input.dataset.vendedor = f.vendedor;
-      input.value = fmtInput(f.monto_ne);
+      input.value = formatearMiles(fmtInput(f.monto_ne));
       tdMonto.appendChild(input);
 
       tr.append(tdSuc, tdVend, tdMonto);
@@ -157,7 +171,7 @@
     const filas = Array.from(tbody.querySelectorAll('input.input-monto')).map(inp => ({
       sucursal: inp.dataset.sucursal,
       vendedor: inp.dataset.vendedor,
-      monto_ne: parseFloat(inp.value) || 0,
+      monto_ne: parseInt(soloDigitos(inp.value), 10) || 0,
     }));
     btnGuardar.disabled = true;
     btnGuardar.textContent = 'Guardando...';
