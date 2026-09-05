@@ -924,6 +924,20 @@ def api_forecast_nivel_servicio():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/forecast/nivel_servicio/historico")
+@login_requerido
+def api_forecast_nivel_servicio_historico():
+    """Serie historica para el grafico de tendencia. Cae bajo el prefijo
+    /api/forecast/nivel_servicio, asi que hereda la restriccion a
+    USUARIOS_FORECAST sin necesidad de nada extra."""
+    try:
+        dias = request.args.get("dias", 30, type=int)
+        dias = max(1, min(dias, 365))
+        return jsonify(data_loader_nivel_servicio.get_nivel_servicio_historico_pg(dias))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/cron/nivel_servicio_snapshot")
 def api_cron_nivel_servicio_snapshot():
     """Guarda el snapshot diario de Nivel de Servicio (nivel_servicio_historico) --

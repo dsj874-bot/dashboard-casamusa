@@ -86,6 +86,49 @@ def get_nivel_servicio_pg():
     }
 
 
+def get_nivel_servicio_historico_pg(dias=30):
+    """Serie diaria de nivel_servicio_historico (general + por sucursal)
+    para graficar la tendencia. Hasta ahora la pantalla solo mostraba la
+    foto de HOY, aunque el cron venia guardando el dato a diario -- un
+    97% suelto no dice si venimos mejorando o cayendo.
+
+    Devuelve arreglos alineados por fecha, con None en los dias sin
+    snapshot (el grafico corta la linea ahi en vez de inventar el dato:
+    un dia sin captura no es un nivel de servicio de 0)."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT fecha, sucursal, valor_inventario, nivel_servicio
+                     FROM nivel_servicio_historico
+                    WHERE fecha >= current_date - %(dias)s::int
+                    ORDER BY fecha""",
+                {"dias": dias},
+            )
+            filas = cur.fetchall()
+
+    fechas = sorted({f["fecha"] for f in filas})
+    idx = {fecha: i for i, fecha in enumerate(fechas)}
+    vacia = lambda: [None] * len(fechas)
+
+    series = {}
+    inventario_general = vacia()
+    for f in filas:
+        i = idx[f["fecha"]]
+        serie = series.setdefault(f["sucursal"], vacia())
+        if f["nivel_servicio"] is not None:
+            serie[i] = float(f["nivel_servicio"])
+        if f["sucursal"] == "TOTAL" and f["valor_inventario"] is not None:
+            inventario_general[i] = float(f["valor_inventario"])
+
+    return {
+        "fechas":            [f.isoformat() for f in fechas],
+        "general":           series.pop("TOTAL", vacia()),
+        "inventario_general": inventario_general,
+        "por_sucursal":      [{"sucursal": s, "nivel_servicio": serie}
+                              for s, serie in sorted(series.items())],
+    }
+
+
 def guardar_snapshot_diario_pg():
     """Guarda en nivel_servicio_historico el estado actual (general +
     por sucursal) para la fecha de HOY -- pensado para llamarse una vez

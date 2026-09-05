@@ -26,8 +26,36 @@
   .ns-kpi-value.nivel-bajo { color: var(--red); }
 
   .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; }
+  .chart-card + .chart-card { margin-top: 20px; }
   .chart-card-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
   .chart-card-sub { font-size: 12.5px; color: var(--muted2); margin-bottom: 16px; }
+
+  .chart-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .rango-botones { display: flex; gap: 6px; flex-shrink: 0; }
+  .rango-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--muted);
+    font-size: 12.5px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  .rango-btn:hover { border-color: var(--muted2); color: var(--text); }
+  .rango-btn.activo { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+  .delta-badge { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .delta-badge.sube { color: var(--accent); }
+  .delta-badge.baja { color: var(--red); }
+  .delta-badge.igual { color: var(--muted2); }
+
+  .sin-datos { color: var(--muted2); font-size: 13px; padding: 28px 0; text-align: center; }
+
+  /* Chart.js media mal el ancho disponible cuando calcula el alto solo
+     (llegaba a 460px dentro de una tarjeta de 950px): el patron que
+     recomienda la libreria es contenedor de alto fijo +
+     maintainAspectRatio:false, asi el canvas ocupa todo el ancho. */
+  .chart-box { position: relative; height: 280px; }
 </style>
 {% endblock %}
 
@@ -47,9 +75,25 @@
 </div>
 
 <div class="chart-card">
+  <div class="chart-card-head">
+    <div>
+      <div class="chart-card-title">Evolución del Nivel de Servicio</div>
+      <div class="chart-card-sub" id="sub-historico">Cargando…</div>
+    </div>
+    <div class="rango-botones" id="rango-botones">
+      <button type="button" class="rango-btn" data-dias="15">15 días</button>
+      <button type="button" class="rango-btn activo" data-dias="30">30 días</button>
+      <button type="button" class="rango-btn" data-dias="90">90 días</button>
+    </div>
+  </div>
+  <div id="historico-vacio" class="sin-datos" hidden>Todavía no hay suficientes días guardados para mostrar una tendencia.</div>
+  <div class="chart-box" id="box-historico"><canvas id="chartHistorico"></canvas></div>
+</div>
+
+<div class="chart-card">
   <div class="chart-card-title">Inventario vs. Nivel de Servicio, por sucursal</div>
   <div class="chart-card-sub">Barras: valor de stock total ($, todo el catálogo). Línea: nivel de servicio (%, solo Prioritarios)</div>
-  <canvas id="chartSucursal" height="110"></canvas>
+  <div class="chart-box"><canvas id="chartSucursal"></canvas></div>
 </div>
 
 {% endblock %}
@@ -111,6 +155,7 @@ fetch("/api/forecast/nivel_servicio")
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
         plugins: {
           legend: { position: "top" },
@@ -143,5 +188,139 @@ fetch("/api/forecast/nivel_servicio")
     });
   })
   .catch(err => console.error("Error nivel de servicio:", err));
+
+// ── Evolución del Nivel de Servicio ──────────────────────────
+// Los valores viven en una banda angosta (96-99%): con un eje 0-100%
+// la linea queda pegada al techo y no se distingue nada, asi que el
+// eje se ajusta al rango real de los datos.
+const COLORES_SUCURSAL = ["#60a5fa", "#f59e0b", "#a78bfa", "#f472b6", "#22d3ee", "#fb923c"];
+let chartHistorico = null;
+
+const fechaCorta = iso => iso.slice(8, 10) + "/" + iso.slice(5, 7);
+
+function rangoEje(series) {
+  const valores = series.flat().filter(v => v !== null && v !== undefined);
+  if (!valores.length) return { min: 0, max: 100 };
+  return {
+    min: Math.max(0, Math.floor(Math.min(...valores)) - 1),
+    max: Math.min(100, Math.ceil(Math.max(...valores)) + 1),
+  };
+}
+
+function renderDelta(general, fechas) {
+  const sub = document.getElementById("sub-historico");
+  const puntos = general.map((v, i) => ({ v, f: fechas[i] })).filter(p => p.v !== null);
+  if (puntos.length < 2) {
+    sub.textContent = "% de la demanda cubierta, día a día. Toca una sucursal en la leyenda para compararla.";
+    return;
+  }
+  const ini = puntos[0], fin = puntos[puntos.length - 1];
+  const delta = fin.v - ini.v;
+  const clase = Math.abs(delta) < 0.05 ? "igual" : (delta > 0 ? "sube" : "baja");
+  const signo = delta > 0 ? "▲ +" : (delta < 0 ? "▼ " : "");
+  sub.innerHTML =
+    `<span class="delta-badge ${clase}">${signo}${delta.toFixed(1)} pts</span>` +
+    ` desde el ${fechaCorta(ini.f)} · hoy ${fin.v.toFixed(1)}%` +
+    ` — toca una sucursal en la leyenda para compararla`;
+}
+
+function pintarHistorico(d) {
+  const vacio = document.getElementById("historico-vacio");
+  const box = document.getElementById("box-historico");
+  const canvas = document.getElementById("chartHistorico");
+  const hayDatos = d.fechas.length > 1;
+
+  vacio.hidden = hayDatos;
+  box.hidden = !hayDatos;
+  if (chartHistorico) { chartHistorico.destroy(); chartHistorico = null; }
+  if (!hayDatos) {
+    document.getElementById("sub-historico").textContent = "% de la demanda cubierta, día a día.";
+    return;
+  }
+
+  renderDelta(d.general, d.fechas);
+
+  const escala = rangoEje([d.general, ...d.por_sucursal.map(s => s.nivel_servicio)]);
+
+  construirChartHistorico(canvas, d, escala);
+}
+
+function construirChartHistorico(canvas, d, escala) {
+  chartHistorico = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: d.fechas.map(fechaCorta),
+      datasets: [
+        {
+          label: "General",
+          data: d.general,
+          borderColor: cssVar("--accent"),
+          backgroundColor: "rgba(34,163,71,0.12)",
+          borderWidth: 2.5,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          tension: 0.25,
+          fill: true,
+          spanGaps: false,
+        },
+        // Ocultas por defecto: se prenden desde la leyenda, para no
+        // convertir el grafico en un plato de espaguetis.
+        ...d.por_sucursal.map((s, i) => ({
+          label: s.sucursal,
+          data: s.nivel_servicio,
+          borderColor: COLORES_SUCURSAL[i % COLORES_SUCURSAL.length],
+          backgroundColor: COLORES_SUCURSAL[i % COLORES_SUCURSAL.length],
+          borderWidth: 1.8,
+          pointRadius: 2,
+          tension: 0.25,
+          fill: false,
+          spanGaps: false,
+          hidden: true,
+        })),
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "top" },
+        tooltip: { callbacks: { label: ctx => " " + ctx.dataset.label + ": " + fmtPct(ctx.raw) } },
+      },
+      scales: {
+        y: {
+          min: escala.min,
+          max: escala.max,
+          ticks: { callback: v => v + "%" },
+          grid: { color: cssVar("--border") },
+          title: { display: true, text: "Nivel de Servicio (%)" },
+        },
+        x: { grid: { display: false } },
+      },
+    },
+  });
+}
+
+function cargarHistorico(dias) {
+  fetch("/api/forecast/nivel_servicio/historico?dias=" + dias)
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) throw new Error(d.error);
+      pintarHistorico(d);
+    })
+    .catch(err => {
+      console.error("Error histórico nivel de servicio:", err);
+      document.getElementById("sub-historico").textContent = "No se pudo cargar el histórico.";
+    });
+}
+
+document.getElementById("rango-botones").addEventListener("click", e => {
+  const btn = e.target.closest(".rango-btn");
+  if (!btn) return;
+  document.querySelectorAll("#rango-botones .rango-btn").forEach(b => b.classList.toggle("activo", b === btn));
+  cargarHistorico(btn.dataset.dias);
+});
+
+cargarHistorico(30);
 </script>
 {% endblock %}
