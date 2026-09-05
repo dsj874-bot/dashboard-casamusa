@@ -103,10 +103,29 @@
 const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 Chart.defaults.color       = cssVar("--muted2");
 Chart.defaults.borderColor = cssVar("--border");
+
+// Chart.js no siempre reacciona a los cambios de ancho de su
+// contenedor (por ejemplo al colapsar el menu lateral, que ensancha el
+// contenido sin que cambie el tamano de la ventana): queda con los
+// ejes de un ancho y los puntos dibujados con la escala del otro. Se
+// observa la caja y se fuerza el reajuste -- resize() vuelve a medir y
+// update() reubica los elementos. La caja tiene alto fijo por CSS y
+// ancho 100%, asi que redimensionar el canvas no la altera: no hay
+// riesgo de bucle de observacion.
+function observarCaja(box, getChart) {
+  new ResizeObserver(() => {
+    const chart = getChart();
+    if (!chart) return;
+    chart.resize();
+    chart.update("none");
+  }).observe(box);
+}
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
 const fmtCLP = v => "$" + Math.round(v).toLocaleString("es-CL");
 const fmtPct = v => v === null || v === undefined ? "—" : v.toFixed(1) + "%";
+
+let chartSucursal = null;
 
 function claseNivel(pct) {
   if (pct === null || pct === undefined) return "";
@@ -124,7 +143,7 @@ fetch("/api/forecast/nivel_servicio")
     kpiServicio.textContent = fmtPct(d.general.nivel_servicio);
     kpiServicio.className = "ns-kpi-value " + claseNivel(d.general.nivel_servicio);
 
-    new Chart(document.getElementById("chartSucursal"), {
+    chartSucursal = new Chart(document.getElementById("chartSucursal"), {
       data: {
         labels: d.por_sucursal.map(s => s.sucursal),
         datasets: [
@@ -193,7 +212,18 @@ fetch("/api/forecast/nivel_servicio")
 // Los valores viven en una banda angosta (96-99%): con un eje 0-100%
 // la linea queda pegada al techo y no se distingue nada, asi que el
 // eje se ajusta al rango real de los datos.
-const COLORES_SUCURSAL = ["#60a5fa", "#f59e0b", "#a78bfa", "#f472b6", "#22d3ee", "#fb923c"];
+// Color fijo por sigla (no por posicion en la lista): tonos bien
+// separados entre si y del verde del "General", para poder distinguir
+// las lineas de un vistazo cuando hay varias prendidas.
+const COLOR_SUCURSAL = {
+  MT: "#60a5fa",  // azul
+  LC: "#fb923c",  // naranja
+  MR: "#c084fc",  // violeta
+  SI: "#f43f5e",  // rojo
+  CH: "#22d3ee",  // cian
+  MP: "#facc15",  // amarillo
+};
+const colorSucursal = sigla => COLOR_SUCURSAL[sigla] || cssVar("--muted2");
 let chartHistorico = null;
 
 const fechaCorta = iso => iso.slice(8, 10) + "/" + iso.slice(5, 7);
@@ -265,11 +295,12 @@ function construirChartHistorico(canvas, d, escala) {
         },
         // Ocultas por defecto: se prenden desde la leyenda, para no
         // convertir el grafico en un plato de espaguetis.
-        ...d.por_sucursal.map((s, i) => ({
-          label: s.sucursal,
+        ...d.por_sucursal.map(s => ({
+          label: s.sigla,
+          nombreCompleto: s.sucursal,  // la leyenda va con sigla; el tooltip si tiene espacio
           data: s.nivel_servicio,
-          borderColor: COLORES_SUCURSAL[i % COLORES_SUCURSAL.length],
-          backgroundColor: COLORES_SUCURSAL[i % COLORES_SUCURSAL.length],
+          borderColor: colorSucursal(s.sigla),
+          backgroundColor: colorSucursal(s.sigla),
           borderWidth: 1.8,
           pointRadius: 2,
           tension: 0.25,
@@ -285,7 +316,11 @@ function construirChartHistorico(canvas, d, escala) {
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: { position: "top" },
-        tooltip: { callbacks: { label: ctx => " " + ctx.dataset.label + ": " + fmtPct(ctx.raw) } },
+        tooltip: {
+          callbacks: {
+            label: ctx => " " + (ctx.dataset.nombreCompleto || ctx.dataset.label) + ": " + fmtPct(ctx.raw),
+          },
+        },
       },
       scales: {
         y: {
@@ -322,5 +357,8 @@ document.getElementById("rango-botones").addEventListener("click", e => {
 });
 
 cargarHistorico(30);
+
+observarCaja(document.getElementById("box-historico"), () => chartHistorico);
+observarCaja(document.getElementById("chartSucursal").parentElement, () => chartSucursal);
 </script>
 {% endblock %}

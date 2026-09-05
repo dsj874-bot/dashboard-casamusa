@@ -124,7 +124,9 @@ def get_nivel_servicio_historico_pg(dias=30):
         "fechas":            [f.isoformat() for f in fechas],
         "general":           series.pop("TOTAL", vacia()),
         "inventario_general": inventario_general,
-        "por_sucursal":      [{"sucursal": s, "nivel_servicio": serie}
+        "por_sucursal":      [{"sucursal": s,
+                               "sigla": do.SIGLA_SUCURSAL.get(s, s),
+                               "nivel_servicio": serie}
                               for s, serie in sorted(series.items())],
     }
 

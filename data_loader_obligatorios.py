@@ -41,6 +41,19 @@ SUCURSALES_CRITICAS = [
     ("San Isidro",         "STOCK SAN ISIDRO",         "TRANSITO SAN ISIDRO",         True),   # True = es CD
 ]
 
+# Sigla de cada bodega, para etiquetas donde el nombre completo no cabe
+# (leyendas de graficos). OJO: son siglas de BODEGA (Inventario/
+# Forecast), no las sucursales logicas de Comercial (MT/LC/MR/SE/CMD/
+# CH/MP) -- varias coinciden, pero no son lo mismo.
+SIGLA_SUCURSAL = {
+    "Chicureo":         "CH",
+    "Las Condes":       "LC",
+    "Maipú":            "MP",
+    "Manuel Rodríguez": "MR",
+    "Matta":            "MT",
+    "San Isidro":       "SI",
+}
+
 _cache_obligatorios = {"df": None, "mod_time": None}
 
 
