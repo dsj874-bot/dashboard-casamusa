@@ -90,8 +90,13 @@
   }
   .btn-limpiar:hover { border-color: var(--muted); color: var(--text); }
 
-  /* Tabla proyeccion */
-  .proy-table-wrap { overflow-x: auto; }
+  /* Tabla proyeccion -- paneles inmovilizados (tipo Excel): la
+     cabecera y la fila TOTAL GENERAL quedan fijas al desplazar hacia
+     abajo, y las columnas Sucursal/Vendedor al desplazar hacia el
+     lado. Para eso la tabla necesita su propia area de scroll (con
+     overflow-x sola, el sticky vertical no tendria contra que pegarse:
+     el scroll vertical seria el de la pagina). */
+  .proy-table-wrap { overflow: auto; max-height: 70vh; }
   .proy-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .proy-table thead th {
     padding: 10px 14px;
@@ -104,18 +109,36 @@
     background: var(--surface2);
     border-bottom: 1px solid var(--border);
     white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 5;
   }
-  .proy-table thead th:first-child,
-  .proy-table thead th:nth-child(2) { text-align: left; }
+  .proy-table thead th.col-suc,
+  .proy-table thead th.col-vend { text-align: left; z-index: 6; }
+  /* Ancho fijo en las dos columnas congeladas: el desplazamiento
+     lateral de la segunda depende de saber cuanto mide la primera. */
+  .proy-table thead th.col-suc  { width: 90px;  min-width: 90px; }
+  .proy-table thead th.col-vend { width: 210px; min-width: 210px; }
+
   .proy-table tbody td {
     padding: 11px 14px;
     border-bottom: 1px solid rgba(30,42,58,0.5);
     white-space: nowrap;
     text-align: right;
   }
-  .proy-table tbody td:first-child { text-align: left; }
-  .proy-table tbody td:nth-child(2) { text-align: left; }
+  .proy-table tbody td.col-suc,
+  .proy-table tbody td.col-vend { text-align: left; }
   .proy-table tbody tr:hover { background: var(--surface2); }
+
+  /* Columnas congeladas. Las celdas necesitan fondo opaco propio: si
+     quedan transparentes, las columnas que pasan por debajo al
+     desplazar se ven a traves del texto. */
+  .proy-table .col-suc  { position: sticky; left: 0;     z-index: 2; }
+  .proy-table .col-vend { position: sticky; left: 90px;  z-index: 2; }
+  .proy-table tbody td.col-suc,
+  .proy-table tbody td.col-vend { background: var(--surface); }
+  .proy-table tbody tr:hover td.col-suc,
+  .proy-table tbody tr:hover td.col-vend { background: var(--surface2); }
 
   /* Fila de sucursal agrupadora */
   .row-sucursal td {
@@ -142,6 +165,25 @@
     color: var(--amber);
     border-top: 2px solid rgba(245,158,11,0.3);
   }
+
+  /* Las filas con fondo teñido necesitan que ese tinte quede OPACO en
+     las celdas congeladas (un rgba translucido deja ver lo que pasa por
+     debajo). El truco es componer el tinte sobre un color solido:
+     linear-gradient de un color plano + el fondo de la tarjeta. */
+  .proy-table tbody tr.row-sucursal td.col-suc {
+    background: linear-gradient(rgba(34,163,71,0.06), rgba(34,163,71,0.06)), var(--surface);
+  }
+  /* Fila TOTAL GENERAL congelada justo debajo de la cabecera. El
+     desplazamiento se toma de --alto-thead, que se mide por JS (el
+     alto real depende de la fuente y del zoom del navegador). Todas
+     sus celdas van opacas, porque las filas le pasan por debajo. */
+  .proy-table tbody tr.row-total-gen td {
+    position: sticky;
+    top: var(--alto-thead, 34px);
+    z-index: 3;
+    background: linear-gradient(rgba(245,158,11,0.07), rgba(245,158,11,0.07)), var(--surface);
+  }
+  .proy-table tbody tr.row-total-gen td.col-suc { z-index: 4; }
 
   /* Badge días hábiles */
   .dias-badge {
@@ -242,8 +284,8 @@
           <table class="proy-table">
             <thead>
               <tr>
-                <th style="text-align:left">Sucursal</th>
-                <th style="text-align:left">Vendedor</th>
+                <th class="col-suc">Sucursal</th>
+                <th class="col-vend">Vendedor</th>
                 <th>Nro Docs</th>
                 <th>Vta Mes</th>
                 <th>Mg Mes</th>
@@ -396,7 +438,7 @@ function renderTabla(filas, k) {
 
   // TOTAL GENERAL primero
   let html = `<tr class="row-total-gen">
-    <td colspan="2">TOTAL GENERAL</td>
+    <td class="col-suc" colspan="2">TOTAL GENERAL</td>
     <td>${totDocs.toLocaleString("es-CL")}</td>
     <td>${fmtCLP(totVta)}</td>
     <td>${fmtCLP(totMg)}</td>
@@ -422,7 +464,7 @@ function renderTabla(filas, k) {
 
     // Fila sucursal
     html += `<tr class="row-sucursal">
-      <td colspan="2">🏪 ${suc}</td>
+      <td class="col-suc" colspan="2">🏪 ${suc}</td>
       <td>${sDocs.toLocaleString("es-CL")}</td>
       <td>${fmtCLP(sVta)}</td>
       <td>${fmtCLP(sMg)}</td>
@@ -437,8 +479,8 @@ function renderTabla(filas, k) {
     // Filas vendedor
     vendedores.forEach(v => {
       html += `<tr>
-        <td style="color:var(--muted);font-size:12px;padding-left:24px">↳</td>
-        <td style="font-size:12px">${v.vendedor}</td>
+        <td class="col-suc" style="color:var(--muted);font-size:12px;padding-left:24px">↳</td>
+        <td class="col-vend" style="font-size:12px">${v.vendedor}</td>
         <td style="color:var(--muted2)">${v.nro_docs.toLocaleString("es-CL")}</td>
         <td>${fmtCLP(v.vta_mes)}</td>
         <td style="color:var(--muted2)">${fmtCLP(v.mg_mes)}</td>
@@ -453,6 +495,21 @@ function renderTabla(filas, k) {
   });
 
   document.getElementById("tabla-body").innerHTML = html;
+  medirAltoCabecera();
+}
+
+// La fila TOTAL GENERAL se congela justo debajo de la cabecera, asi que
+// necesita saber cuanto mide: se mide en vez de hardcodearla porque el
+// alto real cambia con la fuente y el zoom del navegador.
+function medirAltoCabecera() {
+  const tabla = document.querySelector(".proy-table");
+  const thead = tabla && tabla.querySelector("thead");
+  if (!thead) return;
+  // Si la tabla todavia esta oculta (la pantalla arranca con el
+  // contenido en display:none mientras carga) el alto mide 0: en ese
+  // caso no se toca la variable y queda el valor por defecto del CSS.
+  const alto = thead.offsetHeight;
+  if (alto > 0) tabla.style.setProperty("--alto-thead", alto + "px");
 }
 
 function renderTodo(data) {
@@ -462,6 +519,7 @@ function renderTodo(data) {
   renderTabla(data.filas, data.kpis);
   document.getElementById("loading").style.display   = "none";
   document.getElementById("contenido").style.display = "block";
+  medirAltoCabecera();  // recien ahora la tabla es visible y se puede medir
 }
 
 // Carga inicial
