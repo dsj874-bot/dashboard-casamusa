@@ -399,7 +399,10 @@ function renderBadge(k) {
         &nbsp;·&nbsp; Factor: <strong>${(k.dh_total / (k.dh_transcurridos || 1)).toFixed(2)}x</strong>
       </div>
       <div class="dias-badge" style="background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.3);color:var(--blue);">
-        📈 Proyección cierre ${k.mes_nombre}: <strong style="color:var(--blue)">${fmtCLP(k.proy_lineal)}</strong>
+        📈 Proyección sin NE de ${k.mes_nombre}: <strong style="color:var(--blue)">${fmtCLP(k.proy_lineal)}</strong>
+      </div>
+      <div class="dias-badge" style="background:rgba(245,158,11,0.1);border-color:rgba(245,158,11,0.3);color:var(--amber);">
+        🧾 Proyección con NE de ${k.mes_nombre}: <strong style="color:var(--amber)">${fmtCLP(k.proy_lineal_ne)}</strong>
       </div>
       <div class="dias-badge" style="background:rgba(34,163,71,0.1);border-color:rgba(34,163,71,0.3);color:var(--accent);">
         💰 Venta diaria promedio: <strong style="color:var(--accent)">${fmtCLP(k.v_mes_actual / (k.dh_transcurridos || 1))}</strong>

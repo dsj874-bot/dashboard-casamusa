@@ -670,6 +670,14 @@ def get_proyeccion_pg(filtros=None, fecha_corte=None):
     total_proy_mes = round(v_mes_26 * factor_mes, 0)
     kpis["proy_lineal"] = total_proy_mes
 
+    # Proyeccion con NE = la misma proyeccion lineal mas los Negocios
+    # Ganados aun no facturados. Se suma el NE de las filas (no toda la
+    # tabla ne_x_facturar) para que respete los filtros aplicados y
+    # cuadre con la fila TOTAL GENERAL de la pantalla.
+    total_ne = sum(x["monto_ne"] for x in filas)
+    kpis["monto_ne"] = round(total_ne, 0)
+    kpis["proy_lineal_ne"] = round(total_proy_mes + total_ne, 0)
+
     # Sucursales ordenadas por venta total del mes (mayor a menor), no
     # por un orden fijo MT/LC/MR/.../CANAL DIGITAL -- ese orden fijo
     # deja siempre al final a la sucursal que mas vende si no es una
