@@ -185,6 +185,13 @@
     </div>
 
     <div class="filtro-item">
+      <label>Marca</label>
+      <select id="f-marca">
+        <option value="">Todas</option>
+      </select>
+    </div>
+
+    <div class="filtro-item">
       <label>Subfamilia</label>
       <select id="f-subfamilia">
         <option value="">Todas</option>
@@ -278,6 +285,7 @@ fetch('/api/filtros_vta_acum')
       sucursal:   'f-sucursal',
       vendedor:   'f-vendedor',
       familia:    'f-familia',
+      marca:      'f-marca',
       subfamilia: 'f-subfamilia',
       tipo_venta: 'f-tipo_venta',
       procedencia:'f-procedencia',
@@ -303,7 +311,7 @@ fetch('/api/filtros_vta_acum')
 
 function getFiltros() {
   const f = { categoria: document.getElementById('f-categoria')?.value || '' };
-  const keys = ['sucursal','vendedor','familia','subfamilia','tipo_venta','procedencia','cond_pago'];
+  const keys = ['sucursal','vendedor','familia','marca','subfamilia','tipo_venta','procedencia','cond_pago'];
   keys.forEach(k => {
     const vals = mselValores(document.getElementById('f-'+k));
     if (vals.length) f[k] = vals;
@@ -330,7 +338,7 @@ function aplicar() {
 }
 
 function limpiar() {
-  ['f-sucursal','f-vendedor','f-familia','f-subfamilia',
+  ['f-sucursal','f-vendedor','f-familia','f-marca','f-subfamilia',
    'f-tipo_venta','f-procedencia','f-cond_pago']
     .forEach(id => mselLimpiar(document.getElementById(id)));
   aplicar();
