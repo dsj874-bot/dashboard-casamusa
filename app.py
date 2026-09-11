@@ -210,13 +210,25 @@ def admin_o_jefe_sucursal_requerido(f):
 #  hace falta tocar ninguna ruta individual.
 # ══════════════════════════════════════════════════════
 USUARIOS_INVENTARIO = {"dsepulveda@casamusa.cl", "caliaga@casamusa.cl"}
-USUARIOS_ADQUISICIONES = {"dsepulveda@casamusa.cl", "adquisiciones@casamusa.cl"}
-# Plan de Compra y Nivel de Servicio viven en Forecast pero siguen
-# siendo solo para dsepulveda (pedido explicito, sin relacion con quien
-# tenga acceso a Inventario/Adquisiciones en general) -- Forecast en si
-# es de gerencia (ver PREFIJOS_SOLO_GERENCIA), esto los restringe un
-# paso mas.
-USUARIOS_FORECAST = {"dsepulveda@casamusa.cl"}
+# 2026-09-11: se suma la gerencia (Enrique Musa, Mauricio Alvarado,
+# Jorge Santana, Fernando Musa) a Adquisiciones y Forecast, pedido
+# explicito del usuario.
+USUARIOS_ADQUISICIONES = {
+    "dsepulveda@casamusa.cl", "adquisiciones@casamusa.cl",
+    "emusa@casamusa.cl", "malvarado@casamusa.cl",
+    "jsantana@casamusa.cl", "fmusa@casamusa.cl",
+}
+# Plan de Compra y Nivel de Servicio viven en Forecast y hasta el
+# 2026-09-11 eran solo para dsepulveda; ahora los ve toda la gerencia.
+# Forecast en si ya es de gerencia (ver PREFIJOS_SOLO_GERENCIA); este
+# set es la restriccion adicional sobre esas pantallas, y se mantiene
+# separado de USUARIOS_GERENCIA a proposito para poder volver a
+# acotarlo sin tocar que areas ve cada uno.
+USUARIOS_FORECAST = {
+    "dsepulveda@casamusa.cl",
+    "emusa@casamusa.cl", "malvarado@casamusa.cl",
+    "jsantana@casamusa.cl", "fmusa@casamusa.cl",
+}
 
 PREFIJOS_RESTRINGIDOS_INVENTARIO = (
     "/inventario", "/api/inventario",
@@ -282,8 +294,9 @@ def _restringir_metas_ppto_canal():
 # ninguna cuenta admin=True que no sea gerencia): estas 5 ven todas las
 # areas. Cualquier otra cuenta (Jefe de Sucursal, E-commerce, etc) solo
 # ve Comercial -- ni siquiera las areas "en construccion" (Finanzas/
-# Logistica/Bodega/Forecast/Tareas). Adquisiciones e Inventario ya
-# tienen su propia restriccion mas estricta (solo dsepulveda) mas arriba.
+# Logistica/Bodega/Forecast/Tareas). Adquisiciones e Inventario tienen
+# ademas su propio set mas arriba (USUARIOS_ADQUISICIONES/
+# USUARIOS_INVENTARIO): estar en gerencia no basta para entrar ahi.
 USUARIOS_GERENCIA = {
     "dsepulveda@casamusa.cl", "emusa@casamusa.cl", "fmusa@casamusa.cl",
     "malvarado@casamusa.cl", "jsantana@casamusa.cl",
