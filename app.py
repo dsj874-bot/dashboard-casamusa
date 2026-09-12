@@ -1289,6 +1289,54 @@ COLUMNAS_SAP_REQUERIDAS = [
 ]
 
 
+@app.route("/clientes_distribucion")
+@admin_requerido
+def clientes_distribucion():
+    return render_template("clientes_distribucion.html",
+                           active="clientes_distribucion",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/clientes_distribucion")
+@admin_requerido
+def api_clientes_distribucion():
+    try:
+        return jsonify({"ok": True, "filas": data_loader_pg.get_clientes_distribucion_pg()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
+@app.route("/api/clientes_distribucion", methods=["POST"])
+@admin_requerido
+def api_subir_clientes_distribucion():
+    """Reemplaza la lista completa de clientes de Distribucion con la
+    del Excel que sube el usuario (export de SAP con los clientes de
+    lista de precios 53 / distribuidor)."""
+    archivo = request.files.get("archivo")
+    if not archivo or not archivo.filename:
+        return jsonify({"ok": False, "msg": "No se recibio ningun archivo."}), 400
+    if not archivo.filename.lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "msg": "El archivo debe ser .xlsx."}), 400
+
+    try:
+        df = pd.read_excel(io.BytesIO(archivo.read()))
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"No se pudo leer el Excel: {e}"}), 400
+
+    try:
+        r = data_loader_pg.cargar_clientes_distribucion_pg(df, session.get("usuario", "admin"))
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error al guardar: {e}"}), 500
+
+    msg = f"Lista actualizada: {r['guardados']} clientes."
+    if r["sin_ventas"]:
+        msg += (f" {r['con_ventas']} tienen ventas cargadas y {r['sin_ventas']} todavia no"
+                " (quedan marcados para cuando compren).")
+    return jsonify({"ok": True, "msg": msg, **r})
+
+
 @app.route("/subir_ventas")
 @admin_requerido
 def subir_ventas():

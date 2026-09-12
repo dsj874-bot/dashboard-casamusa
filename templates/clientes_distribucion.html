@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}Clientes Distribución{% endblock %}
+{% block page_title %}Clientes Distribución{% endblock %}
+{% block page_subtitle %}Lista maestra de clientes de Distribución — se usa para filtrar los reportes de Comercial{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .cd-wrap { max-width: 860px; display: flex; flex-direction: column; gap: 18px; }
+
+  .cd-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px;
+  }
+  .cd-card-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .cd-card-sub { font-size: 12.5px; color: var(--muted2); margin-bottom: 16px; line-height: 1.5; }
+
+  .cd-subir { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .cd-file {
+    flex: 1;
+    min-width: 240px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 9px 12px;
+  }
+  .btn-subir {
+    padding: 10px 22px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-subir:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .resultado { display: none; border-radius: 10px; padding: 12px 16px; font-size: 13px; margin-top: 14px; }
+  .resultado.mostrar { display: block; }
+  .resultado.ok { background: rgba(34,163,71,0.12); border: 1px solid var(--accent); color: var(--text); }
+  .resultado.error { background: rgba(239,68,68,0.1); border: 1px solid var(--red); color: var(--red-light); }
+
+  .cd-resumen { display: flex; gap: 26px; flex-wrap: wrap; margin-bottom: 14px; }
+  .cd-dato-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+  .cd-dato-valor { font-size: 22px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .cd-dato-valor.dormido { color: var(--muted2); }
+
+  table.tbl-cd { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.tbl-cd thead th {
+    text-align: left;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--muted);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--surface2);
+  }
+  table.tbl-cd tbody td { padding: 9px 12px; border-bottom: 1px solid rgba(30,42,58,0.5); }
+  table.tbl-cd tbody tr:hover { background: var(--surface2); }
+  .cd-codigo { color: var(--muted2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cd-tabla-scroll { max-height: 420px; overflow-y: auto; }
+
+  .pill { font-size: 11px; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+  .pill.con { background: rgba(34,163,71,0.12); color: var(--accent); }
+  .pill.sin { background: rgba(100,116,139,0.15); color: var(--muted2); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cd-wrap">
+
+  <div class="cd-card">
+    <div class="cd-card-title">Actualizar la lista</div>
+    <div class="cd-card-sub">
+      Sube el Excel exportado de SAP con los clientes de Distribución. Necesita una columna
+      de código de cliente (<strong>Código SN</strong>) y, opcionalmente, el nombre.
+      El archivo <strong>reemplaza la lista completa</strong>: si sacas un cliente de la planilla,
+      deja de estar marcado como Distribución.
+    </div>
+    <div class="cd-subir">
+      <input type="file" id="archivo" class="cd-file" accept=".xlsx">
+      <button class="btn-subir" id="btn-subir">Subir y reemplazar</button>
+    </div>
+    <div id="resultado" class="resultado"></div>
+  </div>
+
+  <div class="cd-card">
+    <div class="cd-card-title">Lista actual</div>
+    <div class="cd-card-sub">
+      Los clientes "sin ventas" son cuentas que están en la lista pero todavía no registran compras.
+      Se guardan igual: quedan marcados solos el día que compren.
+    </div>
+    <div class="cd-resumen" id="resumen"></div>
+    <div class="cd-tabla-scroll">
+      <table class="tbl-cd">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Cliente</th>
+            <th>Ventas</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-cd">
+          <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:24px;">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const resultadoEl = document.getElementById("resultado");
+
+function mostrarResultado(ok, msg) {
+  resultadoEl.textContent = msg;
+  resultadoEl.className = "resultado mostrar " + (ok ? "ok" : "error");
+}
+
+function pintar(filas) {
+  const tbody = document.getElementById("tbody-cd");
+  if (!filas.length) {
+    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:24px;">
+      Todavía no hay ninguna lista cargada.</td></tr>`;
+    document.getElementById("resumen").innerHTML = "";
+    return;
+  }
+
+  const conVentas = filas.filter(f => f.tiene_ventas).length;
+  document.getElementById("resumen").innerHTML = `
+    <div>
+      <div class="cd-dato-label">Clientes en la lista</div>
+      <div class="cd-dato-valor">${filas.length}</div>
+    </div>
+    <div>
+      <div class="cd-dato-label">Con ventas</div>
+      <div class="cd-dato-valor">${conVentas}</div>
+    </div>
+    <div>
+      <div class="cd-dato-label">Sin ventas aún</div>
+      <div class="cd-dato-valor dormido">${filas.length - conVentas}</div>
+    </div>`;
+
+  tbody.innerHTML = filas.map(f => `
+    <tr>
+      <td class="cd-codigo">${f.codigo_cliente}</td>
+      <td>${f.nombre_cliente || "—"}</td>
+      <td><span class="pill ${f.tiene_ventas ? "con" : "sin"}">${f.tiene_ventas ? "Con ventas" : "Sin ventas"}</span></td>
+    </tr>`).join("");
+}
+
+function cargar() {
+  fetch("/api/clientes_distribucion")
+    .then(r => r.json())
+    .then(d => { if (d.ok) pintar(d.filas); })
+    .catch(e => console.error("Error cargando lista:", e));
+}
+
+document.getElementById("btn-subir").addEventListener("click", async () => {
+  const input = document.getElementById("archivo");
+  if (!input.files.length) {
+    mostrarResultado(false, "Elige un archivo .xlsx primero.");
+    return;
+  }
+  const btn = document.getElementById("btn-subir");
+  btn.disabled = true;
+  btn.textContent = "Subiendo…";
+  try {
+    const fd = new FormData();
+    fd.append("archivo", input.files[0]);
+    const r = await fetch("/api/clientes_distribucion", { method: "POST", body: fd });
+    const d = await r.json();
+    mostrarResultado(d.ok, d.msg);
+    if (d.ok) { input.value = ""; cargar(); }
+  } catch (e) {
+    mostrarResultado(false, "Error de conexión al subir el archivo.");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Subir y reemplazar";
+  }
+});
+
+cargar();
+</script>
+{% endblock %}

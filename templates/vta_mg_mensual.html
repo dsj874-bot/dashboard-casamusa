@@ -166,6 +166,14 @@
     </div>
     <hr class="fp-divider">
     <div>
+      <div class="fp-label">Clientes Distribución</div>
+      <select class="fp-select" id="fp-distribucion">
+        <option value="">Todos los clientes</option>
+        <option value="solo">Solo Distribución</option>
+        <option value="excluir">Excluir Distribución</option>
+      </select>
+    </div>
+    <div>
       <div class="fp-label">Sucursal</div>
       <select class="fp-select" id="fp-sucursal"><option value="">Todas</option></select>
     </div>
@@ -307,6 +315,8 @@ function getFiltros() {
   const m = id => mselValores(document.getElementById(id));
   return {
     categoria:   document.getElementById('fp-categoria')?.value || '',
+    // No es multi-select: son 3 estados fijos (todos / solo / excluir)
+    distribucion: document.getElementById('fp-distribucion')?.value || '',
     sucursal:    m('fp-sucursal'),
     vendedor:    m('fp-vendedor'),
     familia:     m('fp-familia'),

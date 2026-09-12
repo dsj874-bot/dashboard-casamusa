@@ -70,6 +70,19 @@ def _expandir_pseudo_sucursal(valores):
     return expandido
 
 
+def _filtro_distribucion_sql(valor):
+    """Filtro de clientes de Distribucion, con tres estados: 'solo' deja
+    unicamente esos clientes, 'excluir' deja todo el resto, y cualquier
+    otra cosa (vacio/'todas') no filtra. Se apoya en la columna
+    es_distribucion de v_ventas (ver migrations/012), asi que no lleva
+    parametros ni subconsulta."""
+    if valor == "solo":
+        return " AND es_distribucion"
+    if valor == "excluir":
+        return " AND NOT es_distribucion"
+    return ""
+
+
 def _filtros_vta_sql(filtros):
     f = filtros or {}
     frag = ""
@@ -82,6 +95,7 @@ def _filtros_vta_sql(filtros):
                 valores = _expandir_pseudo_sucursal(valores)
             frag += f" AND {columna} = ANY(%(vta_{clave})s)"
             params[f"vta_{clave}"] = valores
+    frag += _filtro_distribucion_sql(f.get("distribucion"))
     return frag, params
 
 
@@ -178,6 +192,7 @@ def _filtros_comunes_sql(filtros):
                 valores = _expandir_pseudo_sucursal(valores)
             frag += f" AND {columna} = ANY(%({clave})s)"
             params[clave] = valores
+    frag += _filtro_distribucion_sql(f.get("distribucion"))
     return frag, params
 
 
@@ -1760,6 +1775,102 @@ def guardar_ne_x_facturar_pg(filas, updated_by="admin", sucursales_permitidas=No
             cur.executemany(sql, params)
         conn.commit()
     return len(filas)
+
+
+def _norm_rut(codigo):
+    """Normaliza un codigo de cliente para poder calzarlo aunque venga
+    con distinto formato: saca el prefijo C, puntos, guiones y los ceros
+    a la izquierda. Debe dar lo MISMO que la expresion equivalente de
+    v_ventas (ver migrations/012) -- caso real que lo hace necesario:
+    C9713599-1 en el Excel contra C09713599-1 en ventas."""
+    s = str(codigo).strip().upper()
+    if s.startswith("C"):
+        s = s[1:]
+    return s.replace(".", "").replace("-", "").lstrip("0")
+
+
+def cargar_clientes_distribucion_pg(df, actualizado_por="admin"):
+    """Reemplaza la lista de clientes de Distribucion con la del Excel
+    (columnas "Codigo SN" / "Nombre SN" del export de SAP).
+
+    Reemplazo completo y no upsert: el Excel es la lista maestra, asi
+    que un cliente que el usuario saco de la planilla tiene que dejar de
+    estar marcado. El DELETE y el INSERT van en la misma transaccion
+    para no dejar la lista vacia si el insert falla.
+
+    Devuelve cuantos quedaron y cuantos de esos tienen ventas cargadas
+    -- los que no las tienen igual se guardan (son altas de SAP que
+    todavia no compran; quedan marcadas solas cuando compren)."""
+    col_cod = next((c for c in df.columns if "digo" in str(c).lower() or str(c).strip().lower() in ("codigo", "rut")), None)
+    if col_cod is None:
+        raise ValueError("El archivo no tiene una columna de codigo de cliente (se esperaba algo como 'Codigo SN').")
+    col_nom = next((c for c in df.columns if "nombre" in str(c).lower()), None)
+
+    vistos = {}
+    for _, fila in df.iterrows():
+        codigo = str(fila[col_cod]).strip()
+        if not codigo or codigo.lower() == "nan":
+            continue
+        vistos[codigo] = {
+            "codigo": codigo,
+            "rut": _norm_rut(codigo),
+            "nombre": str(fila[col_nom]).strip() if col_nom is not None and str(fila[col_nom]).lower() != "nan" else None,
+            "by": actualizado_por,
+        }
+    filas = list(vistos.values())
+    if not filas:
+        raise ValueError("El archivo no trae ningun codigo de cliente valido.")
+
+    with db.get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM clientes_distribucion")
+            cur.executemany(
+                """INSERT INTO clientes_distribucion (codigo_cliente, rut_norm, nombre_cliente, actualizado_por)
+                   VALUES (%(codigo)s, %(rut)s, %(nombre)s, %(by)s)""",
+                filas,
+            )
+        conn.commit()
+
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(DISTINCT codigo_cliente) AS n FROM v_ventas WHERE es_distribucion")
+            con_ventas = cur.fetchone()["n"]
+
+    return {"guardados": len(filas), "con_ventas": con_ventas, "sin_ventas": len(filas) - con_ventas}
+
+
+def get_clientes_distribucion_pg():
+    """Lista actual, con la marca de si ese cliente tiene ventas
+    cargadas -- para que la pantalla muestre cuales estan 'durmiendo'."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            # El calce va por RUT normalizado, igual que en v_ventas: si
+            # se compara el codigo tal cual, un cliente cuyo codigo
+            # difiere solo en el cero a la izquierda aparece como "sin
+            # ventas" aunque si las tenga.
+            cur.execute(
+                """WITH con_ventas AS (
+                       SELECT DISTINCT
+                              ltrim(regexp_replace(upper(coalesce(codigo_cliente, '')), '^C|[.-]', '', 'g'), '0') AS rut_norm
+                         FROM ventas
+                   )
+                   SELECT c.codigo_cliente, c.nombre_cliente, c.actualizado_en, c.actualizado_por,
+                          (cv.rut_norm IS NOT NULL) AS tiene_ventas
+                     FROM clientes_distribucion c
+                     LEFT JOIN con_ventas cv ON cv.rut_norm = c.rut_norm
+                    ORDER BY c.nombre_cliente NULLS LAST, c.codigo_cliente"""
+            )
+            filas = cur.fetchall()
+    return [
+        {
+            "codigo_cliente": f["codigo_cliente"],
+            "nombre_cliente": f["nombre_cliente"],
+            "tiene_ventas":   f["tiene_ventas"],
+            "actualizado_en": f["actualizado_en"].strftime("%d/%m/%Y %H:%M") if f["actualizado_en"] else None,
+            "actualizado_por": f["actualizado_por"],
+        }
+        for f in filas
+    ]
 
 
 def get_metas_roster_pg(ano, mes):

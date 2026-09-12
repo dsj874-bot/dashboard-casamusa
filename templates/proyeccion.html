@@ -242,6 +242,14 @@
       <div class="filtros-panel-titulo">🔍 Filtros</div>
 
       <div class="filtro-item">
+        <label>Clientes Distribución</label>
+        <select id="f-distribucion">
+          <option value="">Todos los clientes</option>
+          <option value="solo">Solo Distribución</option>
+          <option value="excluir">Excluir Distribución</option>
+        </select>
+      </div>
+      <div class="filtro-item">
         <label>Sucursal</label>
         <select id="f-sucursal"><option value="">Todas</option></select>
       </div>
@@ -544,6 +552,9 @@ function getFiltros() {
   add("f-marca",       "marca");
   add("f-subfamilia",  "subfamilia");
   add("f-procedencia", "procedencia");
+  // No es multi-select: son 3 estados fijos (todos / solo / excluir)
+  const dist = document.getElementById("f-distribucion").value;
+  if (dist) f.distribucion = dist;
   return f;
 }
 
@@ -559,6 +570,7 @@ function aplicarFiltros() {
 function limpiarFiltros() {
   ["f-sucursal","f-vendedor","f-tipoventa","f-familia","f-marca","f-subfamilia","f-procedencia"]
     .forEach(id => mselLimpiar(document.getElementById(id)));
+  document.getElementById("f-distribucion").value = "";
   cargarProyeccion({}).then(renderTodo);
 }
 </script>

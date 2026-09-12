@@ -160,6 +160,15 @@
     </div>
 
     <div class="filtro-item">
+      <label>Clientes Distribución</label>
+      <select id="f-distribucion">
+        <option value="">Todos los clientes</option>
+        <option value="solo">Solo Distribución</option>
+        <option value="excluir">Excluir Distribución</option>
+      </select>
+    </div>
+
+    <div class="filtro-item">
       <label>Sucursal</label>
       <select id="f-sucursal"><option value="">Todas</option></select>
     </div>
@@ -331,6 +340,9 @@ function getFiltros() {
     const vals = mselValores(document.getElementById('f-'+k));
     if (vals.length) f[k] = vals;
   });
+  // No es multi-select: son 3 estados fijos (todos / solo / excluir)
+  const dist = v('f-distribucion');
+  if (dist) f.distribucion = dist;
   return f;
 }
 
@@ -363,6 +375,8 @@ function limpiar() {
   ['f-sucursal','f-vendedor','f-familia','f-marca','f-subfamilia',
    'f-procedencia','f-tipo_venta','f-distribuidor']
     .forEach(id => mselLimpiar(document.getElementById(id)));
+  const dist = document.getElementById('f-distribucion');
+  if (dist) dist.value = '';
   aplicar();
 }
 
