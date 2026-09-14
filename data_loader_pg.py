@@ -218,11 +218,18 @@ def _fecha_datos_pg(cur, fecha_corte=None):
     if fecha_corte is not None:
         return fecha_corte
     hoy = _hoy()
+    # Acotado por rango de fecha_conta y no por "ano = X AND mes = Y":
+    # lo segundo no usa ningun indice (seq scan de la tabla completa,
+    # ~380 ms) y esta consulta corre en CADA request comercial. Por
+    # rango si entra por idx_ventas_fecha_conta.
+    primero = date(hoy.year, hoy.month, 1)
+    siguiente = date(hoy.year + 1, 1, 1) if hoy.month == 12 else date(hoy.year, hoy.month + 1, 1)
     cur.execute(
         """SELECT
-             (SELECT max(fecha_conta) FROM ventas WHERE ano = %(ano)s AND mes = %(mes)s) AS max_fecha,
+             (SELECT max(fecha_conta) FROM ventas
+               WHERE fecha_conta >= %(desde)s AND fecha_conta < %(hasta)s) AS max_fecha,
              (SELECT fecha_confirmada FROM control_datos WHERE area = 'comercial') AS confirmada""",
-        {"ano": hoy.year, "mes": hoy.month},
+        {"desde": primero, "hasta": siguiente},
     )
     fila = cur.fetchone()
     max_fecha = fila["max_fecha"]
@@ -910,6 +917,14 @@ def get_seguimiento_metas_pg(filtros=None, fecha_corte=None):
         orden_suc.get(x["sucursal"], 0),
         1 if x["is_otros"] else 0,
         -(x["meta"] or 0),
+        # Desempate por nombre: sin esto, el orden entre vendedores con
+        # la misma meta (tipicamente los de meta 0) lo terminaba
+        # decidiendo el recorrido del set `claves` de mas arriba, que en
+        # Python depende del hash de los strings y cambia en cada
+        # proceso. Efecto visible: la tabla salia con las filas
+        # barajadas distinto en cada carga de la pantalla.
+        # Detectado 2026-09-14 comparando dos corridas identicas.
+        x["vendedor"] or "",
     ))
 
     return {"kpis": kpis, "filas": lista}
@@ -1003,29 +1018,29 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None, filtro_canal=None, fecha_corte
             # get_ventas_por_mes_pg (grafico mensual, la barra del mes
             # actual no debe pasarse del corte elegido). 2025 no lo
             # necesita, ano cerrado.
+            # La grilla por sucursal y la fila de totales salen del
+            # mismo escaneo con distinto GROUP BY: GROUPING SETS las
+            # trae juntas en una consulta en vez de dos. grouping()
+            # marca cual fila es el subtotal -- ahi sucursal_logica
+            # viene en NULL por agregacion, no por dato faltante.
             cur.execute(
-                f"""SELECT sucursal_logica, ano, mes, coalesce(sum(total), 0) AS v
-                    FROM v_ventas
-                    WHERE (
-                      ano = 2025
-                      OR (ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s)))
-                    ) AND sucursal_logica IS NOT NULL {frag_suc} {frag_canal}
-                    GROUP BY sucursal_logica, ano, mes""",
-                params,
-            )
-            grid = {(f["sucursal_logica"], f["ano"], f["mes"]): float(f["v"]) for f in cur.fetchall()}
-
-            cur.execute(
-                f"""SELECT ano, mes, coalesce(sum(total), 0) AS v
+                f"""SELECT sucursal_logica, ano, mes,
+                      grouping(sucursal_logica) AS g_suc,
+                      coalesce(sum(total), 0) AS v
                     FROM v_ventas
                     WHERE (
                       ano = 2025
                       OR (ano = 2026 AND (mes < %(mes_actual)s OR (mes = %(mes_actual)s AND dia <= %(dia_actual)s)))
                     ) {frag_suc} {frag_canal}
-                    GROUP BY ano, mes""",
+                    GROUP BY GROUPING SETS ((sucursal_logica, ano, mes), (ano, mes))""",
                 params,
             )
-            totales_grid = {(f["ano"], f["mes"]): float(f["v"]) for f in cur.fetchall()}
+            grid, totales_grid = {}, {}
+            for f in cur.fetchall():
+                if f["g_suc"]:
+                    totales_grid[(f["ano"], f["mes"])] = float(f["v"])
+                elif f["sucursal_logica"] is not None:
+                    grid[(f["sucursal_logica"], f["ano"], f["mes"])] = float(f["v"])
 
     # Ordenadas por venta acumulada (mayor a menor), no por un orden
     # fijo -- mismo criterio que get_proyeccion_pg.
@@ -1131,6 +1146,53 @@ def get_filtros_vta_acum_pg(filtro_sucursal=None, filtro_canal=None):
         "categorias": {k: v[0] for k, v in CATEGORIAS_VTA.items()},
         "filtros":    filtros_ok,
     }
+
+
+def _agregado_por_cat_y_mes(cur, col_grupo, corte_2026, frag_filtros, params):
+    """Venta y margen 2026 agregados a la vez por categoria+mes, por
+    categoria, por mes y en total -- en UNA consulta con GROUPING SETS.
+
+    Las pantallas Vta Mes Mg Acum y Vta Mg Mensual pedian esos cuatro
+    cortes con cuatro consultas separadas (mas un DISTINCT mes), todas
+    escaneando exactamente el mismo conjunto de filas. Con la base en
+    Oregon eso eran cinco idas y vueltas por pantalla; ahora es una.
+
+    grouping(x) devuelve 1 cuando la columna viene en NULL porque esa
+    fila es un subtotal, y 0 cuando el NULL es del propio dato -- sin
+    eso no se puede distinguir el subtotal de una categoria sin valor.
+
+    Devuelve (grp_mes, grp_total_rows, tot_mes, tot_vta, tot_mg):
+      grp_mes        {(cat, mes): (vta, mg)}
+      grp_total_rows [{cat, vta, mg}] ordenado por venta descendente
+      tot_mes        {mes: (vta, mg)} -- tambien da los meses con datos
+      tot_vta/tot_mg totales del periodo
+    """
+    cur.execute(
+        f"""SELECT {col_grupo} AS cat, mes,
+              grouping({col_grupo}) AS g_cat, grouping(mes) AS g_mes,
+              coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
+            FROM v_ventas
+            WHERE ano = 2026 AND {corte_2026} {frag_filtros}
+            GROUP BY GROUPING SETS (({col_grupo}, mes), ({col_grupo}), (mes), ())""",
+        params,
+    )
+    grp_mes, grp_total_rows, tot_mes = {}, [], {}
+    tot_vta = tot_mg = 0.0
+    for row in cur.fetchall():
+        vta, mg = float(row["vta"]), float(row["mg"])
+        if not row["g_cat"] and not row["g_mes"]:
+            if row["cat"] is not None:
+                grp_mes[(row["cat"], row["mes"])] = (vta, mg)
+        elif not row["g_cat"]:
+            if row["cat"] is not None:
+                grp_total_rows.append({"cat": row["cat"], "vta": vta, "mg": mg})
+        elif not row["g_mes"]:
+            tot_mes[row["mes"]] = (vta, mg)
+        else:
+            tot_vta, tot_mg = vta, mg
+
+    grp_total_rows.sort(key=lambda r: -r["vta"])
+    return grp_mes, grp_total_rows, tot_mes, tot_vta, tot_mg
 
 
 def get_vta_acum_pg(filtros=None, fecha_corte=None):
@@ -1313,41 +1375,13 @@ def get_vta_mes_mg_acum_pg(filtros=None, fecha_corte=None):
                 "ano_anterior":        2025,
             }
 
-            cur.execute(f"SELECT DISTINCT mes FROM v_ventas WHERE ano = 2026 AND {corte_2026} {frag_filtros}", params)
-            meses_con_datos = sorted(row["mes"] for row in cur.fetchall())
+            grp_cat_mes, grp_total_rows, tot_mes, tot_vta, tot_mg = _agregado_por_cat_y_mes(
+                cur, col_grupo, corte_2026, frag_filtros, params
+            )
+            meses_con_datos = sorted(tot_mes)
             nombres_meses = [MESES.get(m, str(m)) for m in meses_con_datos]
-
-            cur.execute(
-                f"""SELECT mes, coalesce(sum(total), 0) AS v
-                    FROM v_ventas WHERE ano = 2026 AND {corte_2026} {frag_filtros} GROUP BY mes""",
-                params,
-            )
-            total_por_mes = {row["mes"]: round(float(row["v"]), 0) for row in cur.fetchall()}
-
-            cur.execute(
-                f"""SELECT {col_grupo} AS cat, mes, coalesce(sum(total), 0) AS v
-                    FROM v_ventas WHERE ano = 2026 AND {corte_2026} AND {col_grupo} IS NOT NULL {frag_filtros}
-                    GROUP BY {col_grupo}, mes""",
-                params,
-            )
-            grp_mes = {(row["cat"], row["mes"]): float(row["v"]) for row in cur.fetchall()}
-
-            cur.execute(
-                f"""SELECT {col_grupo} AS cat,
-                      coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
-                    FROM v_ventas WHERE ano = 2026 AND {corte_2026} AND {col_grupo} IS NOT NULL {frag_filtros}
-                    GROUP BY {col_grupo} ORDER BY vta DESC""",
-                params,
-            )
-            grp_total_rows = cur.fetchall()
-
-            cur.execute(
-                f"SELECT coalesce(sum(total), 0) AS t, coalesce(sum(utilidad_bruta), 0) AS m FROM v_ventas WHERE ano = 2026 AND {corte_2026} {frag_filtros}",
-                params,
-            )
-            tot_row = cur.fetchone()
-            tot_vta = float(tot_row["t"])
-            tot_mg  = float(tot_row["m"])
+            total_por_mes = {m: round(v, 0) for m, (v, _) in tot_mes.items()}
+            grp_mes = {k: v for k, (v, _) in grp_cat_mes.items()}
 
     filas_mensual = []
     for row in grp_total_rows:
@@ -1438,43 +1472,11 @@ def get_vta_mg_mensual_pg(filtros=None, fecha_corte=None):
                 "ano_anterior":        2025,
             }
 
-            cur.execute(f"SELECT DISTINCT mes FROM v_ventas WHERE ano = 2026 AND {corte_2026} {frag_filtros}", params)
-            meses_con_datos = sorted(row["mes"] for row in cur.fetchall())
+            grp_mes, grp_total_rows, tot_mes, tot_vta, tot_mg = _agregado_por_cat_y_mes(
+                cur, col_grupo, corte_2026, frag_filtros, params
+            )
+            meses_con_datos = sorted(tot_mes)
             nombres_meses = [MESES.get(m, str(m)) for m in meses_con_datos]
-
-            cur.execute(
-                f"""SELECT {col_grupo} AS cat, mes,
-                      coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
-                    FROM v_ventas WHERE ano = 2026 AND {corte_2026} AND {col_grupo} IS NOT NULL {frag_filtros}
-                    GROUP BY {col_grupo}, mes""",
-                params,
-            )
-            grp_mes = {(row["cat"], row["mes"]): (float(row["vta"]), float(row["mg"])) for row in cur.fetchall()}
-
-            cur.execute(
-                f"""SELECT {col_grupo} AS cat,
-                      coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
-                    FROM v_ventas WHERE ano = 2026 AND {corte_2026} AND {col_grupo} IS NOT NULL {frag_filtros}
-                    GROUP BY {col_grupo} ORDER BY vta DESC""",
-                params,
-            )
-            grp_total_rows = cur.fetchall()
-
-            cur.execute(
-                f"""SELECT mes,
-                      coalesce(sum(total), 0) AS vta, coalesce(sum(utilidad_bruta), 0) AS mg
-                    FROM v_ventas WHERE ano = 2026 AND {corte_2026} {frag_filtros} GROUP BY mes""",
-                params,
-            )
-            tot_mes = {row["mes"]: (float(row["vta"]), float(row["mg"])) for row in cur.fetchall()}
-
-            cur.execute(
-                f"SELECT coalesce(sum(total), 0) AS t, coalesce(sum(utilidad_bruta), 0) AS m FROM v_ventas WHERE ano = 2026 AND {corte_2026} {frag_filtros}",
-                params,
-            )
-            tot_row = cur.fetchone()
-            tot_vta = float(tot_row["t"])
-            tot_mg  = float(tot_row["m"])
 
     filas_mensual = []
     for row in grp_total_rows:
@@ -1828,6 +1830,22 @@ def cargar_clientes_distribucion_pg(df, actualizado_por="admin"):
                 """INSERT INTO clientes_distribucion (codigo_cliente, rut_norm, nombre_cliente, actualizado_por)
                    VALUES (%(codigo)s, %(rut)s, %(nombre)s, %(by)s)""",
                 filas,
+            )
+            # ventas.es_distribucion esta materializada (migracion 013:
+            # calcularla al vuelo con el regexp del RUT costaba ~700 ms
+            # en CADA consulta de CADA reporte comercial). El trigger la
+            # mantiene para las filas nuevas, pero al cambiar la lista
+            # maestra hay que recalcular lo ya cargado -- en la misma
+            # transaccion que el reemplazo, para que la lista y la marca
+            # nunca queden desfasadas.
+            cur.execute(
+                """UPDATE ventas v
+                      SET es_distribucion = nueva.marca
+                     FROM (SELECT id, exists (
+                               SELECT 1 FROM clientes_distribucion cd
+                                WHERE cd.rut_norm = ventas_rut_norm(codigo_cliente)
+                           ) AS marca FROM ventas) AS nueva
+                    WHERE v.id = nueva.id AND v.es_distribucion IS DISTINCT FROM nueva.marca"""
             )
         conn.commit()
 
