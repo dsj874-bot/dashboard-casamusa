@@ -339,6 +339,13 @@ def inject_es_admin():
         "es_pantalla_comercial": not request.path.startswith(
             PREFIJOS_RESTRINGIDOS_INVENTARIO + PREFIJOS_RESTRINGIDOS_ADQUISICIONES + PREFIJOS_SOLO_GERENCIA
         ),
+        # Distinto de es_admin_inventario: ese es "puede gestionar datos
+        # del area", este es "puede ejecutar /admin/actualizar_inventario",
+        # que exige estar en USUARIOS_INVENTARIO. Una cuenta admin global
+        # sin Inventario (ej. la gerencia con acceso a Forecast) veia el
+        # boton "Actualizar Inventario" del Plan de Compra y recibia 403
+        # al apretarlo.
+        "puede_actualizar_inventario": session.get("usuario") in USUARIOS_INVENTARIO,
         "sucursal_sesion": suc_label,
         "canal_sesion": canal_label,
         # Jefe de Sucursal real, o un perfil sin sucursal general que
