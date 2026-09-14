@@ -418,9 +418,14 @@ def _lead_time_real_por_producto_pg(cur, codigos):
     return resultado
 
 
-def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
-    meses_default = meses_objetivo_default if meses_objetivo_default is not None else do.MESES_OBJETIVO_COMPRA
+def _cargar_datos_plan_pg(familia=None):
+    """Todo lo que el Plan de Compra lee de la base, en una sola pasada.
 
+    Esta separado del calculo porque los "meses objetivo" solo cambian
+    la aritmetica final, no los datos: la pantalla pide el plan y ademas
+    el comparativo de 1 / 1,5 / 2 meses, y antes cada uno de esos cuatro
+    calculos volvia a traer exactamente lo mismo de Postgres (~6,4s cada
+    vez, ~26s de puro retrabajo)."""
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
             obligatorios = _cargar_obligatorios_pg(cur, familia)
@@ -432,9 +437,25 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
                     codigos_necesarios.add(fila["codigo_equivalente"])
 
             bodegas = [n for n, _, _, _ in do.SUCURSALES_CRITICAS] + ["Todas"]
-            datos = _cargar_stock_pg(cur, codigos_necesarios, bodegas)
-            productos_extra = _cargar_productos_extra_pg(cur, codigos_necesarios)
-            lead_time_real = _lead_time_real_por_producto_pg(cur, codigos_necesarios)
+            return {
+                "obligatorios":    obligatorios,
+                "datos":           _cargar_stock_pg(cur, codigos_necesarios, bodegas),
+                "productos_extra": _cargar_productos_extra_pg(cur, codigos_necesarios),
+                "lead_time_real":  _lead_time_real_por_producto_pg(cur, codigos_necesarios),
+            }
+
+
+def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None, datos_plan=None):
+    """datos_plan: resultado de _cargar_datos_plan_pg() ya cargado, para
+    poder calcular varios niveles de meses sin volver a consultar."""
+    meses_default = meses_objetivo_default if meses_objetivo_default is not None else do.MESES_OBJETIVO_COMPRA
+
+    if datos_plan is None:
+        datos_plan = _cargar_datos_plan_pg(familia)
+    obligatorios    = datos_plan["obligatorios"]
+    datos           = datos_plan["datos"]
+    productos_extra = datos_plan["productos_extra"]
+    lead_time_real  = datos_plan["lead_time_real"]
 
     codigos_excluidos = dec.codigos_excluidos_compra()
 
@@ -527,20 +548,20 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None):
 
 
 def get_resumen_valor_compra_pg(familia=None):
+    """Valor $ del plan para cada nivel de meses objetivo. Se carga la
+    base UNA vez y se recalculan los niveles sobre esos mismos datos --
+    el cup para valorizar ya viene en productos_extra, asi que tampoco
+    hace falta volver a consultarlo por nivel."""
+    datos_plan = _cargar_datos_plan_pg(familia)
+    productos_extra = datos_plan["productos_extra"]
+
     niveles = []
     for meses in do.NIVELES_COMPARACION_MESES:
-        resultado = get_plan_compra_reposicion_pg(familia, meses)
-        candidatos = [
-            p for p in resultado["productos"]
-            if not p["sin_opcion_nacional"] and (p["cantidad_a_comprar"] or 0) > 0
-        ]
-        codigos = {p["codigo_a_comprar"] for p in candidatos}
-        with db.conexion_pool() as conn:
-            with conn.cursor() as cur:
-                extra = _cargar_productos_extra_pg(cur, codigos)
+        resultado = get_plan_compra_reposicion_pg(familia, meses, datos_plan=datos_plan)
         valor_total = sum(
-            p["cantidad_a_comprar"] * float(extra[p["codigo_a_comprar"]]["cup"] or 0)
-            for p in candidatos
+            p["cantidad_a_comprar"] * float((productos_extra.get(p["codigo_a_comprar"]) or {}).get("cup") or 0)
+            for p in resultado["productos"]
+            if not p["sin_opcion_nacional"] and (p["cantidad_a_comprar"] or 0) > 0
         )
         niveles.append({"meses": meses, "valor": round(valor_total, 0)})
 

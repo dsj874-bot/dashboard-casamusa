@@ -368,15 +368,18 @@ function renderTodo(d) {
   });
 }
 
-fetch("/api/inventario/segunda_linea/familias")
+// La tabla se carga SIEMPRE, aunque falle el listado de familias --
+// ver la nota equivalente en forecast_plan_compra.html.
+fetch("/api/forecast/plan_compras_2da_linea/familias")
   .then(r => r.json())
   .then(familias => {
+    if (!Array.isArray(familias)) return;
     const sel = document.getElementById("f-familia");
     sel.innerHTML = '<option value="">Todas</option>' +
       familias.map(f => `<option value="${f}">${f}</option>`).join("");
-    cargarDatos();
   })
-  .catch(err => console.error("Error lista de familias:", err));
+  .catch(err => console.error("Error lista de familias:", err))
+  .finally(cargarDatos);
 
 document.getElementById("f-familia").addEventListener("change", cargarDatos);
 document.getElementById("f-meses").addEventListener("change", cargarDatos);

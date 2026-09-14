@@ -751,6 +751,32 @@ def api_forecast_plan_compras():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/forecast/plan_compras/familias")
+@login_requerido
+def api_forecast_plan_compras_familias():
+    """Misma lista que /api/inventario/alertas_familias, pero bajo el
+    prefijo de Forecast. La pantalla de Plan de Compra vive en Forecast
+    y llamaba al endpoint de Inventario para llenar su filtro de
+    familia: para quien tiene Forecast pero no Inventario eso devolvia
+    403 y la pantalla quedaba cargando para siempre."""
+    try:
+        if USAR_POSTGRES_INVENTARIO:
+            return jsonify(data_loader_obligatorios_pg.get_familias_obligatorios_pg())
+        return jsonify(data_loader_obligatorios.get_familias_obligatorios())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/forecast/plan_compras_2da_linea/familias")
+@login_requerido
+def api_forecast_plan_compras_2l_familias():
+    """Equivalente de la anterior para Segunda Linea."""
+    try:
+        return jsonify(data_loader_segunda_linea.get_familias_segunda_linea())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/forecast/plan_compras/resumen_valor")
 @login_requerido
 def api_forecast_plan_compras_resumen_valor():

@@ -390,15 +390,20 @@ function renderTodo(d) {
   });
 }
 
-fetch("/api/inventario/alertas_familias")
+// La tabla se carga SIEMPRE, aunque falle el listado de familias: si
+// cargarDatos() cuelga del .then() de esta llamada, cualquier error
+// aca deja la pantalla en "Cargando..." para siempre (paso con los
+// usuarios que tienen Forecast pero no Inventario).
+fetch("/api/forecast/plan_compras/familias")
   .then(r => r.json())
   .then(familias => {
+    if (!Array.isArray(familias)) return;
     const sel = document.getElementById("f-familia");
     sel.innerHTML = '<option value="">Todas</option>' +
       familias.map(f => `<option value="${f}">${f}</option>`).join("");
-    cargarDatos();
   })
-  .catch(err => console.error("Error lista de familias:", err));
+  .catch(err => console.error("Error lista de familias:", err))
+  .finally(cargarDatos);
 
 document.getElementById("f-familia").addEventListener("change", cargarDatos);
 document.getElementById("f-meses").addEventListener("change", cargarDatos);
