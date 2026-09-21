@@ -85,7 +85,7 @@
 <div class="table-card" style="margin-top:20px;">
   <div class="table-header">
     <div>
-      <div class="table-header-title">Abastecimiento vs Venta por Marca</div>
+      <div class="table-header-title">Abastecimiento vs Venta por Marca — Nacional</div>
       <div class="table-header-sub" id="abast-sub">Cargando…</div>
     </div>
   </div>
@@ -252,7 +252,7 @@ fetch("/api/adquisiciones/abastecimiento")
     const t = d.total;
     document.getElementById("abast-sub").textContent =
       "Acumulado " + d.ano + " al " + (d.fecha_corte || "—") +
-      " — las tres cifras al mismo día";
+      " — solo productos nacionales, las tres cifras al mismo día";
 
     document.getElementById("abast-resumen").innerHTML = `
       <div class="bloque">
@@ -276,21 +276,16 @@ fetch("/api/adquisiciones/abastecimiento")
         <span class="val ${abClase(t.ratio_recibido)}">${fmtBrecha(t.brecha_recibido)}</span>
       </div>`;
 
-    // Las marcas sin cobertura de compras quedan fuera del calculo, pero
-    // se dicen: si no, el usuario ve un costo de venta menor al de las
-    // pantallas comerciales y no sabe por que.
-    const sc = d.sin_cobertura || [];
-    let nota = "<b>1,00 es el equilibrio</b>: sobre eso entra más de lo que sale y el " +
-               "inventario crece; bajo eso se está consumiendo stock.";
-    if (sc.length) {
-      nota += " Quedan fuera del cálculo <b>" + sc.length + " marcas</b> que venden pero " +
-              "nunca pasan por compras ni recepciones (" +
-              sc.slice(0, 4).map(m => m.marca).join(", ") +
-              (sc.length > 4 ? " y otras" : "") + "): son " + fmtCLP(d.fuera_costo_venta) +
-              " de costo de venta (" + d.fuera_pct + "%) y se reponen por una vía que estas " +
-              "tablas no registran. Incluirlas haría parecer que se está liquidando inventario.";
-    }
-    document.getElementById("abast-nota").innerHTML = nota;
+    // Solo nacional, y no por gusto: compras y recepciones son 100%
+    // nacionales (verificado: ni una fila importada). Las importaciones
+    // entran por otra via que estas tablas no registran, asi que no
+    // tienen contra que compararse. Se dice en pantalla para que nadie
+    // se pregunte por que el costo de venta no calza con Comercial.
+    document.getElementById("abast-nota").innerHTML =
+      "<b>1,00 es el equilibrio</b>: sobre eso entra más de lo que sale y el inventario " +
+      "crece; bajo eso se está consumiendo stock. Solo se consideran productos " +
+      "<b>nacionales</b>: las compras y recepciones registradas son todas nacionales, " +
+      "y las importaciones entran por una vía que estas tablas no registran.";
 
     document.getElementById("abast-body").innerHTML =
       (d.marcas || []).map(m => `
