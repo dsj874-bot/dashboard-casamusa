@@ -466,9 +466,19 @@ def get_abastecimiento_proveedor_pg():
                        coalesce(sum(comprado), 0)    AS comprado,
                        coalesce(sum(recibido), 0)    AS recibido
                   FROM movs
-                 WHERE rut IS NOT NULL
-                   AND rut IN (SELECT rut FROM movs
-                                GROUP BY rut HAVING sum(comprado) + sum(recibido) > 0)
+                 -- Mismo universo EXACTO que la tabla de abajo: los
+                 -- grupos con alguna compra registrada, incluido el de
+                 -- los productos sin proveedor asignado (rut NULL), que
+                 -- la tabla sí lista. Antes este WHERE pedía
+                 -- "rut IS NOT NULL" y dejaba ese grupo fuera solo del
+                 -- gráfico: la suma de los meses daba -52,8 millones
+                 -- contra los -38,1 del total. Se agrupa por el rut
+                 -- normalizado para que NULL sea un grupo mas y no se
+                 -- caiga en el IN.
+                 WHERE coalesce(rut, '(sin proveedor asignado)') IN (
+                           SELECT coalesce(rut, '(sin proveedor asignado)')
+                             FROM movs GROUP BY 1
+                            HAVING sum(comprado) + sum(recibido) > 0)
                  GROUP BY 1 ORDER BY 1
                 """,
                 params,
