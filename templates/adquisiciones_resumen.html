@@ -31,6 +31,19 @@
   .abast-resumen .ratio { font-size:24px; }
   .abast-nota { font-size:12px; color:var(--muted2); line-height:1.5; margin-bottom:14px; }
   .abast-nota b { color:var(--text); }
+  .abast-lectura { font-size:13px; line-height:1.65; color:var(--text);
+                   background:var(--surface2); border-left:3px solid var(--accent);
+                   border-radius:0 6px 6px 0; padding:12px 16px; margin-bottom:14px; }
+  .abast-lectura .titulo { font-weight:700; margin-bottom:6px; display:block; }
+  .abast-lectura ul { margin:6px 0 0; padding-left:18px; }
+  .abast-lectura li { margin-bottom:4px; }
+  .abast-lectura .cifra { font-variant-numeric:tabular-nums; font-weight:700; }
+  #inv-body td.suc { font-weight:600; color:var(--text); }
+  #inv-body tr.fila-total td { border-top:2px solid var(--border);
+                               font-weight:700; background:var(--surface2); }
+  .etiqueta-nueva { font-size:10px; letter-spacing:.04em; text-transform:uppercase;
+                    color:var(--accent); border:1px solid var(--accent);
+                    border-radius:3px; padding:1px 5px; margin-left:8px; }
   /* Semaforo: sobre 1,0 entra mas de lo que sale (stock creciendo) */
   .ab-alto  { color:#f87171; font-weight:700; }   /* sobreabastecido   */
   .ab-ok    { color:var(--muted2); font-weight:600; } /* en equilibrio  */
@@ -89,8 +102,43 @@
        por defecto, la leyenda de 4 series se parte en dos filas, se
        come el canvas y el area del grafico quedaba en 1 pixel de
        alto (medido en pantalla angosta). -->
-  <div style="height:300px;">
+  <div style="height:340px;">
     <canvas id="chartAbast"></canvas>
+  </div>
+</div>
+
+<div class="chart-card" style="margin-top:20px;">
+  <div class="chart-card-title">Recorrido del año — brecha acumulada</div>
+  <div class="chart-card-sub">Cuánto stock se consumió o se repuso en lo que va del año, acumulado mes a mes.
+    Bajo cero se consumió inventario; subiendo, se está reponiendo.</div>
+  <div style="height:260px;">
+    <canvas id="chartAcum"></canvas>
+  </div>
+</div>
+
+<div class="table-card" style="margin-top:20px;">
+  <div class="table-header">
+    <div>
+      <div class="table-header-title">Inventario real por sucursal</div>
+      <div class="table-header-sub" id="inv-sub">Cargando…</div>
+    </div>
+  </div>
+  <div style="padding:0 16px;">
+    <div class="abast-nota" id="inv-nota"></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Sucursal</th>
+          <th class="text-right">Inventario inicial</th>
+          <th class="text-right">Inventario actual</th>
+          <th class="text-right">Variación</th>
+          <th class="text-right">%</th>
+        </tr>
+      </thead>
+      <tbody id="inv-body"></tbody>
+    </table>
   </div>
 </div>
 
@@ -104,6 +152,7 @@
 
   <div style="padding:0 16px;">
     <div class="abast-resumen" id="abast-resumen"></div>
+    <div class="abast-lectura" id="abast-lectura"></div>
     <div class="abast-nota" id="abast-nota"></div>
   </div>
 
@@ -252,7 +301,9 @@ fetch("/api/adquisiciones/por_mes")
 // una variacion normal de un mes a otro.
 const abClase = r => r == null ? "" : (r > 1.10 ? "ab-alto" : (r < 0.90 ? "ab-bajo" : "ab-ok"));
 const fmtRatio = r => r == null ? "—" : r.toFixed(2);
-const fmtBrecha = v => (v > 0 ? "+" : "") + fmtCLP(v);
+// El signo va delante del peso. fmtCLP() sobre un negativo daba
+// "$-38.121.192", que se lee mal en una columna de cifras.
+const fmtBrecha = v => (v < 0 ? "-" : (v > 0 ? "+" : "")) + fmtCLP(Math.abs(v));
 
 fetch("/api/adquisiciones/abastecimiento")
   .then(r => r.json())
@@ -286,7 +337,33 @@ fetch("/api/adquisiciones/abastecimiento")
       <div class="bloque">
         <span class="etq">Brecha</span>
         <span class="val ${abClase(t.ratio_recibido)}">${fmtBrecha(t.brecha_recibido)}</span>
+      </div>
+      <div class="bloque">
+        <span class="etq">Comprado sin recibir</span>
+        <span class="val">${fmtCLP(t.en_camino)}</span>
       </div>`;
+
+    // La lectura en palabras. El indicador tiene dos cifras que apuntan
+    // a lados distintos (se ordena por sobre la venta pero llega por
+    // debajo) y un total anual que esconde el recorrido: sin esto, cada
+    // quien saca su propia conclusion y ninguna es la correcta.
+    const ms = d.meses || [];
+    const piso = ms.reduce((a, m) => m.acumulado < a.acumulado ? m : a, ms[0] || {acumulado: 0});
+    const ultimo = ms[ms.length - 1] || {};
+    const repuesto = (ultimo.acumulado || 0) - (piso.acumulado || 0);
+    document.getElementById("abast-lectura").innerHTML = `
+      <span class="titulo">Cómo leer esto</span>
+      <ul>
+        <li>Se está <b>comprando por sobre la venta</b>: las órdenes van en
+            <span class="cifra">${fmtRatio(t.ratio_comprado)}</span> contra
+            <span class="cifra">${fmtRatio(t.ratio_recibido)}</span> de lo que efectivamente llegó.</li>
+        <li>El stock bajó <span class="cifra">${fmtCLP(Math.abs(piso.acumulado || 0))}</span>
+            hasta ${piso.mes_nombre || "—"}, y desde entonces se repusieron
+            <span class="cifra">${fmtCLP(repuesto)}</span>. La brecha de
+            <span class="cifra">${fmtBrecha(t.brecha_recibido)}</span> del año es lo que queda de esa baja.</li>
+        <li>Quedan <span class="cifra">${fmtCLP(t.en_camino)}</span> comprados sin recibir: van a subir
+            el inventario sin que medie una compra nueva.</li>
+      </ul>`;
 
     // Los proveedores sin compras registradas quedan fuera del calculo,
     // pero se dicen: si no, el costo de venta no calza con Comercial y
@@ -333,7 +410,7 @@ fetch("/api/adquisiciones/abastecimiento")
     // 1,21 sobre una escala 0-1,5 la linea queda pegada a la referencia
     // y no se distingue la tendencia, que es justamente lo que se viene
     // a mirar. Se deja 10% de aire y se fuerza que el 1,00 quede dentro.
-    const rs = meses.map(m => m.ratio).filter(r => r != null);
+    const rs = meses.flatMap(m => [m.ratio, m.ratio_comprado]).filter(r => r != null);
     const lo = Math.min(1, ...rs), hi = Math.max(1, ...rs);
     const aire = Math.max((hi - lo) * 0.15, 0.05);
     const ejeRatio = { min: Math.max(0, lo - aire), max: hi + aire };
@@ -351,6 +428,15 @@ fetch("/api/adquisiciones/abastecimiento")
             type: "bar", label: "Recibido", yAxisID: "y",
             data: meses.map(m => m.recibido / 1e6),
             backgroundColor: cssVar("--accent"), borderRadius: 4, order: 2,
+          },
+          {
+            // Las dos curvas juntas: ordenado y recibido no van a la par
+            // (en julio se ordeno mucho mas de lo que llego, en agosto al
+            // reves), y esa diferencia es justamente lo que esta en camino.
+            type: "line", label: "Comprado / Costo de Venta", yAxisID: "y1",
+            data: meses.map(m => m.ratio_comprado),
+            borderColor: cssVar("--accent"), backgroundColor: cssVar("--accent"),
+            borderWidth: 2, borderDash: [4, 3], pointRadius: 3, tension: 0.2, order: 0,
           },
           {
             type: "line", label: "Recibido / Costo de Venta", yAxisID: "y1",
@@ -394,6 +480,75 @@ fetch("/api/adquisiciones/abastecimiento")
       },
     });
 
+
+    // Curva acumulada: es la que cuenta la historia del año. Ni el dato
+    // del mes ni el total anual la muestran -- recien acumulando se ve
+    // el hoyo de enero-febrero y la reposicion posterior.
+    new Chart(document.getElementById("chartAcum").getContext("2d"), {
+      data: {
+        labels: meses.map(m => m.mes_nombre),
+        datasets: [{
+          type: "line", label: "Brecha acumulada",
+          data: meses.map(m => m.acumulado / 1e6),
+          borderColor: cssVar("--blue"), backgroundColor: cssVar("--blue"),
+          borderWidth: 2, pointRadius: 4, tension: 0.2, fill: false,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: c => "Acumulado: $" + Math.round(c.parsed.y) + "M" } },
+        },
+        scales: {
+          y: { grid: { color: cssVar("--border") }, ticks: { callback: v => "$" + v + "M" } },
+          x: { grid: { display: false } },
+        },
+      },
+    });
+
+    // Inventario real por sucursal -- la comprobacion independiente.
+    const inv = d.inventario || {};
+    const sucs = inv.sucursales || [];
+    if (!sucs.length) {
+      document.getElementById("inv-sub").textContent = "Sin historia de inventario todavía.";
+    } else {
+      document.getElementById("inv-sub").textContent =
+        "Del " + inv.desde + " al " + inv.hasta + " (" + inv.dias + " días)";
+      document.getElementById("inv-nota").innerHTML =
+        "Medición <b>independiente</b> del indicador de arriba: aquélla mide el flujo " +
+        "(¿compro más rápido de lo que vendo?) y ésta el stock (¿dónde se está acumulando?). " +
+        "Sirve además para separar la <b>expansión</b> del sobreabastecimiento: el inventario de " +
+        "una sucursal recién abierta es mercadería que antes no existía, no es haber comprado de más. " +
+        "La serie la llena el snapshot diario, que partió el " + inv.desde + ".";
+
+      const hoy = new Date();
+      const esNueva = f => {
+        if (!f) return false;                       // dd-mm-aaaa
+        const [d_, m_, a_] = f.split("-").map(Number);
+        return (hoy - new Date(a_, m_ - 1, d_)) / 86400000 < 550;   // ~18 meses
+      };
+      const fila = x => `
+        <tr>
+          <td class="suc">${x.sucursal}${esNueva(x.primera_venta)
+              ? `<span class="etiqueta-nueva">abrió ${x.primera_venta}</span>` : ""}</td>
+          <td class="text-right" style="color:var(--muted2)">${fmtCLP(x.inicial)}</td>
+          <td class="text-right">${fmtCLP(x.final)}</td>
+          <td class="text-right ${x.variacion > 0 ? "ab-alto" : (x.variacion < 0 ? "ab-bajo" : "")}">${fmtBrecha(x.variacion)}</td>
+          <td class="text-right ${x.variacion > 0 ? "ab-alto" : (x.variacion < 0 ? "ab-bajo" : "")}">${x.var_pct == null ? "—" : (x.var_pct > 0 ? "+" : "") + x.var_pct.toFixed(1) + "%"}</td>
+        </tr>`;
+      const t2 = inv.total;
+      document.getElementById("inv-body").innerHTML =
+        sucs.map(fila).join("") + (t2 ? `
+        <tr class="fila-total">
+          <td class="suc">Total</td>
+          <td class="text-right">${fmtCLP(t2.inicial)}</td>
+          <td class="text-right">${fmtCLP(t2.final)}</td>
+          <td class="text-right ${t2.variacion > 0 ? "ab-alto" : "ab-bajo"}">${fmtBrecha(t2.variacion)}</td>
+          <td class="text-right ${t2.variacion > 0 ? "ab-alto" : "ab-bajo"}">${(t2.var_pct > 0 ? "+" : "") + t2.var_pct.toFixed(1) + "%"}</td>
+        </tr>` : "");
+    }
   })
   .catch(err => {
     console.error("Error abastecimiento:", err);

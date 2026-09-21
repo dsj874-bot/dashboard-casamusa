@@ -12,6 +12,7 @@ por ventana de fecha con FILTER (WHERE ...) en un solo GROUP BY/scan.
 import math
 import numpy as np
 import db
+from data_loader_obligatorios import SIGLA_SUCURSAL
 
 MESES = {
     1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
@@ -525,19 +526,36 @@ def get_abastecimiento_proveedor_pg():
     sin_compras.sort(key=lambda p: -p["costo_venta"])
 
     meses = []
+    acumulado = 0.0
     for r in filas_mes:
         cv, co, re = float(r["costo_venta"]), float(r["comprado"]), float(r["recibido"])
+        # Brecha acumulada: es LA cifra que explica el año. El dato suelto
+        # de cada mes no dice nada, y el total del año tampoco -- recien
+        # la curva acumulada muestra que el stock se bajo fuerte en
+        # enero-febrero y se viene reponiendo desde marzo, que es la
+        # conclusion a la que llegamos con el usuario el 2026-09-21.
+        acumulado += re - cv
         meses.append({
-            "mes":         r["mes"],
-            "mes_nombre":  MESES.get(r["mes"], str(r["mes"])),
-            "costo_venta": round(cv, 0),
-            "comprado":    round(co, 0),
-            "recibido":    round(re, 0),
-            "ratio":       round(re / cv, 3) if cv > 0 else None,
+            "mes":            r["mes"],
+            "mes_nombre":     MESES.get(r["mes"], str(r["mes"])),
+            "costo_venta":    round(cv, 0),
+            "comprado":       round(co, 0),
+            "recibido":       round(re, 0),
+            "ratio":          round(re / cv, 3) if cv > 0 else None,
+            "ratio_comprado": round(co / cv, 3) if cv > 0 else None,
+            "brecha":         round(re - cv, 0),
+            "acumulado":      round(acumulado, 0),
         })
 
+    total = _arma("Total", None, tot_cv, tot_co, tot_re)
+    # Comprado que todavia no llega a bodega. Importa porque el ratio se
+    # mide contra lo RECIBIDO: esta plata ya esta comprometida y va a
+    # empujar el inventario hacia arriba sin que medie una compra nueva.
+    total["en_camino"] = round(tot_co - tot_re, 0)
+    total["ratio_comprado"] = round(tot_co / tot_cv, 3) if tot_cv > 0 else None
+
     return {
-        "total":             _arma("Total", None, tot_cv, tot_co, tot_re),
+        "total":             total,
         "proveedores":       proveedores,
         "sin_compras":       sin_compras,
         "fuera_costo_venta": round(fuera_cv, 0),
@@ -545,6 +563,96 @@ def get_abastecimiento_proveedor_pg():
         "meses":             meses,
         "ano":               2026,
         "fecha_corte":       fecha_corte.strftime("%d-%m-%Y") if fecha_corte else None,
+    }
+
+
+def get_inventario_por_sucursal_pg():
+    """Evolucion del valor del inventario por sucursal, desde
+    nivel_servicio_historico (lo llena el cron diario).
+
+    Va al lado del KPI de abastecimiento porque es la comprobacion
+    INDEPENDIENTE del mismo fenomeno: el ratio mide el flujo (compro mas
+    rapido de lo que vendo?) y esto mide el stock (donde se esta
+    acumulando?). Cuando las dos apuntan al mismo lado, la conclusion es
+    solida.
+
+    Tambien es lo unico que separa la expansion del sobreabastecimiento.
+    Chicureo abrio en 2025 y Maipu en marzo de 2026: su inventario es
+    mercaderia que antes no existia, no es haber comprado de mas. El
+    ratio no puede distinguirlos -- Maipu se abastecio por traspasos
+    desde San Isidro y casi no registra compras propias -- pero mirando
+    el stock por sucursal se ve solo.
+
+    OJO con dos cosas de nivel_servicio_historico:
+      - guarda una fila 'TOTAL' ADEMAS de una por sucursal; sumarlas
+        todas duplica el valor.
+      - el cron partio el 2026-08-27, asi que no hay historia anterior.
+    """
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT min(fecha) AS desde, max(fecha) AS hasta FROM nivel_servicio_historico"""
+            )
+            r = cur.fetchone()
+            desde, hasta = r["desde"], r["hasta"]
+            if desde is None:
+                return {"sucursales": [], "total": None, "desde": None, "hasta": None, "dias": 0}
+
+            cur.execute(
+                """SELECT sucursal,
+                          max(valor_inventario) FILTER (WHERE fecha = %(desde)s) AS ini,
+                          max(valor_inventario) FILTER (WHERE fecha = %(hasta)s) AS fin
+                     FROM nivel_servicio_historico
+                    WHERE fecha IN (%(desde)s, %(hasta)s)
+                    GROUP BY sucursal""",
+                {"desde": desde, "hasta": hasta},
+            )
+            filas = cur.fetchall()
+
+            # Primera venta de cada sucursal: asi la pantalla puede decir
+            # "abrio en marzo de 2026" en vez de dejar al lector adivinar
+            # por que una sucursal aparece con inventario nuevo.
+            cur.execute(
+                """SELECT sucursal_logica AS sigla, min(fecha_conta) AS primera
+                     FROM v_ventas WHERE sucursal_logica IS NOT NULL
+                    GROUP BY sucursal_logica"""
+            )
+            apertura = {f["sigla"]: f["primera"] for f in cur.fetchall()}
+
+    sucursales, total = [], None
+    for f in filas:
+        if f["ini"] is None or f["fin"] is None:
+            continue
+        ini, fin = float(f["ini"]), float(f["fin"])
+        fila = {
+            "sucursal":  f["sucursal"],
+            "sigla":     SIGLA_SUCURSAL.get(f["sucursal"]),
+            "inicial":   round(ini, 0),
+            "final":     round(fin, 0),
+            "variacion": round(fin - ini, 0),
+            "var_pct":   round((fin - ini) / ini * 100, 1) if ini else None,
+            "primera_venta": None,
+        }
+        # "SI" es una pseudo-sucursal del lado comercial (San Isidro =
+        # SE + CMD, dos canales sobre la misma bodega), asi que no existe
+        # como tal en v_ventas y hay que expandirla o la fecha sale vacia.
+        siglas = {"SI": ["SE", "CMD"]}.get(fila["sigla"], [fila["sigla"]])
+        fechas = [apertura[x] for x in siglas if x in apertura]
+        if fechas:
+            fila["primera_venta"] = min(fechas).strftime("%d-%m-%Y")
+        if f["sucursal"] == "TOTAL":
+            total = fila
+        else:
+            sucursales.append(fila)
+
+    sucursales.sort(key=lambda x: -x["final"])
+
+    return {
+        "sucursales": sucursales,
+        "total":      total,
+        "desde":      desde.strftime("%d-%m-%Y"),
+        "hasta":      hasta.strftime("%d-%m-%Y"),
+        "dias":       (hasta - desde).days,
     }
 
 

@@ -524,7 +524,12 @@ def api_adquisiciones_abastecimiento():
     if not USAR_POSTGRES_ADQUISICIONES:
         return jsonify({"error": "Este indicador necesita Postgres (USAR_POSTGRES_ADQUISICIONES=1)."}), 503
     try:
-        return jsonify(data_loader_adquisiciones_pg.get_abastecimiento_proveedor_pg())
+        datos = data_loader_adquisiciones_pg.get_abastecimiento_proveedor_pg()
+        # El inventario por sucursal viaja en la misma respuesta: es la
+        # comprobacion independiente del mismo fenomeno y se muestra en
+        # la misma pantalla, no vale la pena un segundo viaje a Oregon.
+        datos["inventario"] = data_loader_adquisiciones_pg.get_inventario_por_sucursal_pg()
+        return jsonify(datos)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
