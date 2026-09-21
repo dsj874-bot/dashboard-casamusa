@@ -1928,12 +1928,35 @@ def api_subir_inventario():
     except Exception as e:
         return jsonify({"ok": False, "msg": f"Error al procesar/subir el archivo: {e}"}), 500
 
+    # Snapshot del inventario recien cargado, con la fecha de HOY.
+    #
+    # Antes esto solo lo hacia el cron de las 00:23, y quedaba corrido un
+    # dia: el inventario se carga cerca de las 09:00, asi que la foto de
+    # la madrugada capturaba SIEMPRE la carga del dia anterior. Ademas el
+    # fin de semana, sin carga nueva, el cron repetia el mismo valor como
+    # si fuera un dato nuevo -- 8 de los primeros 25 dias de la serie son
+    # repeticiones (verificado 2026-09-21).
+    #
+    # Tomandolo aca, cada punto corresponde a un archivo de inventario
+    # real y lleva la fecha en que se cargo. El UPSERT por (fecha,
+    # sucursal) hace que pise lo que haya escrito el cron esa madrugada,
+    # y que dos cargas el mismo dia dejen la ultima.
+    #
+    # Va en su propio try: si fallara, el inventario YA quedo cargado y
+    # seria absurdo devolver error por el historico. Se avisa aparte.
+    aviso_snapshot = ""
+    try:
+        data_loader_nivel_servicio.guardar_snapshot_diario_pg()
+    except Exception as e:
+        app.logger.warning("Inventario cargado pero fallo el snapshot historico: %s", e)
+        aviso_snapshot = " (el historico de inventario no se pudo actualizar)"
+
     n_filas = len(df)
     filas_fmt = f"{n_filas:,}".replace(",", ".")
     return jsonify({
         "ok": True,
         "filas": n_filas,
-        "msg": f"OK: inventario actualizado, {filas_fmt} productos.",
+        "msg": f"OK: inventario actualizado, {filas_fmt} productos.{aviso_snapshot}",
     })
 
 
