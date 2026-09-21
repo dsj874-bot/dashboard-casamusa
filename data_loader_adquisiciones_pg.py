@@ -10,6 +10,8 @@ Igual que en data_loader_pg.py: una conexion por funcion, agregados
 por ventana de fecha con FILTER (WHERE ...) en un solo GROUP BY/scan.
 """
 import math
+from datetime import date
+
 import numpy as np
 import db
 from data_loader_obligatorios import SIGLA_SUCURSAL
@@ -720,6 +722,209 @@ def get_inventario_por_sucursal_pg():
         "hasta":      hasta.strftime("%d-%m-%Y"),
         "dias":       (hasta - desde).days,
     }
+
+
+# Desde cuantos meses de cobertura un producto se considera detenido.
+# Seis es donde la conversacion con el proveedor empieza a valer la pena:
+# con 12 quedan solo los casos indiscutibles ($167 millones) y con 3 se
+# llena de productos de rotacion normal. Medido 2026-09-21: sobre 6 meses
+# son 2.697 SKU y $408 millones.
+MESES_COBERTURA_DETENIDO = 6
+
+
+def get_stock_detenido_pg(meses_min=MESES_COBERTURA_DETENIDO, proveedor=None):
+    """Productos nacionales con stock parado, para gestionar devoluciones
+    con el proveedor.
+
+    Responde una pregunta DISTINTA a la del KPI de abastecimiento, y por
+    eso vive aparte (acordado con el usuario el 2026-09-21): aquel mide
+    el FLUJO del año (compro mas rapido de lo que vendo?) y este mide el
+    STOCK parado hoy (que tengo detenido y a quien se lo devuelvo?).
+
+    No es un matiz. De los 2.697 SKU con exceso, 1.696 no tuvieron NI UNA
+    venta en 2026: al no tener venta no tienen ratio, asi que el KPI de
+    abastecimiento los muestra como "—" o como 0,00 -- o sea
+    "consumiendo stock", justo lo contrario de lo que son. Son $135
+    millones que ese indicador no puede ver por mucho que se abra hasta
+    el codigo. Y el total en juego -- $408 millones -- es diez veces la
+    brecha de flujo del año, que son $38 millones.
+
+    Cobertura = stock / venta mensual. Un producto sin venta mensual
+    tiene cobertura infinita: se marca aparte como "sin venta" en vez de
+    inventar un numero, porque es el peor caso y conviene que se lea como
+    tal.
+
+    Solo productos nacionales, igual que el KPI de abastecimiento: al
+    importado no se le devuelve al proveedor de la misma forma.
+    """
+    # Se filtra por el NOMBRE resuelto y no por el rut, porque es lo que
+    # la pantalla muestra y devuelve en el selector -- y porque el grupo
+    # "Sin proveedor asignado" no tiene rut con que filtrarlo. La
+    # expresion se repite igual que en el SELECT: si cambia una hay que
+    # cambiar la otra.
+    filtro_prov = (
+        " AND coalesce(n.nombre, d.rut, 'Sin proveedor asignado') = %(prov)s"
+        if proveedor else ""
+    )
+    params = {"meses": meses_min, "prov": proveedor,
+              "prov_imp": list(PROVEEDORES_IMPORTADOS)}
+
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                WITH stock AS (
+                    -- bodega 'Todas' es una fila agregada del archivo de
+                    -- origen: sumarla contaria todo dos veces.
+                    SELECT codigo, sum(stock) AS stock, sum(transito) AS transito,
+                           sum(venta_mensual) AS venta_mensual
+                      FROM inventario_stock WHERE bodega <> 'Todas'
+                     GROUP BY codigo
+                ),
+                defecto AS (
+                    SELECT codigo, rut FROM (
+                        SELECT codigo_cm AS codigo, proveedor_por_defecto AS rut,
+                               row_number() OVER (PARTITION BY codigo_cm
+                                   ORDER BY count(*) DESC, proveedor_por_defecto) AS rn
+                          FROM ventas
+                         WHERE proveedor_por_defecto IS NOT NULL AND trim(proveedor_por_defecto) <> ''
+                         GROUP BY codigo_cm, proveedor_por_defecto
+                    ) t WHERE rn = 1
+                ),
+                nombres AS (
+                    SELECT rut, min(nombre_proveedor) AS nombre FROM compras
+                     WHERE nombre_proveedor IS NOT NULL GROUP BY rut
+                ),
+                ultima AS (
+                    SELECT codigo_cm AS codigo, max(fecha_conta) AS fecha
+                      FROM ventas GROUP BY codigo_cm
+                )
+                SELECT s.codigo, p.descripcion, p.familia, p.subfamilia, p.marca,
+                       coalesce(n.nombre, d.rut, 'Sin proveedor asignado') AS proveedor,
+                       d.rut AS rut_proveedor,
+                       s.stock, s.transito, s.venta_mensual,
+                       round((s.stock * p.cup)::numeric)    AS valor,
+                       round((s.transito * p.cup)::numeric) AS valor_transito,
+                       u.fecha AS ultima_venta,
+                       (nc.codigo IS NOT NULL) AS marcado_no_comprar
+                  FROM stock s
+                  JOIN productos p ON p.codigo = s.codigo
+                  LEFT JOIN defecto d  ON d.codigo = s.codigo
+                  LEFT JOIN nombres n  ON n.rut = d.rut
+                  LEFT JOIN ultima u   ON u.codigo = s.codigo
+                  LEFT JOIN productos_no_comprar nc ON nc.codigo = s.codigo
+                 WHERE p.procedencia = 'Nacional'
+                   -- Fuera los PROVEEDORES_IMPORTADOS: el maestro los
+                   -- marca nacionales pero son importacion, y a esos no
+                   -- se les devuelve mercaderia. Listarlos seria ofrecer
+                   -- una gestion que no se puede hacer (ASCABLE: 7 SKU,
+                   -- $13,6 millones; lo indico el usuario 2026-09-21).
+                   AND coalesce(d.rut, '') <> ALL(%(prov_imp)s)
+                   AND s.stock > 0
+                   AND coalesce(p.cup, 0) > 0
+                   AND (s.venta_mensual IS NULL OR s.venta_mensual = 0
+                        OR s.stock / s.venta_mensual >= %(meses)s)
+                   {filtro_prov}
+                """,
+                params,
+            )
+            filas = cur.fetchall()
+
+    hoy = date.today()
+    productos, por_prov = [], {}
+    tot_valor = tot_sin_venta = 0.0
+
+    for r in filas:
+        vm = float(r["venta_mensual"] or 0)
+        stock = float(r["stock"] or 0)
+        valor = float(r["valor"] or 0)
+        sin_venta = vm <= 0
+        cobertura = None if sin_venta else round(stock / vm, 1)
+        ult = r["ultima_venta"]
+
+        productos.append({
+            "codigo":        r["codigo"],
+            "descripcion":   r["descripcion"],
+            "familia":       r["familia"],
+            "subfamilia":    r["subfamilia"],
+            "marca":         r["marca"],
+            "proveedor":     r["proveedor"],
+            "rut_proveedor": r["rut_proveedor"],
+            "stock":         round(stock, 0),
+            "transito":      round(float(r["transito"] or 0), 0),
+            "venta_mensual": round(vm, 1),
+            "cobertura":     cobertura,
+            "sin_venta":     sin_venta,
+            "valor":         round(valor, 0),
+            "valor_transito": round(float(r["valor_transito"] or 0), 0),
+            "ultima_venta":  ult.strftime("%d-%m-%Y") if ult else None,
+            "dias_sin_venta": (hoy - ult).days if ult else None,
+            "no_comprar":    r["marcado_no_comprar"],
+        })
+
+        tot_valor += valor
+        if sin_venta:
+            tot_sin_venta += valor
+        agg = por_prov.setdefault(r["proveedor"], {"valor": 0.0, "skus": 0, "muerto": 0.0})
+        agg["valor"] += valor
+        agg["skus"] += 1
+        if sin_venta:
+            agg["muerto"] += valor
+
+    # Mayor valor detenido primero: es la plata que se puede recuperar.
+    productos.sort(key=lambda x: -x["valor"])
+
+    proveedores = sorted(
+        ({"proveedor": k, "valor": round(v["valor"], 0), "skus": v["skus"],
+          "muerto": round(v["muerto"], 0)} for k, v in por_prov.items()),
+        key=lambda x: -x["valor"],
+    )
+
+    return {
+        "productos":     productos,
+        "proveedores":   proveedores,
+        "meses_min":     meses_min,
+        "total_valor":   round(tot_valor, 0),
+        "total_skus":    len(productos),
+        "valor_sin_venta": round(tot_sin_venta, 0),
+        "skus_sin_venta":  sum(1 for p in productos if p["sin_venta"]),
+    }
+
+
+def exportar_stock_detenido_excel_pg(meses_min=MESES_COBERTURA_DETENIDO, proveedor=None):
+    """El Excel es el entregable real de esta pantalla: es lo que se
+    lleva a la reunion con el proveedor."""
+    import pandas as pd
+    import io as _io
+
+    d = get_stock_detenido_pg(meses_min, proveedor)
+    filas = [{
+        "Proveedor":        p["proveedor"],
+        "Codigo":           p["codigo"],
+        "Descripcion":      p["descripcion"],
+        "Marca":            p["marca"],
+        "Familia":          p["familia"],
+        "Subfamilia":       p["subfamilia"],
+        "Stock":            p["stock"],
+        "En transito":      p["transito"],
+        "Venta mensual":    p["venta_mensual"],
+        "Meses de cobertura": "Sin venta" if p["sin_venta"] else p["cobertura"],
+        "Valor detenido":   p["valor"],
+        "Ultima venta":     p["ultima_venta"] or "Nunca",
+        "Dias sin venta":   p["dias_sin_venta"],
+        "Marcado no comprar": "Si" if p["no_comprar"] else "",
+    } for p in d["productos"]]
+
+    df = pd.DataFrame(filas, columns=[
+        "Proveedor", "Codigo", "Descripcion", "Marca", "Familia", "Subfamilia",
+        "Stock", "En transito", "Venta mensual", "Meses de cobertura",
+        "Valor detenido", "Ultima venta", "Dias sin venta", "Marcado no comprar",
+    ])
+    buffer = _io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Stock detenido")
+    buffer.seek(0)
+    return buffer
 
 
 def get_lead_time_combinado_pg():

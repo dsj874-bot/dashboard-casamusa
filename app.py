@@ -534,6 +534,52 @@ def api_adquisiciones_abastecimiento():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/adquisiciones/stock_detenido")
+@login_requerido
+def adquisiciones_stock_detenido():
+    return render_template("adquisiciones_stock_detenido.html",
+                           active="adquisiciones_stock_detenido",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/adquisiciones/stock_detenido")
+@login_requerido
+def api_adquisiciones_stock_detenido():
+    """Productos con stock parado, para gestionar devoluciones. Solo
+    Postgres: cruza inventario con ventas y el maestro de productos, y
+    los Excel locales del modo antiguo no tienen las tres cosas."""
+    if not USAR_POSTGRES_ADQUISICIONES:
+        return jsonify({"error": "Este indicador necesita Postgres (USAR_POSTGRES_ADQUISICIONES=1)."}), 503
+    try:
+        meses = request.args.get("meses", type=int) or data_loader_adquisiciones_pg.MESES_COBERTURA_DETENIDO
+        proveedor = request.args.get("proveedor", "") or None
+        return jsonify(data_loader_adquisiciones_pg.get_stock_detenido_pg(meses, proveedor))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/adquisiciones/stock_detenido/exportar")
+@login_requerido
+def api_adquisiciones_stock_detenido_exportar():
+    """El Excel es el entregable: es lo que se lleva a la reunion con el
+    proveedor."""
+    if not USAR_POSTGRES_ADQUISICIONES:
+        return jsonify({"error": "Este indicador necesita Postgres."}), 503
+    try:
+        meses = request.args.get("meses", type=int) or data_loader_adquisiciones_pg.MESES_COBERTURA_DETENIDO
+        proveedor = request.args.get("proveedor", "") or None
+        buffer = data_loader_adquisiciones_pg.exportar_stock_detenido_excel_pg(meses, proveedor)
+        nombre = f"Stock_Detenido_{meses}m.xlsx"
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=nombre,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/adquisiciones/proveedores")
 @login_requerido
 def adquisiciones_proveedores():

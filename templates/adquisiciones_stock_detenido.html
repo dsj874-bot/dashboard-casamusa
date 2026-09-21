@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block title %}Adquisiciones — Stock Detenido{% endblock %}
+{% block page_title %}Adquisiciones — Stock Detenido{% endblock %}
+{% block page_subtitle %}Productos parados en bodega, para gestionar devoluciones con el proveedor{% endblock %}
+
+{% block sidebar_nav %}{% include "_adquisiciones_sidebar.html" %}{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .sd-resumen { display:flex; flex-wrap:wrap; gap:28px; align-items:baseline;
+                padding:14px 16px; background:var(--surface2);
+                border-radius:8px; margin-bottom:14px; }
+  .sd-resumen .bloque { display:flex; flex-direction:column; gap:3px; }
+  .sd-resumen .etq { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted2); }
+  .sd-resumen .val { font-size:19px; font-weight:700; color:var(--text);
+                     font-variant-numeric:tabular-nums; }
+  .sd-resumen .val.alerta { color:#f87171; }
+
+  .sd-nota { font-size:12px; color:var(--muted2); line-height:1.6; margin-bottom:14px; }
+  .sd-nota b { color:var(--text); }
+
+  .sd-filtros { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end;
+                padding:0 0 14px; }
+  .sd-filtros label { display:flex; flex-direction:column; gap:5px;
+                      font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+                      color:var(--muted2); }
+  .sd-filtros select { background:var(--surface2); color:var(--text);
+                       border:1px solid var(--border); border-radius:6px;
+                       padding:8px 10px; font-size:13px; min-width:190px; }
+
+  .sd-sinventa { color:#f87171; font-weight:700; }
+  .sd-alto     { color:#fbbf24; font-weight:600; }
+  #sd-body td.desc { color:var(--text); }
+  #sd-body td.cod  { font-variant-numeric:tabular-nums; color:var(--muted2); }
+  .sd-chip { font-size:10px; letter-spacing:.03em; text-transform:uppercase;
+             border:1px solid var(--muted2); color:var(--muted2);
+             border-radius:3px; padding:1px 5px; margin-left:6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="table-card">
+  <div class="table-header">
+    <div>
+      <div class="table-header-title">Stock Detenido</div>
+      <div class="table-header-sub" id="sd-sub">Cargando…</div>
+    </div>
+    <a id="sd-excel" class="btn-filter" style="padding:8px 14px;font-size:12px;text-decoration:none;"
+         title="Descarga esta lista respetando los filtros de abajo">📥 Descargar Excel</a>
+  </div>
+
+  <div style="padding:0 16px;">
+    <div class="sd-filtros">
+      <label>Cobertura mínima
+        <select id="f-meses">
+          <option value="3">3 meses o más</option>
+          <option value="6" selected>6 meses o más</option>
+          <option value="12">12 meses o más</option>
+        </select>
+      </label>
+      <label>Proveedor
+        <select id="f-proveedor"><option value="">Todos</option></select>
+      </label>
+    </div>
+
+    <div class="sd-resumen" id="sd-resumen"></div>
+    <div class="sd-nota" id="sd-nota"></div>
+  </div>
+
+  <div class="table-wrap">
+    <table id="sd-tabla">
+      <thead>
+        <tr>
+          <th data-key="codigo">Código</th>
+          <th data-key="descripcion">Descripción</th>
+          <th data-key="proveedor">Proveedor</th>
+          <th class="text-right" data-key="stock">Stock</th>
+          <th class="text-right" data-key="venta_mensual">Venta mes</th>
+          <th class="text-right" data-key="cobertura">Cobertura</th>
+          <th class="text-right" data-key="valor">Valor detenido</th>
+          <th class="text-right" data-key="dias_sin_venta">Sin vender</th>
+        </tr>
+      </thead>
+      <tbody id="sd-body"></tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const fmtCLP  = v => "$" + Math.round(v).toLocaleString("es-CL");
+const fmtUnid = v => Math.round(v).toLocaleString("es-CL");
+
+let _items = [];
+let _ordenCol = "valor", _ordenDir = "desc";
+
+// Un producto sin venta tiene cobertura infinita. Se muestra "Sin venta"
+// en vez de un numero inventado, y al ordenar va SIEMPRE arriba: es el
+// peor caso, no el mejor, y con un null suelto quedaria al final.
+const INFINITO = Number.MAX_SAFE_INTEGER;
+const valorOrden = (p, k) => {
+  if (k === "cobertura") return p.sin_venta ? INFINITO : p.cobertura;
+  if (k === "dias_sin_venta") return p.dias_sin_venta == null ? INFINITO : p.dias_sin_venta;
+  return p[k];
+};
+
+document.querySelectorAll("#sd-tabla thead th[data-key]").forEach(th => {
+  th.style.cursor = "pointer";
+  th.dataset.label = th.textContent;
+  th.addEventListener("click", () => {
+    _ordenDir = (_ordenCol === th.dataset.key) ? (_ordenDir === "desc" ? "asc" : "desc") : "desc";
+    _ordenCol = th.dataset.key;
+    pintar();
+  });
+});
+
+function pintar() {
+  document.querySelectorAll("#sd-tabla thead th[data-key]").forEach(th => {
+    const activo = th.dataset.key === _ordenCol;
+    th.textContent = th.dataset.label + (activo ? (_ordenDir === "desc" ? " ▼" : " ▲") : "");
+  });
+
+  const filas = [..._items].sort((a, b) => {
+    let va = valorOrden(a, _ordenCol), vb = valorOrden(b, _ordenCol);
+    if (typeof va === "string") { va = va.toLowerCase(); vb = (vb || "").toLowerCase(); }
+    if (va < vb) return _ordenDir === "asc" ? -1 : 1;
+    if (va > vb) return _ordenDir === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  if (!filas.length) {
+    document.getElementById("sd-body").innerHTML =
+      `<tr><td colspan="8" style="text-align:center;color:var(--muted2);padding:32px;">
+         Sin productos con ese criterio.</td></tr>`;
+    return;
+  }
+
+  document.getElementById("sd-body").innerHTML = filas.map(p => `
+    <tr>
+      <td class="cod">${p.codigo}</td>
+      <td class="desc">${p.descripcion || ""}${
+        p.no_comprar ? '<span class="sd-chip">no comprar</span>' : ""}</td>
+      <td style="color:var(--muted2)">${p.proveedor}</td>
+      <td class="text-right">${fmtUnid(p.stock)}</td>
+      <td class="text-right" style="color:var(--muted2)">${p.venta_mensual ? fmtUnid(p.venta_mensual) : "—"}</td>
+      <td class="text-right ${p.sin_venta ? "sd-sinventa" : (p.cobertura >= 12 ? "sd-alto" : "")}">${
+        p.sin_venta ? "Sin venta" : p.cobertura.toFixed(1) + " m"}</td>
+      <td class="text-right">${fmtCLP(p.valor)}</td>
+      <td class="text-right" style="color:var(--muted2)">${
+        p.dias_sin_venta == null ? "nunca" : p.dias_sin_venta + " d"}</td>
+    </tr>`).join("");
+}
+
+function urlActual(base) {
+  const meses = document.getElementById("f-meses").value;
+  const prov  = document.getElementById("f-proveedor").value;
+  return base + "?meses=" + meses + (prov ? "&proveedor=" + encodeURIComponent(prov) : "");
+}
+
+function cargar(repoblarProveedores) {
+  document.getElementById("sd-sub").textContent = "Cargando…";
+  fetch(urlActual("/api/adquisiciones/stock_detenido"))
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { document.getElementById("sd-sub").textContent = "No disponible: " + d.error; return; }
+
+      _items = d.productos || [];
+      document.getElementById("sd-sub").textContent =
+        d.total_skus.toLocaleString("es-CL") + " productos con " + d.meses_min + " meses o más de cobertura";
+      document.getElementById("sd-excel").href = urlActual("/api/adquisiciones/stock_detenido/exportar");
+
+      document.getElementById("sd-resumen").innerHTML = `
+        <div class="bloque">
+          <span class="etq">Valor detenido</span>
+          <span class="val alerta">${fmtCLP(d.total_valor)}</span>
+        </div>
+        <div class="bloque">
+          <span class="etq">Productos</span>
+          <span class="val">${fmtUnid(d.total_skus)}</span>
+        </div>
+        <div class="bloque">
+          <span class="etq">Sin ninguna venta</span>
+          <span class="val">${fmtCLP(d.valor_sin_venta)}</span>
+        </div>
+        <div class="bloque">
+          <span class="etq">Productos sin venta</span>
+          <span class="val">${fmtUnid(d.skus_sin_venta)}</span>
+        </div>`;
+
+      // El proveedor manda: el listado se repuebla solo al cargar la
+      // pagina o al cambiar los meses, no al filtrar por proveedor --
+      // si no, al elegir uno la lista se reduciria a ese unico y no
+      // habria como volver.
+      if (repoblarProveedores) {
+        const sel = document.getElementById("f-proveedor");
+        const actual = sel.value;
+        sel.innerHTML = '<option value="">Todos</option>' +
+          (d.proveedores || []).map(p =>
+            `<option value="${p.proveedor}">${p.proveedor} — ${fmtCLP(p.valor)}</option>`).join("");
+        sel.value = actual;
+      }
+
+      document.getElementById("sd-nota").innerHTML =
+        "<b>Cobertura</b> = stock dividido por la venta de un mes. Un producto con 12 meses de cobertura " +
+        "tiene stock para un año. Los marcados <b>Sin venta</b> no registran venta mensual: es el peor caso " +
+        "y por eso van primero al ordenar por cobertura. " +
+        "Solo productos que el maestro marca como <b>nacionales</b>, valorizados al CUP. " +
+        "<b>El Excel es el entregable</b>: respeta los filtros de arriba, así que filtras por proveedor y " +
+        "te llevas su lista a la reunión.";
+
+      pintar();
+    })
+    .catch(err => {
+      console.error("Error stock detenido:", err);
+      document.getElementById("sd-sub").textContent = "No se pudo cargar.";
+    });
+}
+
+document.getElementById("f-meses").addEventListener("change", () => cargar(true));
+document.getElementById("f-proveedor").addEventListener("change", () => cargar(false));
+
+cargar(true);
+</script>
+{% endblock %}
