@@ -927,6 +927,232 @@ def exportar_stock_detenido_excel_pg(meses_min=MESES_COBERTURA_DETENIDO, proveed
     return buffer
 
 
+# Ventana de recepciones recientes. Noventa dias es el tramo en que la
+# devolucion al proveedor todavia es conversable; mas atras el caso ya
+# cae en Stock Detenido, que es la otra pantalla.
+DIAS_RECEPCION_RECIENTE = 90
+
+
+def get_pedidos_sin_vender_pg(dias=DIAS_RECEPCION_RECIENTE, umbral=0.0,
+                              tipo="PEDIDO", proveedor=None):
+    """Mercaderia recibida hace poco que no se vendio -- el pedido que
+    salio mal, mientras la ventana de devolucion sigue abierta.
+
+    Es la contracara de get_stock_detenido_pg(), y son opuestas a
+    proposito (acordado con el usuario el 2026-09-21):
+
+      Stock Detenido      -> cobertura acumulada; mientras mas VIEJO, peor
+      Pedidos sin Vender  -> llego y no se movio; mientras mas NUEVO, mas
+                             urgente, porque todavia se puede devolver
+
+    Una compra tipo PEDIDO se hizo para un cliente concreto. Si llego y
+    no se vendio, el cliente no se la llevo: eso es un pedido fallido,
+    no stock de rotacion lenta. Esperar a que acumule seis meses de
+    cobertura es llegar tarde -- de hecho, de los productos que aparecen
+    aca solo la mitad califica hoy en Stock Detenido; el resto son
+    justamente los mas urgentes y esa pantalla no los muestra.
+
+    `umbral` es el maximo porcentaje vendido para que el caso cuente,
+    y existe por una distincion del usuario: si llegaron 100 y se
+    vendieron 95, esas 5 unidades son la cola de una venta que SI
+    ocurrio y no se devuelven. Pero si llegaron 41 y se vendieron 3
+    (caso real: citofonos, $2,6 millones en bodega), eso tampoco es
+    residuo -- es un pedido que salio mal. Donde poner la linea es una
+    decision de negocio y no del codigo, asi que se elige en pantalla:
+    con 0% son 92 SKU y $18,4 millones, con 25% son 142 y $34,4.
+
+    Lo devolvible NO es todo el stock actual: es lo que queda de ESTA
+    partida, o sea recibido menos vendido, y ademas acotado por lo que
+    de verdad hay en bodega hoy. Un producto que recibio 600, vendio 60
+    y tiene 898 en stock arrastra 358 de antes, que no son de este
+    pedido y no se devuelven con el.
+    """
+    params = {
+        "dias": dias, "tipo": tipo, "prov": proveedor,
+        "prov_imp": list(PROVEEDORES_IMPORTADOS),
+    }
+    filtro_prov = (
+        " AND coalesce(n.nombre, d.rut, 'Sin proveedor asignado') = %(prov)s"
+        if proveedor else ""
+    )
+    filtro_tipo = " AND r.tipo_oc = %(tipo)s" if tipo else ""
+
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                WITH rec AS (
+                    SELECT r.codigo,
+                           min(r.fecha_recepcion) AS primera,
+                           sum(r.cantidad)        AS cant_recibida,
+                           sum(r.total_clp)       AS valor_recibido
+                      FROM recepciones r
+                     WHERE r.fecha_recepcion >= current_date - %(dias)s::int
+                           {filtro_tipo}
+                     GROUP BY r.codigo
+                ),
+                vend AS (
+                    -- Vendido DESDE que llego esta partida. Las ventas
+                    -- anteriores son de stock viejo y no dicen nada
+                    -- sobre si este pedido se movio.
+                    SELECT rec.codigo, coalesce(sum(v.cantidad), 0) AS cant_vendida
+                      FROM rec
+                      LEFT JOIN ventas v
+                             ON v.codigo_cm = rec.codigo
+                            AND v.fecha_conta >= rec.primera
+                     GROUP BY rec.codigo
+                ),
+                st AS (
+                    SELECT codigo, sum(stock) AS stock
+                      FROM inventario_stock WHERE bodega <> 'Todas' GROUP BY codigo
+                ),
+                defecto AS (
+                    SELECT codigo, rut FROM (
+                        SELECT codigo_cm AS codigo, proveedor_por_defecto AS rut,
+                               row_number() OVER (PARTITION BY codigo_cm
+                                   ORDER BY count(*) DESC, proveedor_por_defecto) AS rn
+                          FROM ventas
+                         WHERE proveedor_por_defecto IS NOT NULL AND trim(proveedor_por_defecto) <> ''
+                         GROUP BY codigo_cm, proveedor_por_defecto
+                    ) t WHERE rn = 1
+                ),
+                nombres AS (
+                    SELECT rut, min(nombre_proveedor) AS nombre FROM compras
+                     WHERE nombre_proveedor IS NOT NULL GROUP BY rut
+                )
+                SELECT rec.codigo, p.descripcion, p.marca, p.familia, p.subfamilia,
+                       coalesce(n.nombre, d.rut, 'Sin proveedor asignado') AS proveedor,
+                       rec.primera, rec.cant_recibida, rec.valor_recibido,
+                       vd.cant_vendida,
+                       coalesce(st.stock, 0) AS stock_actual,
+                       coalesce(p.cup, 0)    AS cup,
+                       (current_date - rec.primera) AS dias_desde
+                  FROM rec
+                  JOIN productos p ON p.codigo = rec.codigo
+                  JOIN vend vd     ON vd.codigo = rec.codigo
+                  LEFT JOIN st     ON st.codigo = rec.codigo
+                  LEFT JOIN defecto d ON d.codigo = rec.codigo
+                  LEFT JOIN nombres n ON n.rut = d.rut
+                 WHERE rec.cant_recibida > 0
+                   AND coalesce(st.stock, 0) > 0
+                   AND coalesce(d.rut, '') <> ALL(%(prov_imp)s)
+                   {filtro_prov}
+                """,
+                params,
+            )
+            filas = cur.fetchall()
+
+    productos, por_prov = [], {}
+    total = 0.0
+    for r in filas:
+        recibida = float(r["cant_recibida"])
+        # La venta neta puede ser NEGATIVA: las notas de credito entran
+        # con cantidad negativa, asi que un producto al que le devolvieron
+        # mas de lo que salio queda bajo cero. Para el criterio da igual
+        # (sigue sin venderse, que es lo que importa), pero en pantalla un
+        # "-75% vendido" no significa nada, asi que el porcentaje se topa
+        # en 0. La columna "Vendio" si muestra el neto real, para que el
+        # caso se pueda auditar.
+        vendida  = float(r["cant_vendida"] or 0)
+        pct = max(vendida / recibida, 0.0) if recibida else 0.0
+        if pct > umbral:
+            continue
+
+        stock = float(r["stock_actual"])
+        cup = float(r["cup"])
+        # Lo que queda de ESTA partida, sin arrastrar stock anterior.
+        devolvible = max(min(stock, recibida - vendida), 0)
+        valor = devolvible * cup
+        if valor <= 0:
+            continue
+
+        productos.append({
+            "codigo":       r["codigo"],
+            "descripcion":  r["descripcion"],
+            "marca":        r["marca"],
+            "familia":      r["familia"],
+            "subfamilia":   r["subfamilia"],
+            "proveedor":    r["proveedor"],
+            "recibido":     round(recibida, 0),
+            "vendido":      round(vendida, 0),
+            "stock_actual": round(stock, 0),
+            "devolvible":   round(devolvible, 0),
+            "pct_vendido":  round(pct * 100, 1),
+            "valor":        round(valor, 0),
+            "fecha_recepcion": r["primera"].strftime("%d-%m-%Y"),
+            "dias_desde":   int(r["dias_desde"]),
+        })
+        total += valor
+        agg = por_prov.setdefault(r["proveedor"], {"valor": 0.0, "skus": 0})
+        agg["valor"] += valor
+        agg["skus"] += 1
+
+    # Mas nuevo primero: es donde la ventana de devolucion sigue abierta,
+    # que es el sentido de esta pantalla. El valor se ordena con un clic.
+    productos.sort(key=lambda x: (x["dias_desde"], -x["valor"]))
+
+    proveedores = sorted(
+        ({"proveedor": k, "valor": round(v["valor"], 0), "skus": v["skus"]}
+         for k, v in por_prov.items()),
+        key=lambda x: -x["valor"],
+    )
+
+    tramos = [
+        {"nombre": "Hasta 30 días", "desde": 0,  "hasta": 30},
+        {"nombre": "31 a 60 días",  "desde": 31, "hasta": 60},
+        {"nombre": "61 a 90 días",  "desde": 61, "hasta": 10**6},
+    ]
+    for t in tramos:
+        dentro = [p for p in productos if t["desde"] <= p["dias_desde"] <= t["hasta"]]
+        t["skus"] = len(dentro)
+        t["valor"] = round(sum(p["valor"] for p in dentro), 0)
+
+    return {
+        "productos":   productos,
+        "proveedores": proveedores,
+        "tramos":      tramos,
+        "dias":        dias,
+        "tipo":        tipo,
+        "umbral":      round(umbral * 100, 0),
+        "total_valor": round(total, 0),
+        "total_skus":  len(productos),
+    }
+
+
+def exportar_pedidos_sin_vender_excel_pg(dias=DIAS_RECEPCION_RECIENTE, umbral=0.0,
+                                         tipo="PEDIDO", proveedor=None):
+    """El Excel es el entregable: es lo que se le manda al proveedor."""
+    import pandas as pd
+    import io as _io
+
+    d = get_pedidos_sin_vender_pg(dias, umbral, tipo, proveedor)
+    filas = [{
+        "Proveedor":       p["proveedor"],
+        "Codigo":          p["codigo"],
+        "Descripcion":     p["descripcion"],
+        "Marca":           p["marca"],
+        "Fecha recepcion": p["fecha_recepcion"],
+        "Dias desde recepcion": p["dias_desde"],
+        "Cantidad recibida":    p["recibido"],
+        "Cantidad vendida":     p["vendido"],
+        "% vendido":            p["pct_vendido"],
+        "Stock actual":         p["stock_actual"],
+        "Cantidad devolvible":  p["devolvible"],
+        "Valor devolvible":     p["valor"],
+    } for p in d["productos"]]
+
+    df = pd.DataFrame(filas, columns=[
+        "Proveedor", "Codigo", "Descripcion", "Marca", "Fecha recepcion",
+        "Dias desde recepcion", "Cantidad recibida", "Cantidad vendida",
+        "% vendido", "Stock actual", "Cantidad devolvible", "Valor devolvible",
+    ])
+    buffer = _io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Pedidos sin vender")
+    buffer.seek(0)
+    return buffer
+
+
 def get_lead_time_combinado_pg():
     """Lead time real (dias entre fecha_creacion de la OC y su primera
     recepcion) por proveedor -- año actual vs año anterior. Mismo

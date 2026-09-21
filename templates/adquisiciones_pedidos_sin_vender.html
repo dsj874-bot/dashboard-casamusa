@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{% block title %}Adquisiciones — Pedidos sin Vender{% endblock %}
+{% block page_title %}Adquisiciones — Pedidos sin Vender{% endblock %}
+{% block page_subtitle %}Mercadería recibida hace poco que no se movió — mientras la devolución sigue siendo conversable{% endblock %}
+
+{% block sidebar_nav %}{% include "_adquisiciones_sidebar.html" %}{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .pv-tramos { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:14px; }
+  .pv-tramo { flex:1 1 170px; background:var(--surface2); border-radius:8px;
+              padding:12px 14px; border-left:3px solid var(--border); }
+  .pv-tramo.urgente { border-left-color:#f87171; }
+  .pv-tramo .etq { font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+                   color:var(--muted2); display:block; margin-bottom:4px; }
+  .pv-tramo .val { font-size:18px; font-weight:700; color:var(--text);
+                   font-variant-numeric:tabular-nums; }
+  .pv-tramo .sub { font-size:11px; color:var(--muted2); }
+
+  .pv-total { display:flex; flex-wrap:wrap; gap:28px; align-items:baseline;
+              padding:14px 16px; background:var(--surface2); border-radius:8px;
+              margin-bottom:14px; }
+  .pv-total .bloque { display:flex; flex-direction:column; gap:3px; }
+  .pv-total .etq { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted2); }
+  .pv-total .val { font-size:20px; font-weight:700; color:var(--text);
+                   font-variant-numeric:tabular-nums; }
+  .pv-total .val.alerta { color:#f87171; }
+
+  .pv-nota { font-size:12px; color:var(--muted2); line-height:1.6; margin-bottom:14px; }
+  .pv-nota b { color:var(--text); }
+
+  .pv-filtros { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; padding:0 0 14px; }
+  .pv-filtros label { display:flex; flex-direction:column; gap:5px;
+                      font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted2); }
+  .pv-filtros select { background:var(--surface2); color:var(--text);
+                       border:1px solid var(--border); border-radius:6px;
+                       padding:8px 10px; font-size:13px; min-width:175px; }
+
+  #pv-body td.cod { font-variant-numeric:tabular-nums; color:var(--muted2); }
+  #pv-body td.desc { color:var(--text); }
+  .pv-cero  { color:#f87171; font-weight:700; }
+  .pv-nuevo { color:#f87171; font-weight:600; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="table-card">
+  <div class="table-header">
+    <div>
+      <div class="table-header-title">Pedidos sin Vender</div>
+      <div class="table-header-sub" id="pv-sub">Cargando…</div>
+    </div>
+    <a id="pv-excel" class="btn-filter" style="padding:8px 14px;font-size:12px;text-decoration:none;"
+       title="Descarga esta lista respetando los filtros">📥 Descargar Excel</a>
+  </div>
+
+  <div style="padding:0 16px;">
+    <div class="pv-filtros">
+      <label>Tipo de compra
+        <select id="f-tipo">
+          <option value="PEDIDO" selected>Pedido</option>
+          <option value="STOCK">Stock</option>
+          <option value="">Ambos</option>
+        </select>
+      </label>
+      <label>Recibido hace
+        <select id="f-dias">
+          <option value="30">30 días</option>
+          <option value="60">60 días</option>
+          <option value="90" selected>90 días</option>
+          <option value="180">180 días</option>
+        </select>
+      </label>
+      <label>Se vendió hasta
+        <select id="f-umbral">
+          <option value="0" selected>0% — no se vendió nada</option>
+          <option value="25">25% del pedido</option>
+          <option value="50">50% del pedido</option>
+        </select>
+      </label>
+      <label>Proveedor
+        <select id="f-proveedor"><option value="">Todos</option></select>
+      </label>
+    </div>
+
+    <div class="pv-total" id="pv-total"></div>
+    <div class="pv-tramos" id="pv-tramos"></div>
+    <div class="pv-nota" id="pv-nota"></div>
+  </div>
+
+  <div class="table-wrap">
+    <table id="pv-tabla">
+      <thead>
+        <tr>
+          <th data-key="codigo">Código</th>
+          <th data-key="descripcion">Descripción</th>
+          <th data-key="proveedor">Proveedor</th>
+          <th class="text-right" data-key="recibido">Recibió</th>
+          <th class="text-right" data-key="vendido">Vendió</th>
+          <th class="text-right" data-key="pct_vendido">% vendido</th>
+          <th class="text-right" data-key="devolvible">Devolvible</th>
+          <th class="text-right" data-key="valor">Valor</th>
+          <th class="text-right" data-key="dias_desde">Recibido hace</th>
+        </tr>
+      </thead>
+      <tbody id="pv-body"></tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const fmtCLP  = v => "$" + Math.round(v).toLocaleString("es-CL");
+const fmtUnid = v => Math.round(v).toLocaleString("es-CL");
+
+let _items = [];
+// Arranca por antiguedad: lo mas reciente primero, que es donde la
+// ventana de devolucion sigue abierta y el sentido de esta pantalla.
+let _ordenCol = "dias_desde", _ordenDir = "asc";
+
+document.querySelectorAll("#pv-tabla thead th[data-key]").forEach(th => {
+  th.style.cursor = "pointer";
+  th.dataset.label = th.textContent;
+  th.addEventListener("click", () => {
+    // Por antiguedad el primer clic ordena ascendente (lo mas nuevo
+    // arriba); en las demas columnas descendente, que es lo util.
+    const asc = th.dataset.key === "dias_desde";
+    _ordenDir = (_ordenCol === th.dataset.key)
+      ? (_ordenDir === "desc" ? "asc" : "desc")
+      : (asc ? "asc" : "desc");
+    _ordenCol = th.dataset.key;
+    pintar();
+  });
+});
+
+function pintar() {
+  document.querySelectorAll("#pv-tabla thead th[data-key]").forEach(th => {
+    const activo = th.dataset.key === _ordenCol;
+    th.textContent = th.dataset.label + (activo ? (_ordenDir === "desc" ? " ▼" : " ▲") : "");
+  });
+
+  const filas = [..._items].sort((a, b) => {
+    let va = a[_ordenCol], vb = b[_ordenCol];
+    if (typeof va === "string") { va = va.toLowerCase(); vb = (vb || "").toLowerCase(); }
+    if (va < vb) return _ordenDir === "asc" ? -1 : 1;
+    if (va > vb) return _ordenDir === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  if (!filas.length) {
+    document.getElementById("pv-body").innerHTML =
+      `<tr><td colspan="9" style="text-align:center;color:var(--muted2);padding:32px;">
+         Sin pedidos en esa condición. Buena señal.</td></tr>`;
+    return;
+  }
+
+  document.getElementById("pv-body").innerHTML = filas.map(p => `
+    <tr>
+      <td class="cod">${p.codigo}</td>
+      <td class="desc">${p.descripcion || ""}</td>
+      <td style="color:var(--muted2)">${p.proveedor}</td>
+      <td class="text-right">${fmtUnid(p.recibido)}</td>
+      <td class="text-right" style="color:var(--muted2)">${fmtUnid(p.vendido)}</td>
+      <td class="text-right ${p.pct_vendido === 0 ? "pv-cero" : ""}">${p.pct_vendido.toFixed(0)}%</td>
+      <td class="text-right">${fmtUnid(p.devolvible)}</td>
+      <td class="text-right">${fmtCLP(p.valor)}</td>
+      <td class="text-right ${p.dias_desde <= 30 ? "pv-nuevo" : ""}">${p.dias_desde} d</td>
+    </tr>`).join("");
+}
+
+function urlActual(base) {
+  const q = new URLSearchParams({
+    tipo:   document.getElementById("f-tipo").value,
+    dias:   document.getElementById("f-dias").value,
+    umbral: document.getElementById("f-umbral").value,
+  });
+  const prov = document.getElementById("f-proveedor").value;
+  if (prov) q.set("proveedor", prov);
+  return base + "?" + q.toString();
+}
+
+function cargar(repoblarProveedores) {
+  document.getElementById("pv-sub").textContent = "Cargando…";
+  fetch(urlActual("/api/adquisiciones/pedidos_sin_vender"))
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { document.getElementById("pv-sub").textContent = "No disponible: " + d.error; return; }
+
+      _items = d.productos || [];
+      document.getElementById("pv-sub").textContent =
+        d.total_skus.toLocaleString("es-CL") + " productos recibidos en los últimos " + d.dias + " días";
+      document.getElementById("pv-excel").href = urlActual("/api/adquisiciones/pedidos_sin_vender/exportar");
+
+      document.getElementById("pv-total").innerHTML = `
+        <div class="bloque">
+          <span class="etq">Valor devolvible</span>
+          <span class="val alerta">${fmtCLP(d.total_valor)}</span>
+        </div>
+        <div class="bloque">
+          <span class="etq">Productos</span>
+          <span class="val">${fmtUnid(d.total_skus)}</span>
+        </div>`;
+
+      // Los tramos importan mas que el total: mientras mas reciente, mas
+      // margen queda para devolver.
+      document.getElementById("pv-tramos").innerHTML = (d.tramos || []).map((t, i) => `
+        <div class="pv-tramo ${i === 0 ? "urgente" : ""}">
+          <span class="etq">${t.nombre}</span>
+          <span class="val">${fmtCLP(t.valor)}</span>
+          <span class="sub">${t.skus} producto${t.skus === 1 ? "" : "s"}</span>
+        </div>`).join("");
+
+      if (repoblarProveedores) {
+        const sel = document.getElementById("f-proveedor");
+        const actual = sel.value;
+        sel.innerHTML = '<option value="">Todos</option>' +
+          (d.proveedores || []).map(p =>
+            `<option value="${p.proveedor}">${p.proveedor} — ${fmtCLP(p.valor)}</option>`).join("");
+        sel.value = actual;
+      }
+
+      document.getElementById("pv-nota").innerHTML =
+        "Una compra de tipo <b>Pedido</b> se hizo para un cliente concreto: si llegó y no se vendió, " +
+        "el cliente no se la llevó. Por eso la ventana corta — mientras más reciente, más margen queda " +
+        "para devolverla. " +
+        "<b>Vendió</b> cuenta solo lo vendido <b>desde que llegó</b> esta partida; lo anterior era stock viejo. " +
+        "<b>Devolvible</b> es lo que queda de esta partida (recibido menos vendido), acotado a lo que de " +
+        "verdad hay hoy en bodega: un producto que arrastra stock anterior no se devuelve con este pedido. " +
+        "Si llegaron 100 y se vendieron 95, esas 5 unidades son cola de una venta que sí ocurrió y no " +
+        "aparecen — sube el filtro <b>Se vendió hasta</b> si quieres ver los pedidos que se movieron a medias.";
+
+      pintar();
+    })
+    .catch(err => {
+      console.error("Error pedidos sin vender:", err);
+      document.getElementById("pv-sub").textContent = "No se pudo cargar.";
+    });
+}
+
+["f-tipo", "f-dias", "f-umbral"].forEach(id =>
+  document.getElementById(id).addEventListener("change", () => cargar(true)));
+document.getElementById("f-proveedor").addEventListener("change", () => cargar(false));
+
+cargar(true);
+</script>
+{% endblock %}

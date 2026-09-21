@@ -580,6 +580,56 @@ def api_adquisiciones_stock_detenido_exportar():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/adquisiciones/pedidos_sin_vender")
+@login_requerido
+def adquisiciones_pedidos_sin_vender():
+    return render_template("adquisiciones_pedidos_sin_vender.html",
+                           active="adquisiciones_pedidos_sin_vender",
+                           session_nombre=session.get("nombre"))
+
+
+def _params_pedidos_sin_vender():
+    """Los tres parametros de la pantalla, leidos igual para los datos y
+    para el Excel -- si se leyeran distinto, el archivo no coincidiria
+    con lo que se esta viendo."""
+    dias = request.args.get("dias", type=int) or data_loader_adquisiciones_pg.DIAS_RECEPCION_RECIENTE
+    umbral = (request.args.get("umbral", type=float) or 0.0) / 100.0
+    tipo = request.args.get("tipo", "PEDIDO") or None
+    proveedor = request.args.get("proveedor", "") or None
+    return dias, umbral, tipo, proveedor
+
+
+@app.route("/api/adquisiciones/pedidos_sin_vender")
+@login_requerido
+def api_adquisiciones_pedidos_sin_vender():
+    if not USAR_POSTGRES_ADQUISICIONES:
+        return jsonify({"error": "Este indicador necesita Postgres (USAR_POSTGRES_ADQUISICIONES=1)."}), 503
+    try:
+        return jsonify(data_loader_adquisiciones_pg.get_pedidos_sin_vender_pg(*_params_pedidos_sin_vender()))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/adquisiciones/pedidos_sin_vender/exportar")
+@login_requerido
+def api_adquisiciones_pedidos_sin_vender_exportar():
+    if not USAR_POSTGRES_ADQUISICIONES:
+        return jsonify({"error": "Este indicador necesita Postgres."}), 503
+    try:
+        dias, umbral, tipo, proveedor = _params_pedidos_sin_vender()
+        buffer = data_loader_adquisiciones_pg.exportar_pedidos_sin_vender_excel_pg(
+            dias, umbral, tipo, proveedor)
+        nombre = f"Pedidos_Sin_Vender_{tipo or 'Todos'}_{dias}d.xlsx"
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=nombre,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/adquisiciones/proveedores")
 @login_requerido
 def adquisiciones_proveedores():
