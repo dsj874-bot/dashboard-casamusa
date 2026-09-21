@@ -157,15 +157,15 @@
   </div>
 
   <div class="table-wrap">
-    <table>
+    <table id="abast-tabla">
       <thead>
         <tr>
-          <th>Proveedor</th>
-          <th class="text-right">Costo de Venta</th>
-          <th class="text-right">Comprado</th>
-          <th class="text-right">Recibido</th>
-          <th class="text-right">Recibido / Costo Vta</th>
-          <th class="text-right">Brecha</th>
+          <th data-key="proveedor">Proveedor</th>
+          <th class="text-right" data-key="costo_venta">Costo de Venta</th>
+          <th class="text-right" data-key="comprado">Comprado</th>
+          <th class="text-right" data-key="recibido">Recibido</th>
+          <th class="text-right" data-key="ratio_recibido">Recibido / Costo Vta</th>
+          <th class="text-right" data-key="brecha_recibido">Brecha</th>
         </tr>
       </thead>
       <tbody id="abast-body"></tbody>
@@ -300,6 +300,66 @@ fetch("/api/adquisiciones/por_mes")
 // inventario crece. Se marca a partir de +/-10% para no pintar de rojo
 // una variacion normal de un mes a otro.
 const abClase = r => r == null ? "" : (r > 1.10 ? "ab-alto" : (r < 0.90 ? "ab-bajo" : "ab-ok"));
+
+// Tabla ordenable, mismo mecanismo que Adquisiciones > Por Proveedor.
+// Arranca por brecha descendente (el mayor sobreabastecimiento arriba),
+// que es para lo que se abre la pantalla.
+let _provs = [], _total = null;
+let _ordenCol = "brecha_recibido", _ordenDir = "desc";
+
+document.querySelectorAll("#abast-tabla thead th[data-key]").forEach(th => {
+  th.style.cursor = "pointer";
+  th.addEventListener("click", () => {
+    _ordenDir = (_ordenCol === th.dataset.key) ? (_ordenDir === "desc" ? "asc" : "desc") : "desc";
+    _ordenCol = th.dataset.key;
+    pintarProveedores();
+  });
+});
+
+function pintarProveedores() {
+  if (!_provs.length) return;
+
+  document.querySelectorAll("#abast-tabla thead th[data-key]").forEach(th => {
+    const activo = th.dataset.key === _ordenCol;
+    th.textContent = th.dataset.label + (activo ? (_ordenDir === "desc" ? " ▼" : " ▲") : "");
+  });
+
+  const filas = [..._provs].sort((a, b) => {
+    let va = a[_ordenCol], vb = b[_ordenCol];
+    if (typeof va === "string") {
+      va = va.toLowerCase(); vb = (vb || "").toLowerCase();
+    } else {
+      // Los proveedores sin venta no tienen ratio (null). Van siempre al
+      // final, ordene como ordene, para que no se cuelen arriba como si
+      // fueran el caso mas grave.
+      if (va == null) return 1;
+      if (vb == null) return -1;
+    }
+    if (va < vb) return _ordenDir === "asc" ? -1 : 1;
+    if (va > vb) return _ordenDir === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  const t = _total;
+  document.getElementById("abast-body").innerHTML =
+    filas.map(p => `
+      <tr>
+        <td style="font-weight:600;color:var(--text)">${p.proveedor}</td>
+        <td class="text-right">${fmtCLP(p.costo_venta)}</td>
+        <td class="text-right" style="color:var(--muted2)">${fmtCLP(p.comprado)}</td>
+        <td class="text-right">${fmtCLP(p.recibido)}</td>
+        <td class="text-right ${abClase(p.ratio_recibido)}">${fmtRatio(p.ratio_recibido)}</td>
+        <td class="text-right ${abClase(p.ratio_recibido)}">${fmtBrecha(p.brecha_recibido)}</td>
+      </tr>`).join("") + `
+      <tr class="fila-total">
+        <td>Total</td>
+        <td class="text-right">${fmtCLP(t.costo_venta)}</td>
+        <td class="text-right">${fmtCLP(t.comprado)}</td>
+        <td class="text-right">${fmtCLP(t.recibido)}</td>
+        <td class="text-right ${abClase(t.ratio_recibido)}">${fmtRatio(t.ratio_recibido)}</td>
+        <td class="text-right ${abClase(t.ratio_recibido)}">${fmtBrecha(t.brecha_recibido)}</td>
+      </tr>`;
+}
 const fmtRatio = r => r == null ? "—" : r.toFixed(2);
 // El signo va delante del peso. fmtCLP() sobre un negativo daba
 // "$-38.121.192", que se lee mal en una columna de cifras.
@@ -382,24 +442,12 @@ fetch("/api/adquisiciones/abastecimiento")
     }
     document.getElementById("abast-nota").innerHTML = nota;
 
-    document.getElementById("abast-body").innerHTML =
-      (d.proveedores || []).map(p => `
-        <tr>
-          <td style="font-weight:600;color:var(--text)">${p.proveedor}</td>
-          <td class="text-right">${fmtCLP(p.costo_venta)}</td>
-          <td class="text-right" style="color:var(--muted2)">${fmtCLP(p.comprado)}</td>
-          <td class="text-right">${fmtCLP(p.recibido)}</td>
-          <td class="text-right ${abClase(p.ratio_recibido)}">${fmtRatio(p.ratio_recibido)}</td>
-          <td class="text-right ${abClase(p.ratio_recibido)}">${fmtBrecha(p.brecha_recibido)}</td>
-        </tr>`).join("") + `
-        <tr class="fila-total">
-          <td>Total</td>
-          <td class="text-right">${fmtCLP(t.costo_venta)}</td>
-          <td class="text-right">${fmtCLP(t.comprado)}</td>
-          <td class="text-right">${fmtCLP(t.recibido)}</td>
-          <td class="text-right ${abClase(t.ratio_recibido)}">${fmtRatio(t.ratio_recibido)}</td>
-          <td class="text-right ${abClase(t.ratio_recibido)}">${fmtBrecha(t.brecha_recibido)}</td>
-        </tr>`;
+    _provs = d.proveedores || [];
+    _total = t;
+    document.querySelectorAll("#abast-tabla thead th[data-key]").forEach(th => {
+      th.dataset.label = th.textContent;
+    });
+    pintarProveedores();
 
     // Grafico: las barras dan la magnitud (de que tamano es el mes) y la
     // linea el ratio, que es la senal. Van en ejes distintos porque son
