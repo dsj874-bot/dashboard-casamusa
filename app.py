@@ -514,6 +514,21 @@ def api_adquisiciones_por_mes():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/adquisiciones/abastecimiento")
+@login_requerido
+def api_adquisiciones_abastecimiento():
+    """Costo de venta vs Comprado vs Recibido por marca -- el KPI de
+    sobreabastecimiento. Solo Postgres: cruza ventas con compras y
+    recepciones, y los Excel locales del modo antiguo no tienen las
+    tres fuentes juntas."""
+    if not USAR_POSTGRES_ADQUISICIONES:
+        return jsonify({"error": "Este indicador necesita Postgres (USAR_POSTGRES_ADQUISICIONES=1)."}), 503
+    try:
+        return jsonify(data_loader_adquisiciones_pg.get_abastecimiento_marca_pg())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/adquisiciones/proveedores")
 @login_requerido
 def adquisiciones_proveedores():

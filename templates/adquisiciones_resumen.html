@@ -16,6 +16,28 @@
     background: var(--surface2);
   }
   .kpi-tabla .data-row:first-child td { border-top: none; }
+
+  /* Abastecimiento vs Venta */
+  /* .table-header-sub no existe en el CSS base, se define aca */
+  .table-header-sub { font-size:12px; color:var(--muted2); margin-top:2px; }
+  .abast-resumen { display:flex; flex-wrap:wrap; gap:28px; align-items:baseline;
+                   padding:14px 16px; background:var(--surface2);
+                   border-radius:8px; margin-bottom:14px; }
+  .abast-resumen .bloque { display:flex; flex-direction:column; gap:3px; }
+  .abast-resumen .etq { font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+                        color:var(--muted2); }
+  .abast-resumen .val { font-size:17px; font-weight:700; color:var(--text);
+                        font-variant-numeric:tabular-nums; }
+  .abast-resumen .ratio { font-size:24px; }
+  .abast-nota { font-size:12px; color:var(--muted2); line-height:1.5; margin-bottom:14px; }
+  .abast-nota b { color:var(--text); }
+  /* Semaforo: sobre 1,0 entra mas de lo que sale (stock creciendo) */
+  .ab-alto  { color:#f87171; font-weight:700; }   /* sobreabastecido   */
+  .ab-ok    { color:var(--muted2); font-weight:600; } /* en equilibrio  */
+  .ab-bajo  { color:#60a5fa; font-weight:700; }   /* consumiendo stock */
+  #abast-body td.marca { font-weight:600; color:var(--text); }
+  #abast-body tr.fila-total td { border-top:2px solid var(--border);
+                                 font-weight:700; background:var(--surface2); }
 </style>
 {% endblock %}
 
@@ -57,6 +79,37 @@
   <div class="chart-card-title" id="chart-titulo">Comprado y Recibido — comparativo mensual</div>
   <div class="chart-card-sub">Barras: comprado. Líneas: recibido. Año actual vs año anterior (en millones de pesos)</div>
   <canvas id="chartMensual" height="100"></canvas>
+</div>
+
+<!-- Abastecimiento vs Venta: mide sobreabastecimiento -->
+<div class="table-card" style="margin-top:20px;">
+  <div class="table-header">
+    <div>
+      <div class="table-header-title">Abastecimiento vs Venta por Marca</div>
+      <div class="table-header-sub" id="abast-sub">Cargando…</div>
+    </div>
+  </div>
+
+  <div style="padding:0 16px;">
+    <div class="abast-resumen" id="abast-resumen"></div>
+    <div class="abast-nota" id="abast-nota"></div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Marca</th>
+          <th class="text-right">Costo de Venta</th>
+          <th class="text-right">Comprado</th>
+          <th class="text-right">Recibido</th>
+          <th class="text-right">Recibido / Costo Vta</th>
+          <th class="text-right">Brecha</th>
+        </tr>
+      </thead>
+      <tbody id="abast-body"></tbody>
+    </table>
+  </div>
 </div>
 
 {% endblock %}
@@ -180,5 +233,87 @@ fetch("/api/adquisiciones/por_mes")
     });
   })
   .catch(err => console.error("Error grafico adquisiciones:", err));
+
+// ---- Abastecimiento vs Venta (sobreabastecimiento) --------------------
+// El punto de equilibrio es 1,0: sobre eso entra mas de lo que sale y el
+// inventario crece. Se marca a partir de +/-10% para no pintar de rojo
+// una variacion normal de un mes a otro.
+const abClase = r => r == null ? "" : (r > 1.10 ? "ab-alto" : (r < 0.90 ? "ab-bajo" : "ab-ok"));
+const fmtRatio = r => r == null ? "—" : r.toFixed(2);
+const fmtBrecha = v => (v > 0 ? "+" : "") + fmtCLP(v);
+
+fetch("/api/adquisiciones/abastecimiento")
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) {
+      document.getElementById("abast-sub").textContent = "No disponible: " + d.error;
+      return;
+    }
+    const t = d.total;
+    document.getElementById("abast-sub").textContent =
+      "Acumulado " + d.ano + " al " + (d.fecha_corte || "—") +
+      " — las tres cifras al mismo día";
+
+    document.getElementById("abast-resumen").innerHTML = `
+      <div class="bloque">
+        <span class="etq">Costo de Venta</span>
+        <span class="val">${fmtCLP(t.costo_venta)}</span>
+      </div>
+      <div class="bloque">
+        <span class="etq">Comprado</span>
+        <span class="val">${fmtCLP(t.comprado)}</span>
+      </div>
+      <div class="bloque">
+        <span class="etq">Recibido</span>
+        <span class="val">${fmtCLP(t.recibido)}</span>
+      </div>
+      <div class="bloque">
+        <span class="etq">Recibido / Costo de Venta</span>
+        <span class="val ratio ${abClase(t.ratio_recibido)}">${fmtRatio(t.ratio_recibido)}</span>
+      </div>
+      <div class="bloque">
+        <span class="etq">Brecha</span>
+        <span class="val ${abClase(t.ratio_recibido)}">${fmtBrecha(t.brecha_recibido)}</span>
+      </div>`;
+
+    // Las marcas sin cobertura de compras quedan fuera del calculo, pero
+    // se dicen: si no, el usuario ve un costo de venta menor al de las
+    // pantallas comerciales y no sabe por que.
+    const sc = d.sin_cobertura || [];
+    let nota = "<b>1,00 es el equilibrio</b>: sobre eso entra más de lo que sale y el " +
+               "inventario crece; bajo eso se está consumiendo stock.";
+    if (sc.length) {
+      nota += " Quedan fuera del cálculo <b>" + sc.length + " marcas</b> que venden pero " +
+              "nunca pasan por compras ni recepciones (" +
+              sc.slice(0, 4).map(m => m.marca).join(", ") +
+              (sc.length > 4 ? " y otras" : "") + "): son " + fmtCLP(d.fuera_costo_venta) +
+              " de costo de venta (" + d.fuera_pct + "%) y se reponen por una vía que estas " +
+              "tablas no registran. Incluirlas haría parecer que se está liquidando inventario.";
+    }
+    document.getElementById("abast-nota").innerHTML = nota;
+
+    document.getElementById("abast-body").innerHTML =
+      (d.marcas || []).map(m => `
+        <tr>
+          <td class="marca">${m.marca}</td>
+          <td class="text-right">${fmtCLP(m.costo_venta)}</td>
+          <td class="text-right" style="color:var(--muted2)">${fmtCLP(m.comprado)}</td>
+          <td class="text-right">${fmtCLP(m.recibido)}</td>
+          <td class="text-right ${abClase(m.ratio_recibido)}">${fmtRatio(m.ratio_recibido)}</td>
+          <td class="text-right ${abClase(m.ratio_recibido)}">${fmtBrecha(m.brecha_recibido)}</td>
+        </tr>`).join("") + `
+        <tr class="fila-total">
+          <td class="marca">Total</td>
+          <td class="text-right">${fmtCLP(t.costo_venta)}</td>
+          <td class="text-right">${fmtCLP(t.comprado)}</td>
+          <td class="text-right">${fmtCLP(t.recibido)}</td>
+          <td class="text-right ${abClase(t.ratio_recibido)}">${fmtRatio(t.ratio_recibido)}</td>
+          <td class="text-right ${abClase(t.ratio_recibido)}">${fmtBrecha(t.brecha_recibido)}</td>
+        </tr>`;
+  })
+  .catch(err => {
+    console.error("Error abastecimiento:", err);
+    document.getElementById("abast-sub").textContent = "No se pudo cargar el indicador.";
+  });
 </script>
 {% endblock %}

@@ -294,6 +294,157 @@ def get_por_proveedor_combinado_pg(tipo_compra=None):
     }
 
 
+def get_abastecimiento_marca_pg():
+    """Costo de venta vs Comprado vs Recibido, por marca -- para medir
+    sobreabastecimiento.
+
+    La idea (pedido del usuario, 2026-09-21): lo que sale de bodega
+    valorizado a costo es el consumo real; lo que se recibe es lo que
+    entra. Si entra mas de lo que sale, el inventario crece -- eso es
+    sobreabastecimiento. "Comprado" va al lado porque adelanta el
+    problema: es lo que todavia no llega pero ya esta comprometido.
+
+    Las tres cifras son comparables entre si. El CUP con que se valoriza
+    la venta ya trae flete y nacionalizacion, y contra el precio de
+    factura de la OC la diferencia medida es de 0,4%
+    (sum(cup*cantidad)/sum(precio_total) = 1,0043 en las compras 2026).
+    O sea el punto de equilibrio es 1,0, sin correcciones.
+
+    Dos trampas que hay que esquivar, las dos medidas el 2026-09-21:
+
+    1. FECHA DE CORTE. Ventas, compras y recepciones las cargan procesos
+       distintos y no siempre llegan al mismo dia. Comparar cada una
+       hasta su propio maximo infla la que va mas adelantada, asi que se
+       recorta todo al MENOR de los tres maximos (CTE `corte`).
+
+    2. MARCAS SIN COBERTURA DE COMPRAS. Hay 20 marcas -- TECH y CROM son
+       las grandes -- que venden pero NUNCA aparecen en compras ni en
+       recepciones, ni en 2025 ni en 2026, y sin embargo tienen stock
+       vivo (88.000 y 512.000 unidades) y venden todo el año: se reponen
+       por una via que estas tablas no registran. Son el 16% del costo
+       de venta. Metidas en el promedio hunden el indicador a 0,757
+       cuando el real es 0,901 -- pareceria que la empresa esta
+       liquidando inventario cuando no es asi. Van aparte, en su propia
+       lista, y NO entran en el total ni en el ratio.
+
+    La marca sale siempre del maestro `productos` -- la misma para las
+    tres fuentes -- y no de la columna marca de cada tabla, que en
+    ventas existe pero en recepciones no.
+    """
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                WITH corte AS (
+                    SELECT least(
+                        (SELECT max(fecha_conta)     FROM ventas      WHERE ano = 2026),
+                        (SELECT max(fecha_creacion)  FROM compras     WHERE ano = 2026),
+                        (SELECT max(fecha_recepcion) FROM recepciones WHERE ano = 2026)
+                    ) AS f
+                ),
+                -- Marcas que alguna vez pasaron por compras o recepciones
+                -- (cualquier año): las que no, no tienen con que compararse.
+                cobertura AS (
+                    SELECT DISTINCT coalesce(nullif(trim(p.marca), ''), 'Sin marca') AS marca
+                      FROM compras c LEFT JOIN productos p ON p.codigo = c.codigo
+                    UNION
+                    SELECT DISTINCT coalesce(nullif(trim(p.marca), ''), 'Sin marca')
+                      FROM recepciones r LEFT JOIN productos p ON p.codigo = r.codigo
+                ),
+                movs AS (
+                    SELECT coalesce(nullif(trim(p.marca), ''), 'Sin marca') AS marca,
+                           v.costo_total AS costo_venta,
+                           0::numeric    AS comprado,
+                           0::numeric    AS recibido
+                      FROM ventas v
+                      LEFT JOIN productos p ON p.codigo = v.codigo_cm
+                     CROSS JOIN corte
+                     WHERE v.ano = 2026 AND v.fecha_conta <= corte.f
+                    UNION ALL
+                    SELECT coalesce(nullif(trim(p.marca), ''), 'Sin marca'),
+                           0::numeric, c.precio_total, 0::numeric
+                      FROM compras c
+                      LEFT JOIN productos p ON p.codigo = c.codigo
+                     CROSS JOIN corte
+                     WHERE c.ano = 2026 AND c.fecha_creacion <= corte.f
+                    UNION ALL
+                    SELECT coalesce(nullif(trim(p.marca), ''), 'Sin marca'),
+                           0::numeric, 0::numeric, r.total_clp
+                      FROM recepciones r
+                      LEFT JOIN productos p ON p.codigo = r.codigo
+                     CROSS JOIN corte
+                     WHERE r.ano = 2026 AND r.fecha_recepcion <= corte.f
+                )
+                SELECT m.marca,
+                       (cb.marca IS NOT NULL)        AS con_cobertura,
+                       coalesce(sum(m.costo_venta), 0) AS costo_venta,
+                       coalesce(sum(m.comprado), 0)    AS comprado,
+                       coalesce(sum(m.recibido), 0)    AS recibido,
+                       (SELECT f FROM corte)           AS fecha_corte
+                  FROM movs m
+                  LEFT JOIN cobertura cb ON cb.marca = m.marca
+                 GROUP BY m.marca, (cb.marca IS NOT NULL)
+                """
+            )
+            filas_sql = cur.fetchall()
+
+    def _arma(marca, cv, co, re):
+        return {
+            "marca":           marca,
+            "costo_venta":     round(cv, 0),
+            "comprado":        round(co, 0),
+            "recibido":        round(re, 0),
+            # None (no 0) cuando no hubo venta: el ratio no existe y el
+            # frontend debe mostrar "—", no inventar un 0.
+            "ratio_recibido":  round(re / cv, 3) if cv > 0 else None,
+            "ratio_comprado":  round(co / cv, 3) if cv > 0 else None,
+            "brecha_recibido": round(re - cv, 0),
+            "brecha_comprado": round(co - cv, 0),
+        }
+
+    marcas, sin_cobertura = [], []
+    tot_cv = tot_co = tot_re = 0.0
+    fuera_cv = 0.0
+    fecha_corte = None
+
+    for r in filas_sql:
+        fecha_corte = fecha_corte or r["fecha_corte"]
+        cv, co, re = float(r["costo_venta"]), float(r["comprado"]), float(r["recibido"])
+        if r["con_cobertura"]:
+            fila = _arma(r["marca"], cv, co, re)
+            marcas.append(fila)
+            # El total se acumula sobre los valores YA redondeados de
+            # cada fila, no sobre los originales: asi la columna de la
+            # tabla suma exactamente el total que se muestra abajo (de
+            # la otra forma quedaba $1 de diferencia por redondeo, y una
+            # tabla que no cuadra hace dudar de todo el resto).
+            tot_cv += fila["costo_venta"]
+            tot_co += fila["comprado"]
+            tot_re += fila["recibido"]
+        else:
+            sin_cobertura.append(_arma(r["marca"], cv, co, re))
+            fuera_cv += cv
+
+    # Mayor sobreabastecimiento primero: se ordena por la brecha en pesos
+    # y no por el ratio, porque un ratio alto sobre una marca chica no
+    # mueve la aguja y taparia las que si importan.
+    marcas.sort(key=lambda m: -m["brecha_recibido"])
+    sin_cobertura.sort(key=lambda m: -m["costo_venta"])
+
+    total = _arma("Total", tot_cv, tot_co, tot_re)
+    total["marca"] = "Total"
+
+    return {
+        "total":        total,
+        "marcas":       marcas,
+        "sin_cobertura": sin_cobertura,
+        "fuera_costo_venta": round(fuera_cv, 0),
+        "fuera_pct":    round(fuera_cv / (tot_cv + fuera_cv) * 100, 1) if (tot_cv + fuera_cv) else 0.0,
+        "ano":          2026,
+        "fecha_corte":  fecha_corte.strftime("%d-%m-%Y") if fecha_corte else None,
+    }
+
+
 def get_lead_time_combinado_pg():
     """Lead time real (dias entre fecha_creacion de la OC y su primera
     recepcion) por proveedor -- año actual vs año anterior. Mismo
