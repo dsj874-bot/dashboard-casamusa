@@ -41,6 +41,18 @@
   #inv-body td.suc { font-weight:600; color:var(--text); }
   #inv-body tr.fila-total td { border-top:2px solid var(--border);
                                font-weight:700; background:var(--surface2); }
+  /* Desglose proveedor -> familia -> subfamilia */
+  #abast-body tr.fila-prov { cursor:pointer; }
+  #abast-body tr.fila-prov:hover { background:var(--surface2); }
+  #abast-body tr.fila-fam { display:none; cursor:pointer; background:var(--surface2); }
+  #abast-body tr.fila-sub { display:none; }
+  #abast-body tr.fila-fam.visible, #abast-body tr.fila-sub.visible { display:table-row; }
+  #abast-body tr.fila-fam td:first-child { padding-left:34px; font-size:12px; }
+  #abast-body tr.fila-sub td:first-child { padding-left:58px; font-size:12px;
+                                           color:var(--muted2); font-weight:400; }
+  .flecha { display:inline-block; width:13px; transition:transform .15s; color:var(--muted2); }
+  tr.expandida > td > .flecha { transform:rotate(90deg); }
+
   .etiqueta-nueva { font-size:10px; letter-spacing:.04em; text-transform:uppercase;
                     color:var(--accent); border:1px solid var(--accent);
                     border-radius:3px; padding:1px 5px; margin-left:8px; }
@@ -340,26 +352,82 @@ function pintarProveedores() {
     return 0;
   });
 
+  // Las cuatro celdas de cifras son iguales en los tres niveles.
+  const cifras = x => `
+        <td class="text-right">${fmtCLP(x.costo_venta)}</td>
+        <td class="text-right" style="color:var(--muted2)">${fmtCLP(x.comprado)}</td>
+        <td class="text-right">${fmtCLP(x.recibido)}</td>
+        <td class="text-right ${abClase(x.ratio_recibido)}">${fmtRatio(x.ratio_recibido)}</td>
+        <td class="text-right ${abClase(x.ratio_recibido)}">${fmtBrecha(x.brecha_recibido)}</td>`;
+
   const t = _total;
-  document.getElementById("abast-body").innerHTML =
-    filas.map(p => `
-      <tr>
-        <td style="font-weight:600;color:var(--text)">${p.proveedor}</td>
-        <td class="text-right">${fmtCLP(p.costo_venta)}</td>
-        <td class="text-right" style="color:var(--muted2)">${fmtCLP(p.comprado)}</td>
-        <td class="text-right">${fmtCLP(p.recibido)}</td>
-        <td class="text-right ${abClase(p.ratio_recibido)}">${fmtRatio(p.ratio_recibido)}</td>
-        <td class="text-right ${abClase(p.ratio_recibido)}">${fmtBrecha(p.brecha_recibido)}</td>
-      </tr>`).join("") + `
-      <tr class="fila-total">
-        <td>Total</td>
-        <td class="text-right">${fmtCLP(t.costo_venta)}</td>
-        <td class="text-right">${fmtCLP(t.comprado)}</td>
-        <td class="text-right">${fmtCLP(t.recibido)}</td>
-        <td class="text-right ${abClase(t.ratio_recibido)}">${fmtRatio(t.ratio_recibido)}</td>
-        <td class="text-right ${abClase(t.ratio_recibido)}">${fmtBrecha(t.brecha_recibido)}</td>
+  let html = "";
+  filas.forEach((p, i) => {
+    const fams = p.familias || [];
+    html += `
+      <tr class="fila-prov" data-prov="${i}">
+        <td style="font-weight:600;color:var(--text)">${
+          fams.length ? '<span class="flecha">▶</span> ' : '<span class="flecha"></span> '
+        }${p.proveedor}</td>${cifras(p)}
       </tr>`;
+    fams.forEach((fa, j) => {
+      const subs = fa.subfamilias || [];
+      // Una familia con una sola subfamilia del mismo tamaño no aporta
+      // otro nivel: se deja sin flecha para no hacer clic en vano.
+      const abrible = subs.length > 1;
+      html += `
+      <tr class="fila-fam" data-de-prov="${i}" data-fam="${i}-${j}">
+        <td>${abrible ? '<span class="flecha">▶</span> ' : '<span class="flecha"></span> '}${fa.nombre}</td>${cifras(fa)}
+      </tr>`;
+      if (abrible) {
+        subs.forEach(sb => {
+          html += `
+      <tr class="fila-sub" data-de-fam="${i}-${j}">
+        <td>${sb.nombre}</td>${cifras(sb)}
+      </tr>`;
+        });
+      }
+    });
+  });
+
+  html += `
+      <tr class="fila-total">
+        <td>Total</td>${cifras(t)}
+      </tr>`;
+  document.getElementById("abast-body").innerHTML = html;
 }
+
+// Delegacion: el tbody se vuelve a pintar en cada orden, asi que enganchar
+// listeners fila por fila obligaria a re-enganchar cada vez (y es el tipo
+// de cosa que se olvida y deja la tabla muerta al ordenar).
+document.getElementById("abast-body").addEventListener("click", ev => {
+  const prov = ev.target.closest("tr.fila-prov");
+  if (prov) {
+    const i = prov.dataset.prov;
+    prov.classList.toggle("expandida");
+    const abierto = prov.classList.contains("expandida");
+    document.querySelectorAll(`#abast-body tr.fila-fam[data-de-prov="${i}"]`).forEach(f => {
+      f.classList.toggle("visible", abierto);
+      // Al cerrar el proveedor se cierran tambien sus familias: si no,
+      // al reabrirlo aparecen subfamilias sueltas sin su encabezado.
+      if (!abierto) {
+        f.classList.remove("expandida");
+        document.querySelectorAll(
+          `#abast-body tr.fila-sub[data-de-fam="${f.dataset.fam}"]`
+        ).forEach(x => x.classList.remove("visible"));
+      }
+    });
+    return;
+  }
+  const fam = ev.target.closest("tr.fila-fam");
+  if (fam) {
+    fam.classList.toggle("expandida");
+    const abierto = fam.classList.contains("expandida");
+    document.querySelectorAll(
+      `#abast-body tr.fila-sub[data-de-fam="${fam.dataset.fam}"]`
+    ).forEach(x => x.classList.toggle("visible", abierto));
+  }
+});
 const fmtRatio = r => r == null ? "—" : r.toFixed(2);
 // El signo va delante del peso. fmtCLP() sobre un negativo daba
 // "$-38.121.192", que se lee mal en una columna de cifras.

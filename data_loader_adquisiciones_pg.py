@@ -364,7 +364,7 @@ _CTE_ABAST = """
         ) y WHERE rn = 1
     ),
     movs AS (
-        SELECT d.rut, v.fecha_conta AS fecha,
+        SELECT d.rut, v.fecha_conta AS fecha, p.familia, p.subfamilia,
                v.costo_total AS costo_venta, 0::numeric AS comprado, 0::numeric AS recibido
           FROM ventas v
           JOIN productos p ON p.codigo = v.codigo_cm
@@ -375,7 +375,7 @@ _CTE_ABAST = """
            AND coalesce(p.marca, '') <> ALL(%(armadas)s)
            AND coalesce(d.rut, '') <> ALL(%(prov_imp)s)
         UNION ALL
-        SELECT d.rut, c.fecha_creacion, 0::numeric, c.precio_total, 0::numeric
+        SELECT d.rut, c.fecha_creacion, p.familia, p.subfamilia, 0::numeric, c.precio_total, 0::numeric
           FROM compras c
           JOIN productos p ON p.codigo = c.codigo
           LEFT JOIN defecto d ON d.codigo = c.codigo
@@ -385,7 +385,7 @@ _CTE_ABAST = """
            AND coalesce(p.marca, '') <> ALL(%(armadas)s)
            AND coalesce(d.rut, '') <> ALL(%(prov_imp)s)
         UNION ALL
-        SELECT d.rut, r.fecha_recepcion, 0::numeric, 0::numeric, r.total_clp
+        SELECT d.rut, r.fecha_recepcion, p.familia, p.subfamilia, 0::numeric, 0::numeric, r.total_clp
           FROM recepciones r
           JOIN productos p ON p.codigo = r.codigo
           LEFT JOIN defecto d ON d.codigo = r.codigo
@@ -444,21 +444,31 @@ def get_abastecimiento_proveedor_pg():
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
+
+            # Desglose familia/subfamilia dentro de cada proveedor. Es el
+            # mismo escaneo, solo agrupado con dos columnas mas: 422
+            # filas y 48 KB, se manda junto con la pagina. A nivel de
+            # CODIGO serian 4.147 filas y 706 KB, y ademas el ratio ahi
+            # se vuelve ruido (un SKU que se compra cada tres meses da
+            # 0,00 o 15 sin que signifique nada). El detalle por producto
+            # va en la pantalla de devoluciones, que es otra pregunta.
             cur.execute(
                 f"""WITH {_CTE_ABAST}
                 SELECT coalesce(m.rut, '(sin proveedor asignado)') AS rut,
-                       coalesce(n.nombre, m.rut, 'Sin proveedor asignado') AS nombre,
+                       coalesce(n.nombre, m.rut, 'Sin proveedor asignado')        AS nombre,
+                       coalesce(nullif(trim(m.familia), ''), 'Sin familia')       AS familia,
+                       coalesce(nullif(trim(m.subfamilia), ''), 'Sin subfamilia') AS subfamilia,
                        coalesce(sum(m.costo_venta), 0) AS costo_venta,
                        coalesce(sum(m.comprado), 0)    AS comprado,
                        coalesce(sum(m.recibido), 0)    AS recibido,
                        (SELECT f FROM corte)           AS fecha_corte
                   FROM movs m
                   LEFT JOIN nombres n ON n.rut = m.rut
-                 GROUP BY 1, 2
+                 GROUP BY 1, 2, 3, 4
                 """,
                 params,
             )
-            filas = cur.fetchall()
+            filas_det = cur.fetchall()
 
             cur.execute(
                 f"""WITH {_CTE_ABAST}
@@ -486,9 +496,10 @@ def get_abastecimiento_proveedor_pg():
             )
             filas_mes = cur.fetchall()
 
-    def _arma(nombre, rut, cv, co, re):
+    def _fila(nombre, cv, co, re, rut=None):
         return {
             "proveedor":       nombre,
+            "nombre":          nombre,
             "rut":             rut,
             "costo_venta":     round(cv, 0),
             "comprado":        round(co, 0),
@@ -499,25 +510,51 @@ def get_abastecimiento_proveedor_pg():
             "brecha_recibido": round(re - cv, 0),
         }
 
+    # Se arma de abajo hacia arriba -- subfamilia, familia, proveedor,
+    # total -- y cada nivel SUMA LOS VALORES YA REDONDEADOS del nivel de
+    # abajo. Si cada uno se redondeara por su cuenta desde el dato
+    # original, las columnas no cerrarian (paso: una familia daba $3 de
+    # diferencia contra sus subfamilias), y una tabla que no cuadra hace
+    # dudar de todo lo demas.
+    arbol, nombres_rut, fecha_corte = {}, {}, None
+    for r in filas_det:
+        fecha_corte = fecha_corte or r["fecha_corte"]
+        nombres_rut[r["rut"]] = r["nombre"]
+        fams = arbol.setdefault(r["rut"], {})
+        fams.setdefault(r["familia"], {})[r["subfamilia"]] = (
+            float(r["costo_venta"]), float(r["comprado"]), float(r["recibido"])
+        )
+
     proveedores, sin_compras = [], []
     tot_cv = tot_co = tot_re = 0.0
     fuera_cv = 0.0
-    fecha_corte = None
 
-    for r in filas:
-        fecha_corte = fecha_corte or r["fecha_corte"]
-        cv, co, re = float(r["costo_venta"]), float(r["comprado"]), float(r["recibido"])
-        fila = _arma(r["nombre"], r["rut"], cv, co, re)
-        if co > 0 or re > 0:
-            proveedores.append(fila)
-            # Se acumula sobre los valores YA redondeados para que la
-            # columna de la tabla sume exactamente el total de abajo.
-            tot_cv += fila["costo_venta"]
-            tot_co += fila["comprado"]
-            tot_re += fila["recibido"]
+    for rut, fams in arbol.items():
+        lista_fams = []
+        p_cv = p_co = p_re = 0.0
+        for nom_f, subs in fams.items():
+            lista_subs = [_fila(n, *v) for n, v in subs.items()]
+            lista_subs.sort(key=lambda x: -x["brecha_recibido"])
+            f_cv = sum(x["costo_venta"] for x in lista_subs)
+            f_co = sum(x["comprado"] for x in lista_subs)
+            f_re = sum(x["recibido"] for x in lista_subs)
+            fila_f = _fila(nom_f, f_cv, f_co, f_re)
+            fila_f["subfamilias"] = lista_subs
+            lista_fams.append(fila_f)
+            p_cv += f_cv; p_co += f_co; p_re += f_re
+
+        lista_fams.sort(key=lambda x: -x["brecha_recibido"])
+        fila_p = _fila(nombres_rut[rut], p_cv, p_co, p_re, rut=rut)
+        fila_p["familias"] = lista_fams
+
+        if p_co > 0 or p_re > 0:
+            proveedores.append(fila_p)
+            tot_cv += fila_p["costo_venta"]
+            tot_co += fila_p["comprado"]
+            tot_re += fila_p["recibido"]
         else:
-            sin_compras.append(fila)
-            fuera_cv += fila["costo_venta"]
+            sin_compras.append(fila_p)
+            fuera_cv += fila_p["costo_venta"]
 
     # Mayor sobreabastecimiento primero: por brecha en pesos y no por
     # ratio, porque un ratio alto sobre un proveedor chico no mueve la
@@ -532,8 +569,7 @@ def get_abastecimiento_proveedor_pg():
         # Brecha acumulada: es LA cifra que explica el año. El dato suelto
         # de cada mes no dice nada, y el total del año tampoco -- recien
         # la curva acumulada muestra que el stock se bajo fuerte en
-        # enero-febrero y se viene reponiendo desde marzo, que es la
-        # conclusion a la que llegamos con el usuario el 2026-09-21.
+        # enero-febrero y se viene reponiendo desde marzo.
         acumulado += re - cv
         meses.append({
             "mes":            r["mes"],
@@ -547,7 +583,7 @@ def get_abastecimiento_proveedor_pg():
             "acumulado":      round(acumulado, 0),
         })
 
-    total = _arma("Total", None, tot_cv, tot_co, tot_re)
+    total = _fila("Total", tot_cv, tot_co, tot_re)
     # Comprado que todavia no llega a bodega. Importa porque el ratio se
     # mide contra lo RECIBIDO: esta plata ya esta comprometida y va a
     # empujar el inventario hacia arriba sin que medie una compra nueva.
