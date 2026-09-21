@@ -22,6 +22,11 @@ import db
 BODEGAS_TODAS = dli.BODEGAS + [("Servicio Técnico", None, "TRANSITO SERVICIO TECNICO")]
 
 
+def _lotes(seq, tamano):
+    for i in range(0, len(seq), tamano):
+        yield seq[i:i + tamano]
+
+
 def cargar_productos(df):
     print("Cargando dimension productos desde Inventario...")
     cols = ["CODIGO", "REFERENCIA", "DESCRIPCION", "U_M", "FAMILIA", "SUBFAMILIA",
@@ -44,7 +49,10 @@ def cargar_productos(df):
         insert into productos (codigo, referencia, descripcion, um, familia, subfamilia,
             grupo, marca, id_procedencia, embalaje, multiplo, cup, clas_si, clas_lc, clas_mr, clas_mt, clas_csd,
             pedido_total)
-        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        select codigo, referencia, descripcion, um, familia, subfamilia,
+            grupo, marca, id_procedencia, embalaje, multiplo, cup, clas_si, clas_lc, clas_mr, clas_mt, clas_csd,
+            pedido_total
+          from tmp_productos
         on conflict (codigo) do update set
             referencia=excluded.referencia, descripcion=excluded.descripcion, um=excluded.um,
             familia=coalesce(excluded.familia, productos.familia),
@@ -55,10 +63,28 @@ def cargar_productos(df):
             clas_mr=excluded.clas_mr, clas_mt=excluded.clas_mt, clas_csd=excluded.clas_csd,
             pedido_total=excluded.pedido_total, updated_at=now()
     """
+    # Aca el ON CONFLICT si hace falta (no hay truncate: el COALESCE
+    # conserva familia/subfamilia/grupo cuando la subida web no los
+    # trae), asi que no se puede hacer COPY directo a la tabla. Se hace
+    # COPY a una temporal y despues UN solo INSERT ... SELECT: igual se
+    # cambian ~19.000 idas y vueltas por dos operaciones.
     with db.get_connection() as conn:
         with conn.cursor() as cur:
-            for i in range(0, len(filas), 5000):
-                cur.executemany(sql, filas[i:i + 5000])
+            cur.execute("""create temp table tmp_productos
+                           (like productos including defaults) on commit drop""")
+            # Troceado por el mismo motivo que cargar_stock: un COPY es
+            # UNA sentencia y el statement_timeout son 2 minutos. Aca no
+            # se puede commitear entre lotes (la temporal es ON COMMIT
+            # DROP), pero cada COPY por separado si queda corto.
+            copy_sql = """copy tmp_productos (codigo, referencia, descripcion, um, familia,
+                              subfamilia, grupo, marca, id_procedencia, embalaje, multiplo,
+                              cup, clas_si, clas_lc, clas_mr, clas_mt, clas_csd, pedido_total)
+                          from stdin"""
+            for lote in _lotes(filas, 10000):
+                with cur.copy(copy_sql) as cp:
+                    for fila in lote:
+                        cp.write_row(fila)
+            cur.execute(sql)
         conn.commit()
     print(f"  {len(filas)} productos cargados/actualizados.")
 
@@ -99,12 +125,7 @@ def construir_stock_largo(df):
     return pd.concat(partes, ignore_index=True)
 
 
-def _lotes(seq, tamano):
-    for i in range(0, len(seq), tamano):
-        yield seq[i:i + tamano]
-
-
-def cargar_stock(df, archivo_origen="backfill_inicial", tamano_lote=5000, reintentos=3):
+def cargar_stock(df, archivo_origen="backfill_inicial", tamano_lote=50000, reintentos=3):
     """Carga por lotes con COMMIT por lote y reintento con reconexion si
     un lote falla (mismo patron que backfill_ventas() en
     backfill_fase1_comercial.py -- el pooler de Supabase en modo
@@ -152,19 +173,31 @@ def cargar_stock(df, archivo_origen="backfill_inicial", tamano_lote=5000, reinte
     ]
     print(f"Cargando inventario_stock ({len(filas)} filas: {len(df)} productos x {len(BODEGAS_TODAS) + 1} bodegas)...")
 
-    sql = """
-        insert into inventario_stock (codigo, bodega, stock, transito, venta_mensual)
-        values (%s,%s,%s,%s,%s)
-        on conflict (codigo, bodega) do update set
-            stock=excluded.stock, transito=excluded.transito, venta_mensual=excluded.venta_mensual
-    """
-
+    # COPY y no executemany: son ~250.000 filas, y executemany paga una
+    # ida y vuelta por fila. Medido 2026-09-21 contra la base: un insert
+    # equivalente hecho del lado del servidor corre a 77.000 filas/s,
+    # mientras executemany desde fuera iba a 101 filas/s -- o sea el
+    # tiempo era casi todo latencia, no trabajo.
+    #
+    # El ON CONFLICT que habia aca no hacia falta: arriba se hace TRUNCATE,
+    # asi que la tabla esta vacia y no puede haber conflicto. Insertar
+    # directo con COPY es equivalente y mucho mas rapido.
     with db.get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("truncate inventario_stock")
         conn.commit()
     conn.close()
 
+    # COPY POR LOTES, no un solo COPY gigante. Postgres tiene
+    # statement_timeout = 2 min, y un COPY es UNA sentencia: con una
+    # conexion lenta (probado desde Chile) se corta a mitad de camino
+    # -- paso en la fila 100.888 de 248.768. Troceado, cada COPY es
+    # corto y ademas se commitea, asi que un corte no bota todo.
+    #
+    # Los lotes son grandes (50.000) porque el costo por lote es una
+    # ida y vuelta, no una por fila: son 5 operaciones en vez de las
+    # ~250.000 de executemany.
+    copy_sql = "copy inventario_stock (codigo, bodega, stock, transito, venta_mensual) from stdin"
     conn = db.get_connection()
     total = 0
     try:
@@ -172,7 +205,9 @@ def cargar_stock(df, archivo_origen="backfill_inicial", tamano_lote=5000, reinte
             for intento in range(1, reintentos + 1):
                 try:
                     with conn.cursor() as cur:
-                        cur.executemany(sql, lote)
+                        with cur.copy(copy_sql) as cp:
+                            for fila in lote:
+                                cp.write_row(fila)
                     conn.commit()
                     break
                 except Exception as e:
@@ -187,7 +222,10 @@ def cargar_stock(df, archivo_origen="backfill_inicial", tamano_lote=5000, reinte
             total += len(lote)
             print(f"  {total}/{len(filas)} filas insertadas...")
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
     with db.get_connection() as conn2:
         with conn2.cursor() as cur:
