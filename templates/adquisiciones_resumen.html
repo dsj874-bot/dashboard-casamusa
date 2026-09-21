@@ -109,7 +109,8 @@
 <div class="chart-card" style="margin-top:20px;">
   <div class="chart-card-title">Abastecimiento vs Venta — evolución mensual</div>
   <div class="chart-card-sub">Barras: costo de venta y recibido. Línea: cuánto entra por cada peso que sale
-    (1,00 es el equilibrio). Solo productos nacionales.</div>
+    (1,00 es el equilibrio). Solo productos nacionales.
+    <b>El mes en curso va marcado como parcial: su valor todavía se mueve.</b></div>
   <!-- Alto fijo + maintainAspectRatio:false. Con la razon de aspecto
        por defecto, la leyenda de 4 series se parte en dos filas, se
        come el canvas y el area del grafico quedaba en 1 pixel de
@@ -479,6 +480,12 @@ fetch("/api/adquisiciones/abastecimiento")
     const piso = ms.reduce((a, m) => m.acumulado < a.acumulado ? m : a, ms[0] || {acumulado: 0});
     const ultimo = ms[ms.length - 1] || {};
     const repuesto = (ultimo.acumulado || 0) - (piso.acumulado || 0);
+    // Para concluir se usa el ultimo mes CERRADO. El mes en curso va a
+    // medio andar y su ratio arranca alto: citarlo como tendencia lleva
+    // a leer una presion que despues no estaba.
+    const cerrados = ms.filter(m => !m.parcial);
+    const ultCerrado = cerrados[cerrados.length - 1];
+    const enCurso = ms.find(m => m.parcial);
     document.getElementById("abast-lectura").innerHTML = `
       <span class="titulo">Cómo leer esto</span>
       <ul>
@@ -491,6 +498,14 @@ fetch("/api/adquisiciones/abastecimiento")
             <span class="cifra">${fmtBrecha(t.brecha_recibido)}</span> del año es lo que queda de esa baja.</li>
         <li>Quedan <span class="cifra">${fmtCLP(t.en_camino)}</span> comprados sin recibir: van a subir
             el inventario sin que medie una compra nueva.</li>
+        ${ultCerrado ? `<li>Último mes cerrado — <b>${ultCerrado.mes_nombre}</b>:
+            <span class="cifra">${fmtRatio(ultCerrado.ratio)}</span>.</li>` : ""}
+        ${enCurso ? `<li><b>${enCurso.mes_nombre} va a medio andar</b> (al día ${d.dia_corte}) y marca
+            <span class="cifra">${fmtRatio(enCurso.ratio)}</span>, pero todavía se mueve: las recepciones
+            llegan a principio de mes y la venta se acumula pareja, así que el número arranca alto y baja.
+            Mirando los meses ya cerrados a este mismo día, quedaban en promedio un
+            <span class="cifra">${d.sesgo_parcial}%</span> por sobre su cierre.
+            <b>No lo tomes como tendencia hasta que cierre el mes.</b></li>` : ""}
       </ul>`;
 
     // Los proveedores sin compras registradas quedan fuera del calculo,
@@ -533,7 +548,7 @@ fetch("/api/adquisiciones/abastecimiento")
 
     new Chart(document.getElementById("chartAbast").getContext("2d"), {
       data: {
-        labels: meses.map(m => m.mes_nombre),
+        labels: meses.map(m => m.mes_nombre + (m.parcial ? " (parcial)" : "")),
         datasets: [
           {
             type: "bar", label: "Costo de Venta", yAxisID: "y",
@@ -557,8 +572,13 @@ fetch("/api/adquisiciones/abastecimiento")
           {
             type: "line", label: "Recibido / Costo de Venta", yAxisID: "y1",
             data: meses.map(m => m.ratio),
-            borderColor: cssVar("--blue"), backgroundColor: cssVar("--blue"),
-            borderWidth: 2, pointRadius: 4, tension: 0.2, order: 0,
+            borderColor: cssVar("--blue"),
+            // El mes en curso va con el punto hueco y el tramo punteado:
+            // todavia se mueve y no debe leerse como dato cerrado.
+            backgroundColor: meses.map(m => m.parcial ? "transparent" : cssVar("--blue")),
+            pointBorderColor: cssVar("--blue"), pointBorderWidth: 2,
+            segment: { borderDash: c => meses[c.p1DataIndex]?.parcial ? [5, 4] : undefined },
+            borderWidth: 2, pointRadius: meses.map(m => m.parcial ? 6 : 4), tension: 0.2, order: 0,
           },
           {
             // Referencia en 1,0 -- sin esto hay que adivinar donde esta

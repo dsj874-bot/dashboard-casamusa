@@ -475,7 +475,15 @@ def get_abastecimiento_proveedor_pg():
                 SELECT extract(month from fecha)::int AS mes,
                        coalesce(sum(costo_venta), 0) AS costo_venta,
                        coalesce(sum(comprado), 0)    AS comprado,
-                       coalesce(sum(recibido), 0)    AS recibido
+                       coalesce(sum(recibido), 0)    AS recibido,
+                       -- Mismos meses recortados al dia del corte, para
+                       -- poder comparar manzanas con manzanas: cuanto
+                       -- daba cada mes cerrado si se hubiera mirado en
+                       -- este mismo dia. De ahi sale el sesgo.
+                       coalesce(sum(costo_venta) FILTER (
+                           WHERE extract(day from fecha) <= (SELECT extract(day from f) FROM corte)), 0) AS cv_al_dia,
+                       coalesce(sum(recibido) FILTER (
+                           WHERE extract(day from fecha) <= (SELECT extract(day from f) FROM corte)), 0) AS re_al_dia
                   FROM movs
                  -- Mismo universo EXACTO que la tabla de abajo: los
                  -- grupos con alguna compra registrada, incluido el de
@@ -562,6 +570,25 @@ def get_abastecimiento_proveedor_pg():
     proveedores.sort(key=lambda p: -p["brecha_recibido"])
     sin_compras.sort(key=lambda p: -p["costo_venta"])
 
+    # El mes en curso va hasta el dia del corte, no esta cerrado, y su
+    # ratio se mueve harto: las recepciones llegan a principio de mes y
+    # la venta se acumula pareja, asi que arranca alto y va bajando.
+    # Medido sobre 2026: mirando al mismo dia del mes, 7 de 8 meses
+    # cerrados quedaron por debajo de lo que aparentaban, un 14% en
+    # promedio (agosto llego a marcar 2,11 el dia 5 y cerro en 1,02).
+    # Sin avisarlo, el ultimo punto del grafico se lee como una
+    # conclusion cuando todavia no lo es.
+    mes_corte = fecha_corte.month if fecha_corte else None
+    sesgos = []
+    for r in filas_mes:
+        if r["mes"] == mes_corte:
+            continue
+        cv_d, re_d = float(r["cv_al_dia"]), float(r["re_al_dia"])
+        cv_t, re_t = float(r["costo_venta"]), float(r["recibido"])
+        if cv_d > 0 and cv_t > 0 and re_t > 0:
+            sesgos.append((re_d / cv_d) / (re_t / cv_t) - 1)
+    sesgo_parcial = round(sum(sesgos) / len(sesgos) * 100, 0) if sesgos else None
+
     meses = []
     acumulado = 0.0
     for r in filas_mes:
@@ -581,6 +608,7 @@ def get_abastecimiento_proveedor_pg():
             "ratio_comprado": round(co / cv, 3) if cv > 0 else None,
             "brecha":         round(re - cv, 0),
             "acumulado":      round(acumulado, 0),
+            "parcial":        r["mes"] == mes_corte,
         })
 
     total = _fila("Total", tot_cv, tot_co, tot_re)
@@ -597,6 +625,8 @@ def get_abastecimiento_proveedor_pg():
         "fuera_costo_venta": round(fuera_cv, 0),
         "fuera_pct":         round(fuera_cv / (tot_cv + fuera_cv) * 100, 1) if (tot_cv + fuera_cv) else 0.0,
         "meses":             meses,
+        "sesgo_parcial":     sesgo_parcial,
+        "dia_corte":         fecha_corte.day if fecha_corte else None,
         "ano":               2026,
         "fecha_corte":       fecha_corte.strftime("%d-%m-%Y") if fecha_corte else None,
     }
