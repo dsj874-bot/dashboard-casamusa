@@ -932,9 +932,24 @@ def exportar_stock_detenido_excel_pg(meses_min=MESES_COBERTURA_DETENIDO, proveed
 # cae en Stock Detenido, que es la otra pantalla.
 DIAS_RECEPCION_RECIENTE = 90
 
+# La sucursal de una recepcion viene como codigo de bodega ("MT-STK") y
+# el inventario la nombra completa ("Matta"). Sin este mapeo no se puede
+# saber cuanto de lo recibido sigue en ESA sucursal, que es justamente lo
+# que se devuelve. Verificado 2026-09-21: los 7 codigos que aparecen en
+# recepciones calzan todos con una bodega existente.
+BODEGA_POR_SUCURSAL_OC = {
+    "CH-STK": "Chicureo",
+    "LC-STK": "Las Condes",
+    "MP-STK": "Maipú",
+    "MR-STK": "Manuel Rodríguez",
+    "MT-STK": "Matta",
+    "SI-STK": "San Isidro",
+    "SI-ECO": "E-commerce",
+}
+
 
 def get_pedidos_sin_vender_pg(dias=DIAS_RECEPCION_RECIENTE, umbral=0.0,
-                              tipo="PEDIDO", proveedor=None):
+                              tipo="PEDIDO", proveedor=None, sucursal=None):
     """Mercaderia recibida hace poco que no se vendio -- el pedido que
     salio mal, mientras la ventana de devolucion sigue abierta.
 
@@ -968,43 +983,63 @@ def get_pedidos_sin_vender_pg(dias=DIAS_RECEPCION_RECIENTE, umbral=0.0,
     pedido y no se devuelven con el.
     """
     params = {
-        "dias": dias, "tipo": tipo, "prov": proveedor,
+        "dias": dias, "tipo": tipo, "prov": proveedor, "suc": sucursal,
         "prov_imp": list(PROVEEDORES_IMPORTADOS),
+        # Dos arreglos paralelos: unnest() con varios arreglos devuelve
+        # una columna por cada uno. Con un arreglo 2D no sirve, porque
+        # unnest lo aplana a elementos sueltos.
+        "sucs":    list(BODEGA_POR_SUCURSAL_OC.keys()),
+        "bodegas": list(BODEGA_POR_SUCURSAL_OC.values()),
     }
     filtro_prov = (
         " AND coalesce(n.nombre, d.rut, 'Sin proveedor asignado') = %(prov)s"
         if proveedor else ""
     )
     filtro_tipo = " AND r.tipo_oc = %(tipo)s" if tipo else ""
+    filtro_suc = " AND rec.sucursal = %(suc)s" if sucursal else ""
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                WITH rec AS (
-                    SELECT r.codigo,
+                WITH mapa AS (
+                    -- "MT-STK" -> "Matta". Va como parametro y no
+                    -- escrito en el SQL para tener una sola fuente de
+                    -- verdad (BODEGA_POR_SUCURSAL_OC).
+                    SELECT m.suc, m.bodega
+                      FROM unnest(%(sucs)s::text[], %(bodegas)s::text[]) AS m(suc, bodega)
+                ),
+                rec AS (
+                    -- Por producto Y sucursal: la devolucion la gestiona
+                    -- la sucursal que hizo el pedido, y lo que se
+                    -- devuelve es lo que quedo en SU bodega.
+                    SELECT r.codigo, r.sucursal,
                            min(r.fecha_recepcion) AS primera,
                            sum(r.cantidad)        AS cant_recibida,
                            sum(r.total_clp)       AS valor_recibido
                       FROM recepciones r
                      WHERE r.fecha_recepcion >= current_date - %(dias)s::int
                            {filtro_tipo}
-                     GROUP BY r.codigo
+                     GROUP BY r.codigo, r.sucursal
                 ),
                 vend AS (
-                    -- Vendido DESDE que llego esta partida. Las ventas
-                    -- anteriores son de stock viejo y no dicen nada
-                    -- sobre si este pedido se movio.
-                    SELECT rec.codigo, coalesce(sum(v.cantidad), 0) AS cant_vendida
-                      FROM rec
+                    -- Vendido DESDE que llego esta partida, y a nivel de
+                    -- TODA la empresa, no de la sucursal: si el producto
+                    -- se vendio en otra parte el pedido no se perdio --
+                    -- se traspasa, no se devuelve. Contarlo por sucursal
+                    -- marcaria como devolvibles cosas que si rotaron.
+                    SELECT rec.codigo, min(rec.primera) AS primera,
+                           coalesce(sum(v.cantidad), 0) AS cant_vendida
+                      FROM (SELECT codigo, min(primera) AS primera FROM rec GROUP BY codigo) rec
                       LEFT JOIN ventas v
                              ON v.codigo_cm = rec.codigo
                             AND v.fecha_conta >= rec.primera
                      GROUP BY rec.codigo
                 ),
                 st AS (
-                    SELECT codigo, sum(stock) AS stock
-                      FROM inventario_stock WHERE bodega <> 'Todas' GROUP BY codigo
+                    SELECT codigo, bodega, sum(stock) AS stock
+                      FROM inventario_stock WHERE bodega <> 'Todas'
+                     GROUP BY codigo, bodega
                 ),
                 defecto AS (
                     SELECT codigo, rut FROM (
@@ -1020,7 +1055,8 @@ def get_pedidos_sin_vender_pg(dias=DIAS_RECEPCION_RECIENTE, umbral=0.0,
                     SELECT rut, min(nombre_proveedor) AS nombre FROM compras
                      WHERE nombre_proveedor IS NOT NULL GROUP BY rut
                 )
-                SELECT rec.codigo, p.descripcion, p.marca, p.familia, p.subfamilia,
+                SELECT rec.codigo, rec.sucursal, coalesce(mapa.bodega, rec.sucursal) AS sucursal_nombre,
+                       p.descripcion, p.marca, p.familia, p.subfamilia,
                        coalesce(n.nombre, d.rut, 'Sin proveedor asignado') AS proveedor,
                        rec.primera, rec.cant_recibida, rec.valor_recibido,
                        vd.cant_vendida,
@@ -1030,19 +1066,20 @@ def get_pedidos_sin_vender_pg(dias=DIAS_RECEPCION_RECIENTE, umbral=0.0,
                   FROM rec
                   JOIN productos p ON p.codigo = rec.codigo
                   JOIN vend vd     ON vd.codigo = rec.codigo
-                  LEFT JOIN st     ON st.codigo = rec.codigo
+                  LEFT JOIN mapa   ON mapa.suc = rec.sucursal
+                  LEFT JOIN st     ON st.codigo = rec.codigo AND st.bodega = mapa.bodega
                   LEFT JOIN defecto d ON d.codigo = rec.codigo
                   LEFT JOIN nombres n ON n.rut = d.rut
                  WHERE rec.cant_recibida > 0
                    AND coalesce(st.stock, 0) > 0
                    AND coalesce(d.rut, '') <> ALL(%(prov_imp)s)
-                   {filtro_prov}
+                   {filtro_prov}{filtro_suc}
                 """,
                 params,
             )
             filas = cur.fetchall()
 
-    productos, por_prov = [], {}
+    productos, por_prov, por_suc = [], {}, {}
     total = 0.0
     for r in filas:
         recibida = float(r["cant_recibida"])
@@ -1068,6 +1105,8 @@ def get_pedidos_sin_vender_pg(dias=DIAS_RECEPCION_RECIENTE, umbral=0.0,
 
         productos.append({
             "codigo":       r["codigo"],
+            "sucursal":     r["sucursal_nombre"],
+            "codigo_sucursal": r["sucursal"],
             "descripcion":  r["descripcion"],
             "marca":        r["marca"],
             "familia":      r["familia"],
@@ -1086,6 +1125,9 @@ def get_pedidos_sin_vender_pg(dias=DIAS_RECEPCION_RECIENTE, umbral=0.0,
         agg = por_prov.setdefault(r["proveedor"], {"valor": 0.0, "skus": 0})
         agg["valor"] += valor
         agg["skus"] += 1
+        ags = por_suc.setdefault((r["sucursal"], r["sucursal_nombre"]), {"valor": 0.0, "skus": 0})
+        ags["valor"] += valor
+        ags["skus"] += 1
 
     # Mas nuevo primero: es donde la ventana de devolucion sigue abierta,
     # que es el sentido de esta pantalla. El valor se ordena con un clic.
@@ -1107,9 +1149,16 @@ def get_pedidos_sin_vender_pg(dias=DIAS_RECEPCION_RECIENTE, umbral=0.0,
         t["skus"] = len(dentro)
         t["valor"] = round(sum(p["valor"] for p in dentro), 0)
 
+    sucursales = sorted(
+        ({"codigo": k[0], "sucursal": k[1], "valor": round(v["valor"], 0), "skus": v["skus"]}
+         for k, v in por_suc.items()),
+        key=lambda x: -x["valor"],
+    )
+
     return {
         "productos":   productos,
         "proveedores": proveedores,
+        "sucursales":  sucursales,
         "tramos":      tramos,
         "dias":        dias,
         "tipo":        tipo,
@@ -1120,14 +1169,15 @@ def get_pedidos_sin_vender_pg(dias=DIAS_RECEPCION_RECIENTE, umbral=0.0,
 
 
 def exportar_pedidos_sin_vender_excel_pg(dias=DIAS_RECEPCION_RECIENTE, umbral=0.0,
-                                         tipo="PEDIDO", proveedor=None):
+                                         tipo="PEDIDO", proveedor=None, sucursal=None):
     """El Excel es el entregable: es lo que se le manda al proveedor."""
     import pandas as pd
     import io as _io
 
-    d = get_pedidos_sin_vender_pg(dias, umbral, tipo, proveedor)
+    d = get_pedidos_sin_vender_pg(dias, umbral, tipo, proveedor, sucursal)
     filas = [{
         "Proveedor":       p["proveedor"],
+        "Sucursal":        p["sucursal"],
         "Codigo":          p["codigo"],
         "Descripcion":     p["descripcion"],
         "Marca":           p["marca"],
@@ -1142,7 +1192,7 @@ def exportar_pedidos_sin_vender_excel_pg(dias=DIAS_RECEPCION_RECIENTE, umbral=0.
     } for p in d["productos"]]
 
     df = pd.DataFrame(filas, columns=[
-        "Proveedor", "Codigo", "Descripcion", "Marca", "Fecha recepcion",
+        "Proveedor", "Sucursal", "Codigo", "Descripcion", "Marca", "Fecha recepcion",
         "Dias desde recepcion", "Cantidad recibida", "Cantidad vendida",
         "% vendido", "Stock actual", "Cantidad devolvible", "Valor devolvible",
     ])

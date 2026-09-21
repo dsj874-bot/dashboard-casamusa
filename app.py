@@ -596,7 +596,8 @@ def _params_pedidos_sin_vender():
     umbral = (request.args.get("umbral", type=float) or 0.0) / 100.0
     tipo = request.args.get("tipo", "PEDIDO") or None
     proveedor = request.args.get("proveedor", "") or None
-    return dias, umbral, tipo, proveedor
+    sucursal = request.args.get("sucursal", "") or None
+    return dias, umbral, tipo, proveedor, sucursal
 
 
 @app.route("/api/adquisiciones/pedidos_sin_vender")
@@ -616,9 +617,9 @@ def api_adquisiciones_pedidos_sin_vender_exportar():
     if not USAR_POSTGRES_ADQUISICIONES:
         return jsonify({"error": "Este indicador necesita Postgres."}), 503
     try:
-        dias, umbral, tipo, proveedor = _params_pedidos_sin_vender()
+        dias, umbral, tipo, proveedor, sucursal = _params_pedidos_sin_vender()
         buffer = data_loader_adquisiciones_pg.exportar_pedidos_sin_vender_excel_pg(
-            dias, umbral, tipo, proveedor)
+            dias, umbral, tipo, proveedor, sucursal)
         nombre = f"Pedidos_Sin_Vender_{tipo or 'Todos'}_{dias}d.xlsx"
         return send_file(
             buffer,

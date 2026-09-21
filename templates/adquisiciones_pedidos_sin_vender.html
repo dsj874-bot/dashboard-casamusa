@@ -82,6 +82,9 @@
           <option value="50">50% del pedido</option>
         </select>
       </label>
+      <label>Sucursal
+        <select id="f-sucursal"><option value="">Todas</option></select>
+      </label>
       <label>Proveedor
         <select id="f-proveedor"><option value="">Todos</option></select>
       </label>
@@ -98,6 +101,7 @@
         <tr>
           <th data-key="codigo">Código</th>
           <th data-key="descripcion">Descripción</th>
+          <th data-key="sucursal">Sucursal</th>
           <th data-key="proveedor">Proveedor</th>
           <th class="text-right" data-key="recibido">Recibió</th>
           <th class="text-right" data-key="vendido">Vendió</th>
@@ -155,7 +159,7 @@ function pintar() {
 
   if (!filas.length) {
     document.getElementById("pv-body").innerHTML =
-      `<tr><td colspan="9" style="text-align:center;color:var(--muted2);padding:32px;">
+      `<tr><td colspan="10" style="text-align:center;color:var(--muted2);padding:32px;">
          Sin pedidos en esa condición. Buena señal.</td></tr>`;
     return;
   }
@@ -164,6 +168,7 @@ function pintar() {
     <tr>
       <td class="cod">${p.codigo}</td>
       <td class="desc">${p.descripcion || ""}</td>
+      <td>${p.sucursal}</td>
       <td style="color:var(--muted2)">${p.proveedor}</td>
       <td class="text-right">${fmtUnid(p.recibido)}</td>
       <td class="text-right" style="color:var(--muted2)">${fmtUnid(p.vendido)}</td>
@@ -182,10 +187,12 @@ function urlActual(base) {
   });
   const prov = document.getElementById("f-proveedor").value;
   if (prov) q.set("proveedor", prov);
+  const suc = document.getElementById("f-sucursal").value;
+  if (suc) q.set("sucursal", suc);
   return base + "?" + q.toString();
 }
 
-function cargar(repoblarProveedores) {
+function cargar(repoblarListas) {
   document.getElementById("pv-sub").textContent = "Cargando…";
   fetch(urlActual("/api/adquisiciones/pedidos_sin_vender"))
     .then(r => r.json())
@@ -216,13 +223,23 @@ function cargar(repoblarProveedores) {
           <span class="sub">${t.skus} producto${t.skus === 1 ? "" : "s"}</span>
         </div>`).join("");
 
-      if (repoblarProveedores) {
+      // Los dos selectores se repueblan juntos, y solo cuando cambia
+      // algo que no sea ellos mismos: si se repoblaran al filtrar,
+      // quedarian reducidos a la opcion elegida y no habria vuelta atras.
+      if (repoblarListas) {
         const sel = document.getElementById("f-proveedor");
         const actual = sel.value;
         sel.innerHTML = '<option value="">Todos</option>' +
           (d.proveedores || []).map(p =>
             `<option value="${p.proveedor}">${p.proveedor} — ${fmtCLP(p.valor)}</option>`).join("");
         sel.value = actual;
+
+        const ss = document.getElementById("f-sucursal");
+        const actualS = ss.value;
+        ss.innerHTML = '<option value="">Todas</option>' +
+          (d.sucursales || []).map(x =>
+            `<option value="${x.codigo}">${x.sucursal} — ${fmtCLP(x.valor)}</option>`).join("");
+        ss.value = actualS;
       }
 
       document.getElementById("pv-nota").innerHTML =
@@ -233,7 +250,10 @@ function cargar(repoblarProveedores) {
         "<b>Devolvible</b> es lo que queda de esta partida (recibido menos vendido), acotado a lo que de " +
         "verdad hay hoy en bodega: un producto que arrastra stock anterior no se devuelve con este pedido. " +
         "Si llegaron 100 y se vendieron 95, esas 5 unidades son cola de una venta que sí ocurrió y no " +
-        "aparecen — sube el filtro <b>Se vendió hasta</b> si quieres ver los pedidos que se movieron a medias.";
+        "aparecen — sube el filtro <b>Se vendió hasta</b> si quieres ver los pedidos que se movieron a medias. " +
+        "Cada fila es un pedido de <b>una sucursal</b>: lo devolvible se topa con el stock que queda en " +
+        "esa bodega, no con el de la empresa. <b>Vendió</b> en cambio cuenta la venta de toda la empresa: " +
+        "si el producto se vendió en otra sucursal el pedido no se perdió, se traspasa.";
 
       pintar();
     })
@@ -245,7 +265,8 @@ function cargar(repoblarProveedores) {
 
 ["f-tipo", "f-dias", "f-umbral"].forEach(id =>
   document.getElementById(id).addEventListener("change", () => cargar(true)));
-document.getElementById("f-proveedor").addEventListener("change", () => cargar(false));
+["f-proveedor", "f-sucursal"].forEach(id =>
+  document.getElementById(id).addEventListener("change", () => cargar(false)));
 
 cargar(true);
 </script>
