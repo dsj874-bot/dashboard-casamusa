@@ -20,6 +20,15 @@ MESES = {
 }
 
 
+# Marcas que quedan fuera del KPI de abastecimiento: son productos
+# ARMADOS por Casa Musa, no comprados. Aunque el maestro los marque como
+# nacionales, sus componentes se compran bajo otras marcas, asi que la
+# venta y la compra de una misma unidad nunca aparecen bajo la misma
+# marca y el ratio de esa fila no significa nada.
+# (TECH lo indico el usuario el 2026-09-21.)
+MARCAS_ARMADAS = ("TECH",)
+
+
 def var_pct(actual, anterior):
     if anterior == 0:
         return 0.0
@@ -329,6 +338,12 @@ def get_abastecimiento_marca_pg():
     una hasta su propio maximo infla la que va mas adelantada, asi que
     se recorta todo al MENOR de los tres maximos (CTE `corte`).
 
+    Aparte quedan fuera las MARCAS_ARMADAS (ver arriba): productos que
+    Casa Musa arma y no compra, cuyos componentes entran bajo otras
+    marcas. Al 2026-09-21 TECH nacional no tiene movimiento en la
+    ventana, asi que el ratio no se mueve (0,9008 con y sin), pero la
+    exclusion queda puesta para que no se cuele sola mas adelante.
+
     La marca y la procedencia salen siempre del maestro `productos` --
     las mismas para las tres fuentes -- y no de las columnas de cada
     tabla, que en ventas existen pero en recepciones no.
@@ -354,6 +369,7 @@ def get_abastecimiento_marca_pg():
                      CROSS JOIN corte
                      WHERE v.ano = 2026 AND v.fecha_conta <= corte.f
                        AND p.procedencia = 'Nacional'
+                       AND coalesce(p.marca, '') <> ALL(%(armadas)s)
                     UNION ALL
                     SELECT coalesce(nullif(trim(p.marca), ''), 'Sin marca'),
                            0::numeric, c.precio_total, 0::numeric
@@ -362,6 +378,7 @@ def get_abastecimiento_marca_pg():
                      CROSS JOIN corte
                      WHERE c.ano = 2026 AND c.fecha_creacion <= corte.f
                        AND p.procedencia = 'Nacional'
+                       AND coalesce(p.marca, '') <> ALL(%(armadas)s)
                     UNION ALL
                     SELECT coalesce(nullif(trim(p.marca), ''), 'Sin marca'),
                            0::numeric, 0::numeric, r.total_clp
@@ -370,6 +387,7 @@ def get_abastecimiento_marca_pg():
                      CROSS JOIN corte
                      WHERE r.ano = 2026 AND r.fecha_recepcion <= corte.f
                        AND p.procedencia = 'Nacional'
+                       AND coalesce(p.marca, '') <> ALL(%(armadas)s)
                 )
                 SELECT marca,
                        coalesce(sum(costo_venta), 0) AS costo_venta,
@@ -378,7 +396,8 @@ def get_abastecimiento_marca_pg():
                        (SELECT f FROM corte)         AS fecha_corte
                   FROM movs
                  GROUP BY marca
-                """
+                """,
+                {"armadas": list(MARCAS_ARMADAS)},
             )
             filas_sql = cur.fetchall()
 
