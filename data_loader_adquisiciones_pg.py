@@ -28,6 +28,22 @@ MESES = {
 # (TECH lo indico el usuario el 2026-09-21.)
 MARCAS_ARMADAS = ("TECH",)
 
+# Proveedores cuyos productos son IMPORTADOS aunque el maestro los tenga
+# marcados como procedencia 'Nacional'. Sus compras no pasan por las
+# tablas compras/recepciones (igual que el resto de las importaciones),
+# asi que apareceran vendiendo sin comprar nunca y arrastran el
+# indicador hacia abajo sin que sea real.
+#
+# ASCABLE (PESA5842402-9): 35 SKUs de cable, $209 millones vendidos en
+# 2026, 44.354 unidades en stock y CERO lineas de compra en toda la
+# historia. Lo confirmo el usuario el 2026-09-21. Se excluye por
+# proveedor y no por marca porque sus productos son marca CACG, que si
+# tiene compras nacionales legitimas por otro lado.
+#
+# OJO: esto es un parche sobre un dato malo del maestro de productos.
+# Si algun dia se corrige la procedencia de esos SKUs, esta lista sobra.
+PROVEEDORES_IMPORTADOS = ("PESA5842402-9",)
+
 
 def var_pct(actual, anterior):
     if anterior == 0:
@@ -303,144 +319,222 @@ def get_por_proveedor_combinado_pg(tipo_compra=None):
     }
 
 
-def get_abastecimiento_marca_pg():
-    """Costo de venta vs Comprado vs Recibido por marca, SOLO PRODUCTOS
-    NACIONALES -- para medir sobreabastecimiento.
+# Piezas comunes del KPI de abastecimiento, para que la serie mensual y
+# el detalle por proveedor filtren EXACTAMENTE igual (si se separan, el
+# grafico y la tabla empiezan a contar universos distintos).
+#
+# `defecto` = proveedor responsable de cada producto. La atribucion va
+# por ahi y no por el proveedor de cada transaccion, y la diferencia no
+# es menor: el 17% del monto comprado se le compra a alguien distinto
+# del proveedor por defecto del producto (medido 2026-09-21). Con
+# atribucion transaccional, la venta y la compra de la misma unidad
+# caerian en filas distintas -- uno apareceria sobreabastecido y el otro
+# consumiendo stock, los dos falsos. Atribuyendo todo al responsable del
+# producto, las tres cifras de una misma unidad siempre caen juntas.
+_CTE_ABAST = """
+    corte AS (
+        SELECT least(
+            (SELECT max(fecha_conta)     FROM ventas      WHERE ano = 2026),
+            (SELECT max(fecha_creacion)  FROM compras     WHERE ano = 2026),
+            (SELECT max(fecha_recepcion) FROM recepciones WHERE ano = 2026)
+        ) AS f
+    ),
+    defecto AS (
+        SELECT codigo, rut FROM (
+            SELECT codigo_cm AS codigo, proveedor_por_defecto AS rut,
+                   row_number() OVER (PARTITION BY codigo_cm
+                                      ORDER BY count(*) DESC, proveedor_por_defecto) AS rn
+              FROM ventas
+             WHERE proveedor_por_defecto IS NOT NULL AND trim(proveedor_por_defecto) <> ''
+             GROUP BY codigo_cm, proveedor_por_defecto
+        ) t WHERE rn = 1
+    ),
+    nombres AS (
+        SELECT rut, nombre FROM (
+            SELECT rut, nombre,
+                   row_number() OVER (PARTITION BY rut ORDER BY n DESC) AS rn
+              FROM (
+                SELECT rut, nombre_proveedor AS nombre, count(*) AS n
+                  FROM compras WHERE nombre_proveedor IS NOT NULL GROUP BY 1, 2
+                UNION ALL
+                SELECT rut_proveedor, nombre_proveedor, count(*)
+                  FROM recepciones WHERE nombre_proveedor IS NOT NULL GROUP BY 1, 2
+              ) x
+        ) y WHERE rn = 1
+    ),
+    movs AS (
+        SELECT d.rut, v.fecha_conta AS fecha,
+               v.costo_total AS costo_venta, 0::numeric AS comprado, 0::numeric AS recibido
+          FROM ventas v
+          JOIN productos p ON p.codigo = v.codigo_cm
+          LEFT JOIN defecto d ON d.codigo = v.codigo_cm
+         CROSS JOIN corte
+         WHERE v.ano = 2026 AND v.fecha_conta <= corte.f
+           AND p.procedencia = 'Nacional'
+           AND coalesce(p.marca, '') <> ALL(%(armadas)s)
+           AND coalesce(d.rut, '') <> ALL(%(prov_imp)s)
+        UNION ALL
+        SELECT d.rut, c.fecha_creacion, 0::numeric, c.precio_total, 0::numeric
+          FROM compras c
+          JOIN productos p ON p.codigo = c.codigo
+          LEFT JOIN defecto d ON d.codigo = c.codigo
+         CROSS JOIN corte
+         WHERE c.ano = 2026 AND c.fecha_creacion <= corte.f
+           AND p.procedencia = 'Nacional'
+           AND coalesce(p.marca, '') <> ALL(%(armadas)s)
+           AND coalesce(d.rut, '') <> ALL(%(prov_imp)s)
+        UNION ALL
+        SELECT d.rut, r.fecha_recepcion, 0::numeric, 0::numeric, r.total_clp
+          FROM recepciones r
+          JOIN productos p ON p.codigo = r.codigo
+          LEFT JOIN defecto d ON d.codigo = r.codigo
+         CROSS JOIN corte
+         WHERE r.ano = 2026 AND r.fecha_recepcion <= corte.f
+           AND p.procedencia = 'Nacional'
+           AND coalesce(p.marca, '') <> ALL(%(armadas)s)
+           AND coalesce(d.rut, '') <> ALL(%(prov_imp)s)
+    )
+"""
+
+
+def get_abastecimiento_proveedor_pg():
+    """Costo de venta vs Comprado vs Recibido por proveedor, solo
+    productos nacionales -- para medir sobreabastecimiento. Incluye la
+    serie mensual del ratio, que es donde se ve si el problema se esta
+    agravando o corrigiendo.
 
     La idea (pedido del usuario, 2026-09-21): lo que sale de bodega
-    valorizado a costo es el consumo real; lo que se recibe es lo que
-    entra. Si entra mas de lo que sale, el inventario crece. "Comprado"
-    va al lado porque adelanta el problema: es lo que todavia no llega
-    pero ya esta comprometido.
+    valorizado a costo es el consumo real; lo que entra es lo que se
+    recibe. Si entra mas de lo que sale, el inventario crece.
+    "Comprado" va al lado porque adelanta el problema: es lo que
+    todavia no llega pero ya esta comprometido.
 
-    POR QUE SOLO NACIONAL (y no es una preferencia, es lo unico
-    comparable): las tablas compras y recepciones son 100% nacionales
-    -- 24.995 y 25.031 filas, ni una importada, verificado 2026-09-21.
-    Las importaciones entran por otra via que no queda registrada aca.
-    Si se mezclaran, las marcas importadas apareceran vendiendo sin
-    comprar nunca (TECH y CROM son las grandes: 88.000 y 512.000
-    unidades de stock vivo) y hundirian el indicador a 0,757 cuando el
-    real es 0,901 -- pareceria que la empresa liquida inventario.
+    Se mira por proveedor y no por marca porque la marca es como esta
+    ordenado el catalogo, no como se decide: uno no deja de comprar una
+    marca, deja de pedirle a un proveedor.
 
-    El filtro va a nivel de PRODUCTO y no de marca, porque hay 4 marcas
-    con las dos procedencias (TECH: 41 nacionales de 869, 3M, SERV,
-    IMP). Asi de TECH se miran sus 41 productos nacionales y no se
-    descarta la marca entera ni se la cuenta completa.
+    Cuatro cosas que hubo que resolver para que el numero signifique
+    algo, todas medidas el 2026-09-21:
 
-    Las tres cifras son comparables entre si: el CUP con que se valoriza
-    la venta ya trae flete y nacionalizacion, y contra el precio de
-    factura de la OC la diferencia medida es de 0,4%
-    (sum(cup*cantidad)/sum(precio_total) = 1,0043 en compras 2026). O
-    sea el punto de equilibrio es 1,0, sin correcciones.
+    1. BASE DE COSTO. El CUP con que se valoriza la venta ya trae flete
+       y nacionalizacion; contra el precio de factura de la OC la
+       diferencia es de 0,4% (sum(cup*cantidad)/sum(precio_total) =
+       1,0043). Son comparables y el equilibrio es 1,0, sin correcciones.
 
-    OJO con la fecha de corte: ventas, compras y recepciones las cargan
-    procesos distintos y no siempre llegan al mismo dia. Comparar cada
-    una hasta su propio maximo infla la que va mas adelantada, asi que
-    se recorta todo al MENOR de los tres maximos (CTE `corte`).
+    2. SOLO NACIONAL. compras y recepciones son 100% nacionales (24.995
+       y 25.031 filas, ni una importada): las importaciones entran por
+       otra via. Mezclarlas hunde el indicador a 0,757 contra 0,901.
 
-    Aparte quedan fuera las MARCAS_ARMADAS (ver arriba): productos que
-    Casa Musa arma y no compra, cuyos componentes entran bajo otras
-    marcas. Al 2026-09-21 TECH nacional no tiene movimiento en la
-    ventana, asi que el ratio no se mueve (0,9008 con y sin), pero la
-    exclusion queda puesta para que no se cuele sola mas adelante.
+    3. FECHA DE CORTE. Las tres fuentes las cargan procesos distintos y
+       no siempre llegan al mismo dia; se recorta todo al menor de los
+       tres maximos.
 
-    La marca y la procedencia salen siempre del maestro `productos` --
-    las mismas para las tres fuentes -- y no de las columnas de cada
-    tabla, que en ventas existen pero en recepciones no.
+    4. PROVEEDORES QUE VENDEN SIN COMPRAR. El caso grande era ASCABLE
+       ($209 millones, 8,4% del costo de venta, cero compras en toda la
+       historia): resulto ser producto importado mal marcado como
+       nacional en el maestro, y se excluye por PROVEEDORES_IMPORTADOS.
+       Los que quedan sin ninguna compra registrada son marginales
+       (~$0,7 millones) pero igual van aparte y la pantalla los nombra,
+       para que el costo de venta que se muestra siempre sea el mismo
+       universo contra el que se compara.
     """
+    params = {"armadas": list(MARCAS_ARMADAS),
+              "prov_imp": list(PROVEEDORES_IMPORTADOS)}
+
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """
-                WITH corte AS (
-                    SELECT least(
-                        (SELECT max(fecha_conta)     FROM ventas      WHERE ano = 2026),
-                        (SELECT max(fecha_creacion)  FROM compras     WHERE ano = 2026),
-                        (SELECT max(fecha_recepcion) FROM recepciones WHERE ano = 2026)
-                    ) AS f
-                ),
-                movs AS (
-                    SELECT coalesce(nullif(trim(p.marca), ''), 'Sin marca') AS marca,
-                           v.costo_total AS costo_venta,
-                           0::numeric    AS comprado,
-                           0::numeric    AS recibido
-                      FROM ventas v
-                      JOIN productos p ON p.codigo = v.codigo_cm
-                     CROSS JOIN corte
-                     WHERE v.ano = 2026 AND v.fecha_conta <= corte.f
-                       AND p.procedencia = 'Nacional'
-                       AND coalesce(p.marca, '') <> ALL(%(armadas)s)
-                    UNION ALL
-                    SELECT coalesce(nullif(trim(p.marca), ''), 'Sin marca'),
-                           0::numeric, c.precio_total, 0::numeric
-                      FROM compras c
-                      JOIN productos p ON p.codigo = c.codigo
-                     CROSS JOIN corte
-                     WHERE c.ano = 2026 AND c.fecha_creacion <= corte.f
-                       AND p.procedencia = 'Nacional'
-                       AND coalesce(p.marca, '') <> ALL(%(armadas)s)
-                    UNION ALL
-                    SELECT coalesce(nullif(trim(p.marca), ''), 'Sin marca'),
-                           0::numeric, 0::numeric, r.total_clp
-                      FROM recepciones r
-                      JOIN productos p ON p.codigo = r.codigo
-                     CROSS JOIN corte
-                     WHERE r.ano = 2026 AND r.fecha_recepcion <= corte.f
-                       AND p.procedencia = 'Nacional'
-                       AND coalesce(p.marca, '') <> ALL(%(armadas)s)
-                )
-                SELECT marca,
+                f"""WITH {_CTE_ABAST}
+                SELECT coalesce(m.rut, '(sin proveedor asignado)') AS rut,
+                       coalesce(n.nombre, m.rut, 'Sin proveedor asignado') AS nombre,
+                       coalesce(sum(m.costo_venta), 0) AS costo_venta,
+                       coalesce(sum(m.comprado), 0)    AS comprado,
+                       coalesce(sum(m.recibido), 0)    AS recibido,
+                       (SELECT f FROM corte)           AS fecha_corte
+                  FROM movs m
+                  LEFT JOIN nombres n ON n.rut = m.rut
+                 GROUP BY 1, 2
+                """,
+                params,
+            )
+            filas = cur.fetchall()
+
+            cur.execute(
+                f"""WITH {_CTE_ABAST}
+                SELECT extract(month from fecha)::int AS mes,
                        coalesce(sum(costo_venta), 0) AS costo_venta,
                        coalesce(sum(comprado), 0)    AS comprado,
-                       coalesce(sum(recibido), 0)    AS recibido,
-                       (SELECT f FROM corte)         AS fecha_corte
+                       coalesce(sum(recibido), 0)    AS recibido
                   FROM movs
-                 GROUP BY marca
+                 WHERE rut IS NOT NULL
+                   AND rut IN (SELECT rut FROM movs
+                                GROUP BY rut HAVING sum(comprado) + sum(recibido) > 0)
+                 GROUP BY 1 ORDER BY 1
                 """,
-                {"armadas": list(MARCAS_ARMADAS)},
+                params,
             )
-            filas_sql = cur.fetchall()
+            filas_mes = cur.fetchall()
 
-    def _arma(marca, cv, co, re):
+    def _arma(nombre, rut, cv, co, re):
         return {
-            "marca":           marca,
+            "proveedor":       nombre,
+            "rut":             rut,
             "costo_venta":     round(cv, 0),
             "comprado":        round(co, 0),
             "recibido":        round(re, 0),
             # None (no 0) cuando no hubo venta: el ratio no existe y el
-            # frontend debe mostrar "—", no inventar un 0.
+            # frontend debe mostrar "—", no inventar un numero.
             "ratio_recibido":  round(re / cv, 3) if cv > 0 else None,
-            "ratio_comprado":  round(co / cv, 3) if cv > 0 else None,
             "brecha_recibido": round(re - cv, 0),
-            "brecha_comprado": round(co - cv, 0),
         }
 
-    marcas = []
+    proveedores, sin_compras = [], []
     tot_cv = tot_co = tot_re = 0.0
+    fuera_cv = 0.0
     fecha_corte = None
-    for r in filas_sql:
-        fecha_corte = fecha_corte or r["fecha_corte"]
-        fila = _arma(r["marca"], float(r["costo_venta"]),
-                     float(r["comprado"]), float(r["recibido"]))
-        marcas.append(fila)
-        # El total se acumula sobre los valores YA redondeados de cada
-        # fila para que la columna de la tabla sume exactamente el total
-        # que se muestra abajo (si no quedaba $1 de diferencia, y una
-        # tabla que no cuadra hace dudar de todo el resto).
-        tot_cv += fila["costo_venta"]
-        tot_co += fila["comprado"]
-        tot_re += fila["recibido"]
 
-    # Mayor sobreabastecimiento primero: se ordena por la brecha en pesos
-    # y no por el ratio, porque un ratio alto sobre una marca chica no
-    # mueve la aguja y taparia a las que si importan.
-    marcas.sort(key=lambda m: -m["brecha_recibido"])
+    for r in filas:
+        fecha_corte = fecha_corte or r["fecha_corte"]
+        cv, co, re = float(r["costo_venta"]), float(r["comprado"]), float(r["recibido"])
+        fila = _arma(r["nombre"], r["rut"], cv, co, re)
+        if co > 0 or re > 0:
+            proveedores.append(fila)
+            # Se acumula sobre los valores YA redondeados para que la
+            # columna de la tabla sume exactamente el total de abajo.
+            tot_cv += fila["costo_venta"]
+            tot_co += fila["comprado"]
+            tot_re += fila["recibido"]
+        else:
+            sin_compras.append(fila)
+            fuera_cv += fila["costo_venta"]
+
+    # Mayor sobreabastecimiento primero: por brecha en pesos y no por
+    # ratio, porque un ratio alto sobre un proveedor chico no mueve la
+    # aguja y taparia a los que si importan.
+    proveedores.sort(key=lambda p: -p["brecha_recibido"])
+    sin_compras.sort(key=lambda p: -p["costo_venta"])
+
+    meses = []
+    for r in filas_mes:
+        cv, co, re = float(r["costo_venta"]), float(r["comprado"]), float(r["recibido"])
+        meses.append({
+            "mes":         r["mes"],
+            "mes_nombre":  MESES.get(r["mes"], str(r["mes"])),
+            "costo_venta": round(cv, 0),
+            "comprado":    round(co, 0),
+            "recibido":    round(re, 0),
+            "ratio":       round(re / cv, 3) if cv > 0 else None,
+        })
 
     return {
-        "total":       _arma("Total", tot_cv, tot_co, tot_re),
-        "marcas":      marcas,
-        "ano":         2026,
-        "fecha_corte": fecha_corte.strftime("%d-%m-%Y") if fecha_corte else None,
+        "total":             _arma("Total", None, tot_cv, tot_co, tot_re),
+        "proveedores":       proveedores,
+        "sin_compras":       sin_compras,
+        "fuera_costo_venta": round(fuera_cv, 0),
+        "fuera_pct":         round(fuera_cv / (tot_cv + fuera_cv) * 100, 1) if (tot_cv + fuera_cv) else 0.0,
+        "meses":             meses,
+        "ano":               2026,
+        "fecha_corte":       fecha_corte.strftime("%d-%m-%Y") if fecha_corte else None,
     }
 
 

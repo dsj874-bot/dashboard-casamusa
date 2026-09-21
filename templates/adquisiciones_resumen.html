@@ -35,7 +35,6 @@
   .ab-alto  { color:#f87171; font-weight:700; }   /* sobreabastecido   */
   .ab-ok    { color:var(--muted2); font-weight:600; } /* en equilibrio  */
   .ab-bajo  { color:#60a5fa; font-weight:700; }   /* consumiendo stock */
-  #abast-body td.marca { font-weight:600; color:var(--text); }
   #abast-body tr.fila-total td { border-top:2px solid var(--border);
                                  font-weight:700; background:var(--surface2); }
 </style>
@@ -82,10 +81,23 @@
 </div>
 
 <!-- Abastecimiento vs Venta: mide sobreabastecimiento -->
+<div class="chart-card" style="margin-top:20px;">
+  <div class="chart-card-title">Abastecimiento vs Venta — evolución mensual</div>
+  <div class="chart-card-sub">Barras: costo de venta y recibido. Línea: cuánto entra por cada peso que sale
+    (1,00 es el equilibrio). Solo productos nacionales.</div>
+  <!-- Alto fijo + maintainAspectRatio:false. Con la razon de aspecto
+       por defecto, la leyenda de 4 series se parte en dos filas, se
+       come el canvas y el area del grafico quedaba en 1 pixel de
+       alto (medido en pantalla angosta). -->
+  <div style="height:300px;">
+    <canvas id="chartAbast"></canvas>
+  </div>
+</div>
+
 <div class="table-card" style="margin-top:20px;">
   <div class="table-header">
     <div>
-      <div class="table-header-title">Abastecimiento vs Venta por Marca — Nacional</div>
+      <div class="table-header-title">Abastecimiento vs Venta por Proveedor</div>
       <div class="table-header-sub" id="abast-sub">Cargando…</div>
     </div>
   </div>
@@ -99,7 +111,7 @@
     <table>
       <thead>
         <tr>
-          <th>Marca</th>
+          <th>Proveedor</th>
           <th class="text-right">Costo de Venta</th>
           <th class="text-right">Comprado</th>
           <th class="text-right">Recibido</th>
@@ -276,35 +288,112 @@ fetch("/api/adquisiciones/abastecimiento")
         <span class="val ${abClase(t.ratio_recibido)}">${fmtBrecha(t.brecha_recibido)}</span>
       </div>`;
 
-    // Solo nacional, y no por gusto: compras y recepciones son 100%
-    // nacionales (verificado: ni una fila importada). Las importaciones
-    // entran por otra via que estas tablas no registran, asi que no
-    // tienen contra que compararse. Se dice en pantalla para que nadie
-    // se pregunte por que el costo de venta no calza con Comercial.
-    document.getElementById("abast-nota").innerHTML =
-      "<b>1,00 es el equilibrio</b>: sobre eso entra más de lo que sale y el inventario " +
-      "crece; bajo eso se está consumiendo stock. Solo se consideran productos " +
-      "<b>nacionales</b>: las compras y recepciones registradas son todas nacionales, " +
-      "y las importaciones entran por una vía que estas tablas no registran.";
+    // Los proveedores sin compras registradas quedan fuera del calculo,
+    // pero se dicen: si no, el costo de venta no calza con Comercial y
+    // nadie sabe por que.
+    const sc = d.sin_compras || [];
+    let nota = "<b>1,00 es el equilibrio</b>: sobre eso entra más de lo que sale y el " +
+               "inventario crece; bajo eso se está consumiendo stock. Cada producto se " +
+               "atribuye a su proveedor responsable, para que su venta y su compra caigan " +
+               "en la misma fila.";
+    if (sc.length) {
+      nota += " Quedan fuera <b>" + sc.length + " proveedores</b> que venden pero no tienen " +
+              "ninguna compra registrada (" + sc.slice(0, 3).map(p => p.proveedor).join(", ") +
+              (sc.length > 3 ? " y otros" : "") + "): son " + fmtCLP(d.fuera_costo_venta) +
+              " de costo de venta (" + d.fuera_pct + "%) y se abastecen por una vía que " +
+              "estas tablas no registran.";
+    }
+    document.getElementById("abast-nota").innerHTML = nota;
 
     document.getElementById("abast-body").innerHTML =
-      (d.marcas || []).map(m => `
+      (d.proveedores || []).map(p => `
         <tr>
-          <td class="marca">${m.marca}</td>
-          <td class="text-right">${fmtCLP(m.costo_venta)}</td>
-          <td class="text-right" style="color:var(--muted2)">${fmtCLP(m.comprado)}</td>
-          <td class="text-right">${fmtCLP(m.recibido)}</td>
-          <td class="text-right ${abClase(m.ratio_recibido)}">${fmtRatio(m.ratio_recibido)}</td>
-          <td class="text-right ${abClase(m.ratio_recibido)}">${fmtBrecha(m.brecha_recibido)}</td>
+          <td style="font-weight:600;color:var(--text)">${p.proveedor}</td>
+          <td class="text-right">${fmtCLP(p.costo_venta)}</td>
+          <td class="text-right" style="color:var(--muted2)">${fmtCLP(p.comprado)}</td>
+          <td class="text-right">${fmtCLP(p.recibido)}</td>
+          <td class="text-right ${abClase(p.ratio_recibido)}">${fmtRatio(p.ratio_recibido)}</td>
+          <td class="text-right ${abClase(p.ratio_recibido)}">${fmtBrecha(p.brecha_recibido)}</td>
         </tr>`).join("") + `
         <tr class="fila-total">
-          <td class="marca">Total</td>
+          <td>Total</td>
           <td class="text-right">${fmtCLP(t.costo_venta)}</td>
           <td class="text-right">${fmtCLP(t.comprado)}</td>
           <td class="text-right">${fmtCLP(t.recibido)}</td>
           <td class="text-right ${abClase(t.ratio_recibido)}">${fmtRatio(t.ratio_recibido)}</td>
           <td class="text-right ${abClase(t.ratio_recibido)}">${fmtBrecha(t.brecha_recibido)}</td>
         </tr>`;
+
+    // Grafico: las barras dan la magnitud (de que tamano es el mes) y la
+    // linea el ratio, que es la senal. Van en ejes distintos porque son
+    // unidades distintas -- millones de pesos contra una razon.
+    const meses = d.meses || [];
+
+    // Eje del ratio acotado a los datos y no desde cero: entre 0,74 y
+    // 1,21 sobre una escala 0-1,5 la linea queda pegada a la referencia
+    // y no se distingue la tendencia, que es justamente lo que se viene
+    // a mirar. Se deja 10% de aire y se fuerza que el 1,00 quede dentro.
+    const rs = meses.map(m => m.ratio).filter(r => r != null);
+    const lo = Math.min(1, ...rs), hi = Math.max(1, ...rs);
+    const aire = Math.max((hi - lo) * 0.15, 0.05);
+    const ejeRatio = { min: Math.max(0, lo - aire), max: hi + aire };
+
+    new Chart(document.getElementById("chartAbast").getContext("2d"), {
+      data: {
+        labels: meses.map(m => m.mes_nombre),
+        datasets: [
+          {
+            type: "bar", label: "Costo de Venta", yAxisID: "y",
+            data: meses.map(m => m.costo_venta / 1e6),
+            backgroundColor: cssVar("--slate"), borderRadius: 4, order: 3,
+          },
+          {
+            type: "bar", label: "Recibido", yAxisID: "y",
+            data: meses.map(m => m.recibido / 1e6),
+            backgroundColor: cssVar("--accent"), borderRadius: 4, order: 2,
+          },
+          {
+            type: "line", label: "Recibido / Costo de Venta", yAxisID: "y1",
+            data: meses.map(m => m.ratio),
+            borderColor: cssVar("--blue"), backgroundColor: cssVar("--blue"),
+            borderWidth: 2, pointRadius: 4, tension: 0.2, order: 0,
+          },
+          {
+            // Referencia en 1,0 -- sin esto hay que adivinar donde esta
+            // el equilibrio al mirar la linea.
+            type: "line", label: "Equilibrio (1,00)", yAxisID: "y1",
+            data: meses.map(() => 1),
+            borderColor: cssVar("--muted2"), borderWidth: 1, borderDash: [6, 4],
+            pointRadius: 0, order: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { position: "top" },
+          tooltip: {
+            callbacks: {
+              label: c => c.dataset.yAxisID === "y1"
+                ? c.dataset.label + ": " + (c.parsed.y == null ? "—" : c.parsed.y.toFixed(2))
+                : c.dataset.label + ": $" + Math.round(c.parsed.y) + "M",
+            },
+          },
+        },
+        scales: {
+          y:  { beginAtZero: true, position: "left",
+                grid: { color: cssVar("--border") },
+                ticks: { callback: v => "$" + v + "M" } },
+          y1: { position: "right", min: ejeRatio.min, max: ejeRatio.max,
+                grid: { display: false },
+                ticks: { callback: v => v.toFixed(2) } },
+          x:  { grid: { display: false } },
+        },
+      },
+    });
+
   })
   .catch(err => {
     console.error("Error abastecimiento:", err);
