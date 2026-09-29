@@ -46,6 +46,12 @@
   flex-direction: column;
   overflow: hidden;
 }
+/* Abierto hacia arriba cuando abajo no cabe (ver acomodar() en
+   multiselect.js). */
+.msel-panel.msel-arriba {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
 
 .msel-search {
   margin: 10px;

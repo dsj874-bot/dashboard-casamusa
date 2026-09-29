@@ -142,12 +142,60 @@ function initMultiSelect(selectEl, opts) {
     }
   }
 
+  // El panel cuelga del boton hacia abajo. En los filtros del fondo del
+  // panel lateral eso dejaba Cancelar/Aplicar fuera de la ventana, sin
+  // forma de llegar a ellos: medido en Vta Acumulada, el boton de
+  // Cliente terminaba en y=610 de 768 y Aplicar caia en y=951.
+  // Se elige el lado con mas aire y se recorta la lista a lo que quepa,
+  // asi los botones quedan siempre a la vista.
+  function acomodar() {
+    const MARGEN = 12;                       // aire contra el borde
+    const MINIMO = 120;                      // no dejar la lista inservible
+
+    panel.classList.remove('msel-arriba');
+    listEl.style.maxHeight = '';
+    panel.style.transform = '';
+
+    const r = btn.getBoundingClientRect();
+    const abajo  = window.innerHeight - r.bottom - MARGEN;
+    const arriba = r.top - MARGEN;
+    // Alto del panel sin la lista: buscador + botones. Se mide con el
+    // panel ya visible, por eso acomodar() corre despues de mostrarlo.
+    const fijo = panel.offsetHeight - listEl.offsetHeight;
+
+    const haciaArriba = panel.offsetHeight > abajo && arriba > abajo;
+    if (haciaArriba) panel.classList.add('msel-arriba');
+
+    // Solo se ACHICA. El alto normal lo sigue poniendo el CSS
+    // (max-height: 240px): si se dejara crecer hasta el espacio libre,
+    // el desplegable se volveria mas alto que antes en todas las
+    // pantallas, y eso no es lo que hay que arreglar aca.
+    const disponible = (haciaArriba ? arriba : abajo) - fijo;
+    if (disponible < listEl.offsetHeight) {
+      listEl.style.maxHeight = Math.max(disponible, MINIMO) + 'px';
+    }
+
+    // Ultimo recurso: con la ventana muy baja no cabe ni con la lista
+    // en el minimo (probado a 420 px de alto: sobresalia 21 px y los
+    // botones volvian a quedar fuera). Se despega el panel del boton
+    // lo justo para que entre entero -- feo, pero preferible a dejar
+    // Aplicar fuera de la pantalla.
+    const rp = panel.getBoundingClientRect();
+    let corrimiento = 0;
+    if (rp.bottom > window.innerHeight - MARGEN) {
+      corrimiento = (window.innerHeight - MARGEN) - rp.bottom;
+    }
+    if (rp.top + corrimiento < MARGEN) corrimiento = MARGEN - rp.top;
+    if (corrimiento) panel.style.transform = 'translateY(' + Math.round(corrimiento) + 'px)';
+  }
+
   function abrir() {
     const actual = seleccionActual();
     pendiente = actual.size === 0 ? new Set(opciones().map(o => o.value)) : actual;
     search.value = '';
     renderLista('');
     panel.hidden = false;
+    acomodar();
     btn.classList.add('msel-abierto');
     search.focus();
   }
@@ -171,6 +219,7 @@ function initMultiSelect(selectEl, opts) {
     selectEl.dispatchEvent(new Event('change', { bubbles: true }));
   });
   document.addEventListener('click', e => { if (!wrap.contains(e.target)) cerrar(); });
+  window.addEventListener('resize', () => { if (!panel.hidden) acomodar(); });
 
   selectEl._msel = { refrescar: actualizarBoton };
   actualizarBoton();
