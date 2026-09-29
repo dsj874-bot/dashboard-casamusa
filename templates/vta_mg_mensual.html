@@ -194,6 +194,12 @@
       <select class="fp-select" id="fp-subfamilia"><option value="">Todas</option></select>
     </div>
     <div>
+      <div class="fp-label">Nombre Cliente</div>
+      <input type="text" class="fp-select" id="fp-cliente"
+             list="dl-cliente" placeholder="Todos">
+      <datalist id="dl-cliente"></datalist>
+    </div>
+    <div>
       <div class="fp-label">Tipo Venta</div>
       <select class="fp-select" id="fp-tipo_venta"><option value="">Todos</option></select>
     </div>
@@ -323,6 +329,15 @@ async function cargarFiltros() {
     initMultiSelect(el);
   }
 
+  // Cliente va como texto libre con autocompletar y no como
+  // multi-select: son ~7.400 nombres distintos y una lista de ese largo
+  // no se navega. Mismo criterio que vta_mg.html.
+  const dlCliente = document.getElementById('dl-cliente');
+  if (dlCliente) {
+    dlCliente.innerHTML = ((d.filtros || {}).cliente || [])
+      .map(v => `<option value="${v.replace(/"/g,'&quot;')}">`).join('');
+  }
+
   aplicar();
 }
 
@@ -341,6 +356,8 @@ function getFiltros() {
     tipo_venta:  m('fp-tipo_venta'),
     procedencia: m('fp-procedencia'),
     cond_pago:   m('fp-cond_pago'),
+    // Texto libre con autocompletar, no multi-select
+    cliente:     document.getElementById('fp-cliente')?.value || '',
   };
 }
 
