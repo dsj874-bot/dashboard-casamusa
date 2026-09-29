@@ -110,6 +110,17 @@
   padding-bottom: 10px;
 }
 
+/* Aviso de lista recortada (ver MSEL_TOPE_FILAS en multiselect.js).
+   Lleva ".msel-list" delante por la misma razon que .msel-opt de
+   arriba: hay pantallas con reglas propias mas especificas. */
+.msel-list .msel-mas {
+  padding: 8px 10px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--muted);
+  text-align: center;
+}
+
 .msel-actions {
   display: flex;
   gap: 8px;

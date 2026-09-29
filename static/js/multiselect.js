@@ -10,6 +10,13 @@
 //   const seleccion = mselValores(document.getElementById('f-sucursal')); // string[]
 //   mselLimpiar(document.getElementById('f-sucursal')); // vuelve a "Todas"
 
+// Cuantas filas se dibujan de una vez. Con listas cortas (sucursal,
+// marca: decenas) no cambia nada; con la de clientes (7.445) si:
+// dibujar una fila por opcion tardaba 425 ms cada vez que se abria el
+// panel. El resto se encuentra escribiendo en el buscador, que es como
+// se usa una lista de ese tamano de todas formas.
+const MSEL_TOPE_FILAS = 300;
+
 function initMultiSelect(selectEl, opts) {
   if (!selectEl || selectEl._msel) return selectEl && selectEl._msel;
   opts = opts || {};
@@ -99,9 +106,18 @@ function initMultiSelect(selectEl, opts) {
     filaTodo.appendChild(document.createTextNode('(Todo)'));
     listEl.appendChild(filaTodo);
 
-    opts
-      .filter(o => o.textContent.toLowerCase().includes(filtro))
-      .forEach(o => {
+    const coinciden = opts.filter(o => o.textContent.toLowerCase().includes(filtro));
+
+    // Las tildadas van primero: si no, con el tope de arriba una
+    // seleccion que cae mas abajo del corte no se ve al reabrir el
+    // panel. El sort es estable, asi que dentro de cada grupo se
+    // conserva el orden alfabetico con que vino la lista.
+    const visibles = coinciden.length > MSEL_TOPE_FILAS
+      ? [...coinciden].sort((a, b) =>
+          (pendiente.has(b.value) ? 1 : 0) - (pendiente.has(a.value) ? 1 : 0))
+      : coinciden;
+
+    visibles.slice(0, MSEL_TOPE_FILAS).forEach(o => {
         const fila = document.createElement('label');
         fila.className = 'msel-opt';
         const chk = document.createElement('input');
@@ -115,6 +131,15 @@ function initMultiSelect(selectEl, opts) {
         fila.appendChild(document.createTextNode(o.textContent));
         listEl.appendChild(fila);
       });
+
+    // Que el corte se vea: sin esto la lista parece terminar ahi.
+    if (coinciden.length > MSEL_TOPE_FILAS) {
+      const aviso = document.createElement('div');
+      aviso.className = 'msel-mas';
+      aviso.textContent = 'y ' + (coinciden.length - MSEL_TOPE_FILAS)
+                        + ' mas — escribe arriba para encontrarlos';
+      listEl.appendChild(aviso);
+    }
   }
 
   function abrir() {
