@@ -195,8 +195,9 @@
 
     <div class="filtro-item">
       <label>Nombre Cliente</label>
-      <input type="text" id="f-cliente" list="dl-cliente" placeholder="Todos">
-      <datalist id="dl-cliente"></datalist>
+      <select id="f-cliente">
+        <option value="">Todos</option>
+      </select>
     </div>
 
     <div class="filtro-item">
@@ -313,6 +314,7 @@ fetch('/api/filtros_vta_acum')
       familia:     'f-familia',
       marca:       'f-marca',
       subfamilia:  'f-subfamilia',
+      cliente:     'f-cliente',
       procedencia: 'f-procedencia',
       tipo_venta:  'f-tipo_venta',
       distribuidor:'f-distribuidor',
@@ -330,7 +332,6 @@ fetch('/api/filtros_vta_acum')
     });
 
     const fillsDatalist = {
-      cliente:              'dl-cliente',
       descripcion_producto: 'dl-descripcion',
     };
     Object.entries(fillsDatalist).forEach(([key, dlId]) => {
@@ -347,11 +348,11 @@ fetch('/api/filtros_vta_acum')
 function getFiltros() {
   const v = id => document.getElementById(id)?.value || '';
   const f = { categoria: v('f-categoria') };
-  // cliente/descripcion_producto son texto libre con autocompletar, no multi-select
-  const keysTexto = ['cliente', 'descripcion_producto'];
+  // descripcion_producto sigue siendo texto libre con autocompletar
+  const keysTexto = ['descripcion_producto'];
   keysTexto.forEach(k => { const val = v('f-'+k); if(val) f[k] = val; });
   const keysMultiples = ['sucursal','vendedor','familia','marca','subfamilia',
-                          'procedencia','tipo_venta','distribuidor'];
+                          'cliente','procedencia','tipo_venta','distribuidor'];
   keysMultiples.forEach(k => {
     const vals = mselValores(document.getElementById('f-'+k));
     if (vals.length) f[k] = vals;
@@ -386,10 +387,10 @@ function aplicar() {
 }
 
 function limpiar() {
-  ['f-cliente','f-descripcion_producto']
+  ['f-descripcion_producto']
     .forEach(id => { const s = document.getElementById(id); if(s) s.value = ''; });
   ['f-sucursal','f-vendedor','f-familia','f-marca','f-subfamilia',
-   'f-procedencia','f-tipo_venta','f-distribuidor']
+   'f-cliente','f-procedencia','f-tipo_venta','f-distribuidor']
     .forEach(id => mselLimpiar(document.getElementById(id)));
   const dist = document.getElementById('f-distribucion');
   if (dist) dist.value = '';

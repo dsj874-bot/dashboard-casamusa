@@ -209,8 +209,9 @@
 
     <div class="filtro-item">
       <label>Nombre Cliente</label>
-      <input type="text" id="f-cliente" list="dl-cliente" placeholder="Todos">
-      <datalist id="dl-cliente"></datalist>
+      <select id="f-cliente">
+        <option value="">Todos</option>
+      </select>
     </div>
 
     <div class="filtro-item">
@@ -318,6 +319,7 @@ fetch('/api/filtros_vta_acum')
       familia:    'f-familia',
       marca:      'f-marca',
       subfamilia: 'f-subfamilia',
+      cliente:    'f-cliente',
       tipo_venta: 'f-tipo_venta',
       procedencia:'f-procedencia',
       cond_pago:  'f-cond_pago',
@@ -334,15 +336,6 @@ fetch('/api/filtros_vta_acum')
       initMultiSelect(s);
     });
 
-    // Cliente va como texto libre con autocompletar y no como
-    // multi-select: son ~7.400 nombres distintos y una lista de ese
-    // largo no se navega. Mismo criterio que vta_mg.html.
-    const dlCliente = document.getElementById('dl-cliente');
-    if (dlCliente) {
-      dlCliente.innerHTML = ((data.filtros || {}).cliente || [])
-        .map(v => `<option value="${v.replace(/"/g,'&quot;')}">`).join('');
-    }
-
     // Carga inicial
     aplicar();
   })
@@ -351,14 +344,11 @@ fetch('/api/filtros_vta_acum')
 
 function getFiltros() {
   const f = { categoria: document.getElementById('f-categoria')?.value || '' };
-  const keys = ['sucursal','vendedor','familia','marca','subfamilia','tipo_venta','procedencia','cond_pago'];
+  const keys = ['sucursal','vendedor','familia','marca','subfamilia','cliente','tipo_venta','procedencia','cond_pago'];
   keys.forEach(k => {
     const vals = mselValores(document.getElementById('f-'+k));
     if (vals.length) f[k] = vals;
   });
-  // Texto libre con autocompletar, no multi-select
-  const cli = document.getElementById('f-cliente')?.value || '';
-  if (cli) f.cliente = cli;
   // No es multi-select: son 3 estados fijos (todos / solo / excluir)
   const dist = document.getElementById('f-distribucion')?.value || '';
   if (dist) f.distribucion = dist;
@@ -384,10 +374,8 @@ function aplicar() {
 }
 
 function limpiar() {
-  const cli = document.getElementById('f-cliente');
-  if (cli) cli.value = '';
   ['f-sucursal','f-vendedor','f-familia','f-marca','f-subfamilia',
-   'f-tipo_venta','f-procedencia','f-cond_pago']
+   'f-cliente','f-tipo_venta','f-procedencia','f-cond_pago']
     .forEach(id => mselLimpiar(document.getElementById(id)));
   const dist = document.getElementById('f-distribucion');
   if (dist) dist.value = '';

@@ -195,9 +195,7 @@
     </div>
     <div>
       <div class="fp-label">Nombre Cliente</div>
-      <input type="text" class="fp-select" id="fp-cliente"
-             list="dl-cliente" placeholder="Todos">
-      <datalist id="dl-cliente"></datalist>
+      <select class="fp-select" id="fp-cliente"><option value="">Todos</option></select>
     </div>
     <div>
       <div class="fp-label">Tipo Venta</div>
@@ -313,7 +311,8 @@ async function cargarFiltros() {
   const mapa = {
     sucursal:'fp-sucursal', vendedor:'fp-vendedor',
     familia:'fp-familia',   marca:'fp-marca',
-    subfamilia:'fp-subfamilia', tipo_venta:'fp-tipo_venta',
+    subfamilia:'fp-subfamilia', cliente:'fp-cliente',
+    tipo_venta:'fp-tipo_venta',
     procedencia:'fp-procedencia', cond_pago:'fp-cond_pago',
   };
   for(const [fk, elId] of Object.entries(mapa)){
@@ -327,15 +326,6 @@ async function cargarFiltros() {
       el.appendChild(o);
     });
     initMultiSelect(el);
-  }
-
-  // Cliente va como texto libre con autocompletar y no como
-  // multi-select: son ~7.400 nombres distintos y una lista de ese largo
-  // no se navega. Mismo criterio que vta_mg.html.
-  const dlCliente = document.getElementById('dl-cliente');
-  if (dlCliente) {
-    dlCliente.innerHTML = ((d.filtros || {}).cliente || [])
-      .map(v => `<option value="${v.replace(/"/g,'&quot;')}">`).join('');
   }
 
   aplicar();
@@ -356,8 +346,7 @@ function getFiltros() {
     tipo_venta:  m('fp-tipo_venta'),
     procedencia: m('fp-procedencia'),
     cond_pago:   m('fp-cond_pago'),
-    // Texto libre con autocompletar, no multi-select
-    cliente:     document.getElementById('fp-cliente')?.value || '',
+    cliente:     m('fp-cliente'),
   };
 }
 
