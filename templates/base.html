@@ -680,6 +680,22 @@
       }
     })();
   </script>
+  <style>
+    .aviso-datos {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 24px 4px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid #b4633a;
+      background: rgba(180, 99, 58, 0.14);
+      color: var(--text);
+      font-size: 13px;
+    }
+    .aviso-datos[hidden] { display: none; }
+    .aviso-datos-icono { font-size: 15px; line-height: 1; }
+  </style>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -838,6 +854,14 @@
       </div>
       <div class="fecha-badge" id="fecha-hoy"></div>
     </div>
+  </div>
+
+  <!-- Aviso de datos atrasados. Se puebla por fetch (ver
+       /api/estado_datos); si la consulta falla o los datos estan al
+       dia, la banda nunca aparece. -->
+  <div id="aviso-datos" class="aviso-datos" hidden>
+    <span class="aviso-datos-icono">&#9888;</span>
+    <span id="aviso-datos-texto"></span>
   </div>
 
   <div class="content">
@@ -1034,6 +1058,18 @@
   }
 </script>
 
+<script>
+// Aviso de datos atrasados. Va por fetch y no bloquea nada: si el
+// endpoint falla, la banda simplemente no aparece.
+fetch('/api/estado_datos')
+  .then(r => r.ok ? r.json() : null)
+  .then(d => {
+    if (!d || !d.alerta || !d.mensaje) return;
+    document.getElementById('aviso-datos-texto').textContent = d.mensaje;
+    document.getElementById('aviso-datos').hidden = false;
+  })
+  .catch(() => {});
+</script>
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

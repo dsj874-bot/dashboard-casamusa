@@ -1101,6 +1101,24 @@ def api_forecast_nivel_servicio_historico():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/estado_datos")
+@login_requerido
+def api_estado_datos():
+    """Estado de frescura de los datos de Comercial, para la banda de
+    aviso de base.html. Se consulta por fetch y no por context
+    processor a proposito: un context processor correria esta consulta
+    en CADA render de CADA pantalla, y aca solo cuesta cuando el
+    navegador ya dibujo la pagina."""
+    if not USAR_POSTGRES_COMERCIAL:
+        return jsonify({"ok": False, "alerta": False, "mensaje": ""})
+    try:
+        return jsonify(data_loader_pg.estado_datos_pg())
+    except Exception as e:
+        # Un fallo aca no puede romper la pantalla: se calla y listo.
+        app.logger.warning("estado_datos fallo: %s", e)
+        return jsonify({"ok": False, "alerta": False, "mensaje": ""})
+
+
 @app.route("/api/cron/confirmar_fecha")
 def api_cron_confirmar_fecha():
     """Avanza la fecha de corte de Comercial (control_datos) sin depender
@@ -1145,11 +1163,22 @@ def api_cron_confirmar_fecha():
         # hay ventas cargadas de un dia posterior, manda ese. Se devuelve
         # el que quedo de verdad y no el que se pidio, para que el log
         # del cron no mienta.
+        # Se incluye el estado de frescura para que quede en el log
+        # del cron en Vercel: es el unico lugar donde hoy queda
+        # constancia diaria de que los datos se estan cargando.
+        try:
+            estado = data_loader_pg.estado_datos_pg()
+        except Exception as e:
+            app.logger.warning("estado_datos fallo dentro del cron: %s", e)
+            estado = {"mensaje": "no se pudo calcular"}
+        if estado.get("alerta"):
+            app.logger.warning("DATOS ATRASADOS: %s", estado.get("mensaje"))
         return jsonify({
             "ok": True,
             "hora_chile": ahora.strftime("%Y-%m-%d %H:%M"),
             "dia_confirmado": dia.isoformat(),
             "corte_vigente": data_loader_pg.fecha_datos_real_pg().isoformat(),
+            "estado_datos": estado,
         })
     except Exception as e:
         app.logger.exception("Cron confirmar_fecha fallo")

@@ -18,6 +18,7 @@ con latencia real desde Chile); esta version reduce eso a 1 conexion
 y 1-2 round trips.
 """
 import math
+import os
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -198,6 +199,14 @@ def _filtros_comunes_sql(filtros):
 
 def _hoy():
     return datetime.now().date()
+
+
+def _hoy_chile():
+    """Fecha de HOY en Chile. En Vercel datetime.now() es UTC, que de
+    madrugada cae en el dia siguiente y desplazaria el calculo de
+    atraso un dia entero."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/Santiago")).date()
 
 
 def _fecha_datos_pg(cur, fecha_corte=None):
@@ -1963,6 +1972,81 @@ def get_vendedores_con_venta_pg():
         {"vendedor": f["vendedor"], "venta": float(f["venta"]), "n_filas": f["n_filas"]}
         for f in filas
     ]
+
+
+def estado_datos_pg(umbral_habiles=None):
+    """Cuantos dias habiles lleva Comercial sin datos nuevos.
+
+    POR QUE NO SIRVE LA FECHA DE CORTE: el corte avanza solo todos los
+    dias -- el cron /api/cron/confirmar_fecha (y antes la tarea del PC)
+    marca los dias sin ventas como "dato final" a proposito, para que
+    las comparaciones no se queden congeladas. Asi que el corte avanza
+    igual aunque no llegue un solo archivo, y como señal de atraso no
+    sirve: nunca se dispararia.
+
+    La señal real es max(fecha_conta) en ventas. Verificado contra la
+    historia: de los 187 dias habiles transcurridos en 2026, CERO
+    quedaron sin ninguna venta. Con 6 sucursales vendiendo, un dia
+    habil sin filas significa que el archivo no se subio, no que no se
+    vendio.
+
+    umbral_habiles: a partir de cuantos dias habiles de atraso se avisa.
+    Por defecto 2 (configurable con ALERTA_DIAS_HABILES), para tolerar
+    el rezago normal de un dia entre que se cierra la venta y alguien
+    exporta el archivo de SAP.
+    """
+    if umbral_habiles is None:
+        try:
+            umbral_habiles = int(os.environ.get("ALERTA_DIAS_HABILES", "2"))
+        except ValueError:
+            umbral_habiles = 2
+    # Un umbral de 0 avisaria estando al dia, con un mensaje sin sentido
+    # ("0 dias habiles sin datos"). El minimo util es 1.
+    umbral_habiles = max(int(umbral_habiles), 1)
+
+    hoy = _hoy_chile()
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT max(fecha_conta) AS f FROM ventas")
+            ultima = cur.fetchone()["f"]
+            if ultima is None:
+                return {"ok": False, "alerta": True, "atraso_habiles": None,
+                        "ultima_venta": None,
+                        "mensaje": "No hay ninguna venta cargada en la base."}
+
+            # El calendario de feriados esta cargado hasta cierta fecha
+            # (hoy, hasta el 31-12-2026). Si se acaba, se cuenta
+            # lunes-viernes en vez de fallar o de dar 0 atraso callado:
+            # sobrecontaria un feriado, no lo dejaria pasar.
+            cur.execute("SELECT max(fecha) AS f FROM dias_habiles_cl")
+            cubre_hasta = cur.fetchone()["f"]
+            con_feriados = cubre_hasta is not None and cubre_hasta >= hoy
+
+            if con_feriados:
+                cur.execute(
+                    """SELECT count(*) AS n FROM dias_habiles_cl
+                        WHERE es_habil AND fecha > %(desde)s AND fecha < %(hasta)s""",
+                    {"desde": ultima, "hasta": hoy})
+            else:
+                cur.execute(
+                    """SELECT count(*) AS n
+                         FROM generate_series(%(desde)s::date + 1, %(hasta)s::date - 1,
+                                              interval '1 day') d
+                        WHERE extract(isodow FROM d) <= 5""",
+                    {"desde": ultima, "hasta": hoy})
+            atraso = int(cur.fetchone()["n"])
+
+    alerta = atraso >= umbral_habiles
+    if alerta:
+        plural = "dias habiles" if atraso != 1 else "dia habil"
+        mensaje = ("No se carga venta desde el %s: %d %s sin datos."
+                   % (ultima.strftime("%d-%m-%Y"), atraso, plural))
+    else:
+        mensaje = "Datos al dia (ultima venta cargada: %s)." % ultima.strftime("%d-%m-%Y")
+
+    return {"ok": True, "alerta": alerta, "atraso_habiles": atraso,
+            "ultima_venta": ultima.isoformat(), "umbral": umbral_habiles,
+            "calendario_con_feriados": con_feriados, "mensaje": mensaje}
 
 
 def confirmar_fecha_pg(fecha, updated_by="actualizar_diario"):
