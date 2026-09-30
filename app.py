@@ -1101,6 +1101,61 @@ def api_forecast_nivel_servicio_historico():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/cron/confirmar_fecha")
+def api_cron_confirmar_fecha():
+    """Avanza la fecha de corte de Comercial (control_datos) sin depender
+    del PC de la oficina.
+
+    Hasta ahora esto lo hacia SOLO actualizar_diario.py, la Tarea
+    Programada de Windows de las 19:00. Si ese equipo esta apagado, el
+    corte de "Datos al" se queda pegado en el ultimo dia CON ventas
+    cargadas -- y los domingos/feriados, que el export de SAP omite en
+    vez de traer en $0, no lo avanzan nunca.
+
+    Convive sin problema con la tarea del PC mientras siga existiendo:
+    confirmar_fecha_pg hace el upsert con GREATEST, asi que solo avanza
+    y da lo mismo quien llegue primero. No hay que apagar nada para
+    poner esto.
+
+    OJO ZONA HORARIA: en Vercel datetime.now() devuelve UTC, no hora de
+    Chile. La regla de las 19:00 es horaria de Chile (ver
+    confirmar_dia_sin_ventas en data_loader.py), asi que aca la fecha se
+    calcula explicitamente en America/Santiago. Sin eso, un cron de
+    madrugada UTC confirmaria el dia equivocado.
+
+    Se protege con CRON_SECRET igual que el snapshot de nivel de
+    servicio, y por lo mismo NO lleva @login_requerido: lo invoca
+    Vercel, no un usuario."""
+    secreto_esperado = os.environ.get("CRON_SECRET")
+    if secreto_esperado:
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {secreto_esperado}":
+            return jsonify({"ok": False, "msg": "No autorizado."}), 401
+    if not USAR_POSTGRES_COMERCIAL:
+        return jsonify({"ok": False, "msg": "Requiere Postgres (USAR_POSTGRES_COMERCIAL=1)."}), 400
+
+    from datetime import datetime as _dt, timedelta as _td
+    from zoneinfo import ZoneInfo
+
+    try:
+        ahora = _dt.now(ZoneInfo("America/Santiago"))
+        dia = ahora.date() if ahora.hour >= 19 else ahora.date() - _td(days=1)
+        data_loader_pg.confirmar_fecha_pg(dia, updated_by="cron_vercel")
+        # El corte vigente puede ser MAYOR que el dia confirmado: si ya
+        # hay ventas cargadas de un dia posterior, manda ese. Se devuelve
+        # el que quedo de verdad y no el que se pidio, para que el log
+        # del cron no mienta.
+        return jsonify({
+            "ok": True,
+            "hora_chile": ahora.strftime("%Y-%m-%d %H:%M"),
+            "dia_confirmado": dia.isoformat(),
+            "corte_vigente": data_loader_pg.fecha_datos_real_pg().isoformat(),
+        })
+    except Exception as e:
+        app.logger.exception("Cron confirmar_fecha fallo")
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
 @app.route("/api/cron/nivel_servicio_snapshot")
 def api_cron_nivel_servicio_snapshot():
     """Guarda el snapshot diario de Nivel de Servicio (nivel_servicio_historico) --
