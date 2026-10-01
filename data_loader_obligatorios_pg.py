@@ -38,9 +38,12 @@ def _cargar_obligatorios_pg(cur, familia=None):
         from productos_obligatorios
     """
     params = {}
+    # familia puede ser un string (las pantallas de Inventario, que filtran
+    # por una sola) o una lista (Plan de Compra, multiseleccion). Se
+    # normaliza a lista para usar siempre = ANY(...).
     if familia:
-        sql += " where familia = %(familia)s"
-        params["familia"] = familia
+        sql += " where familia = ANY(%(familia)s)"
+        params["familia"] = [familia] if isinstance(familia, str) else list(familia)
     sql += " order by familia, subfamilia, descripcion"
     cur.execute(sql, params)
     return cur.fetchall()

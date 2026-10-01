@@ -16,6 +16,7 @@
 {% endblock %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}?v={{ asset_v('css/multiselect.css') }}">
 <style>
   .filtros-marca {
     display: flex;
@@ -140,6 +141,25 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/multiselect.js') }}?v={{ asset_v('js/multiselect.js') }}"></script>
+<script>
+// Si multiselect.js no llego a cargar, degradar a <select multiple>
+// nativo en vez de dejar la pantalla colgada (mismo criterio que las
+// pantallas Vta*).
+if (typeof initMultiSelect !== 'function') {
+  console.warn('multiselect.js no cargo: el filtro de familia queda como selector nativo');
+  window.initMultiSelect = function (sel) { if (sel) sel.multiple = true; };
+  window.mselValores = function (sel) {
+    return sel ? Array.from(sel.selectedOptions).map(function (o) { return o.value; }) : [];
+  };
+}
+
+// Familias elegidas, como "familia=A&familia=B". Vacio = todas.
+function qsFamilia() {
+  return mselValores(document.getElementById("f-familia"))
+    .map(f => "familia=" + encodeURIComponent(f)).join("&");
+}
+</script>
 <script>
 const btnActualizarInv = document.getElementById('btn-actualizar-inv');
 if (btnActualizarInv) {
@@ -165,19 +185,17 @@ if (btnActualizarInv) {
 const fmtUnid = v => Math.round(v).toLocaleString("es-CL");
 
 document.getElementById("btn-exportar-excel").addEventListener("click", () => {
-  const familia = document.getElementById("f-familia").value;
   const meses = document.getElementById("f-meses").value;
-  window.location.href = `/api/forecast/plan_compras/exportar?familia=${encodeURIComponent(familia)}&meses=${encodeURIComponent(meses)}`;
+  window.location.href = `/api/forecast/plan_compras/exportar?${qsFamilia()}&meses=${encodeURIComponent(meses)}`;
 });
 
 function cargarDatos() {
-  const familia = document.getElementById("f-familia").value;
   const meses = document.getElementById("f-meses").value;
 
   document.getElementById("tabla-body").innerHTML =
     '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Cargando...</td></tr>';
 
-  fetch(`/api/forecast/plan_compras?familia=${encodeURIComponent(familia)}&meses=${encodeURIComponent(meses)}`)
+  fetch(`/api/forecast/plan_compras?${qsFamilia()}&meses=${encodeURIComponent(meses)}`)
     .then(r => r.json())
     .then(renderTodo)
     .catch(err => console.error("Error plan de compras:", err));
@@ -188,8 +206,7 @@ function cargarDatos() {
 const fmtValor = v => "$" + Math.round(v).toLocaleString("es-CL");
 
 function cargarComparativo() {
-  const familia = document.getElementById("f-familia").value;
-  fetch(`/api/forecast/plan_compras/resumen_valor?familia=${encodeURIComponent(familia)}`)
+  fetch(`/api/forecast/plan_compras/resumen_valor?${qsFamilia()}`)
     .then(r => r.json())
     .then(renderComparativo)
     .catch(err => console.error("Error resumen valor compra:", err));
@@ -399,8 +416,10 @@ fetch("/api/forecast/plan_compras/familias")
   .then(familias => {
     if (!Array.isArray(familias)) return;
     const sel = document.getElementById("f-familia");
-    sel.innerHTML = '<option value="">Todas</option>' +
-      familias.map(f => `<option value="${f}">${f}</option>`).join("");
+    // Sin opcion "Todas": en el selector con casillas, ninguna
+    // marcada (o todas) es "todas".
+    sel.innerHTML = familias.map(f => `<option value="${f}">${f}</option>`).join("");
+    initMultiSelect(sel);
   })
   .catch(err => console.error("Error lista de familias:", err))
   .finally(cargarDatos);

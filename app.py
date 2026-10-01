@@ -862,15 +862,31 @@ def forecast_plan_compra():
                            session_nombre=session.get("nombre"))
 
 
+def _familias_param():
+    """Familias elegidas en Plan de Compra. Llegan repetidas en la URL
+    (?familia=A&familia=B) desde el selector con casillas; sin ninguna
+    es "todas". Devuelve lista o None."""
+    vals = [f for f in request.args.getlist("familia") if f]
+    return vals or None
+
+
+def _nombre_familias(familias):
+    """Para el nombre del Excel exportado."""
+    if not familias:
+        return "Todas"
+    return familias[0] if len(familias) == 1 else "%d_familias" % len(familias)
+
+
 @app.route("/api/forecast/plan_compras")
 @login_requerido
 def api_forecast_plan_compras():
     try:
-        familia = request.args.get("familia", "") or None
+        familia = _familias_param()
         meses = request.args.get("meses", type=float)
         if USAR_POSTGRES_INVENTARIO:
             return jsonify(data_loader_obligatorios_pg.get_plan_compra_reposicion_pg(familia, meses))
-        return jsonify(data_loader_obligatorios.get_plan_compra_reposicion(familia, meses))
+        unica = familia[0] if familia and len(familia) == 1 else None
+        return jsonify(data_loader_obligatorios.get_plan_compra_reposicion(unica, meses))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -905,10 +921,11 @@ def api_forecast_plan_compras_2l_familias():
 @login_requerido
 def api_forecast_plan_compras_resumen_valor():
     try:
-        familia = request.args.get("familia", "") or None
+        familia = _familias_param()
         if USAR_POSTGRES_INVENTARIO:
             return jsonify(data_loader_obligatorios_pg.get_resumen_valor_compra_pg(familia))
-        return jsonify(data_loader_obligatorios.get_resumen_valor_compra(familia))
+        unica = familia[0] if familia and len(familia) == 1 else None
+        return jsonify(data_loader_obligatorios.get_resumen_valor_compra(unica))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -917,13 +934,14 @@ def api_forecast_plan_compras_resumen_valor():
 @login_requerido
 def api_forecast_plan_compras_exportar():
     try:
-        familia = request.args.get("familia", "") or None
+        familia = _familias_param()
         meses = request.args.get("meses", type=float)
         if USAR_POSTGRES_INVENTARIO:
             buffer = data_loader_obligatorios_pg.exportar_plan_compras_excel_pg(familia, meses)
         else:
-            buffer = data_loader_obligatorios.exportar_plan_compras_excel(familia, meses)
-        nombre = f"Plan_de_Compra_{familia or 'Todas'}.xlsx".replace(" ", "_")
+            unica = familia[0] if familia and len(familia) == 1 else None
+            buffer = data_loader_obligatorios.exportar_plan_compras_excel(unica, meses)
+        nombre = f"Plan_de_Compra_{_nombre_familias(familia)}.xlsx".replace(" ", "_")
         return send_file(
             buffer,
             as_attachment=True,
@@ -1030,7 +1048,7 @@ def forecast_plan_compra_2l():
 @login_requerido
 def api_forecast_plan_compras_2l():
     try:
-        familia = request.args.get("familia", "") or None
+        familia = _familias_param()
         meses = request.args.get("meses", type=float)
         return jsonify(data_loader_segunda_linea.get_plan_compra_segunda_linea(familia, meses))
     except Exception as e:
@@ -1041,7 +1059,7 @@ def api_forecast_plan_compras_2l():
 @login_requerido
 def api_forecast_plan_compras_2l_resumen_valor():
     try:
-        familia = request.args.get("familia", "") or None
+        familia = _familias_param()
         return jsonify(data_loader_segunda_linea.get_resumen_valor_compra_segunda_linea(familia))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1051,10 +1069,10 @@ def api_forecast_plan_compras_2l_resumen_valor():
 @login_requerido
 def api_forecast_plan_compras_2l_exportar():
     try:
-        familia = request.args.get("familia", "") or None
+        familia = _familias_param()
         meses = request.args.get("meses", type=float)
         buffer = data_loader_segunda_linea.exportar_plan_compras_excel(familia, meses)
-        nombre = f"Plan_de_Compra_Segunda_Linea_{familia or 'Todas'}.xlsx".replace(" ", "_")
+        nombre = f"Plan_de_Compra_Segunda_Linea_{_nombre_familias(familia)}.xlsx".replace(" ", "_")
         return send_file(
             buffer,
             as_attachment=True,

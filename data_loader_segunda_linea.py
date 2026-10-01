@@ -75,9 +75,12 @@ def _cargar_candidatos(cur, familia=None):
           and {dec._condicion_prefijos_excluidos(dec.PREFIJOS_FUERA_SEGUNDA_LINEA)}
     """
     params = {}
+    # familia puede ser un string (las pantallas de Inventario, que filtran
+    # por una sola) o una lista (Plan de Compra, multiseleccion). Se
+    # normaliza a lista para usar siempre = ANY(...).
     if familia:
-        sql += " and familia = %(familia)s"
-        params["familia"] = familia
+        sql += " and familia = ANY(%(familia)s)"
+        params["familia"] = [familia] if isinstance(familia, str) else list(familia)
     sql += " order by familia, subfamilia, descripcion"
     cur.execute(sql, params)
     return cur.fetchall()
