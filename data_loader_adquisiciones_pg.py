@@ -15,6 +15,7 @@ from datetime import date
 import numpy as np
 import db
 from data_loader_obligatorios import SIGLA_SUCURSAL
+from data_loader_pg import dia_corte_mes_anterior
 
 MESES = {
     1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
@@ -87,7 +88,8 @@ def get_resumen_combinado_pg(tipo_compra=None):
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
             mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
-            params.update({"mes_actual": mes_actual, "dia_actual": dia_actual, "mes_anterior": mes_anterior})
+            params.update({"mes_actual": mes_actual, "dia_actual": dia_actual, "mes_anterior": mes_anterior,
+                           "dia_mes_ant": dia_corte_mes_anterior(fecha_datos)})
 
             cur.execute(
                 f"""SELECT
@@ -103,7 +105,7 @@ def get_resumen_combinado_pg(tipo_compra=None):
                           WHERE ano = 2025 AND extract(month from fecha_creacion) = %(mes_actual)s AND extract(day from fecha_creacion) <= %(dia_actual)s
                       ), 0) AS mes_25,
                       coalesce(sum(precio_total) FILTER (
-                          WHERE ano = 2026 AND extract(month from fecha_creacion) = %(mes_anterior)s AND extract(day from fecha_creacion) <= %(dia_actual)s
+                          WHERE ano = 2026 AND extract(month from fecha_creacion) = %(mes_anterior)s AND extract(day from fecha_creacion) <= %(dia_mes_ant)s
                       ), 0) AS mes_ant,
                       count(DISTINCT n_orden_compra) FILTER (WHERE ano = 2026) AS oc_26,
                       count(DISTINCT nombre_proveedor) FILTER (WHERE ano = 2026) AS proveedores_26
@@ -126,7 +128,7 @@ def get_resumen_combinado_pg(tipo_compra=None):
                           WHERE ano = 2025 AND extract(month from fecha_recepcion) = %(mes_actual)s AND extract(day from fecha_recepcion) <= %(dia_actual)s
                       ), 0) AS mes_25,
                       coalesce(sum(total_clp) FILTER (
-                          WHERE ano = 2026 AND extract(month from fecha_recepcion) = %(mes_anterior)s AND extract(day from fecha_recepcion) <= %(dia_actual)s
+                          WHERE ano = 2026 AND extract(month from fecha_recepcion) = %(mes_anterior)s AND extract(day from fecha_recepcion) <= %(dia_mes_ant)s
                       ), 0) AS mes_ant,
                       count(DISTINCT n_recepcion) FILTER (WHERE ano = 2026) AS rec_26,
                       count(DISTINCT nombre_proveedor) FILTER (WHERE ano = 2026) AS proveedores_26
