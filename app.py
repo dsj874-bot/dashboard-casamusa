@@ -117,7 +117,7 @@ GERENTES = {
     # Comercial.
     "adquisiciones@casamusa.cl": {"password": "Adquisiciones2026", "nombre": "Adquisiciones", "admin_adquisiciones": True},
     "caliaga@casamusa.cl":       {"password": "Inventario2026",    "nombre": "C. Aliaga",      "admin_inventario": True},
-    # Vendedores (2026-10-08: Maipu, Chicureo, Matta): "vendedor" es el
+    # Vendedores (2026-10-08: Maipu, Chicureo, Matta, MR): "vendedor" es el
     # nombre tal cual viene en ventas.vendedor. Solo ven Vta del Mes
     # (con su acumulado), filtrada a su propia venta y sin margen -- ver
     # PREFIJOS_PERMITIDOS_VENDEDOR y _vendedor_forzado().
@@ -128,6 +128,9 @@ GERENTES = {
     "jhidalgo.mt":  {"password": "Musa6925m", "nombre": "Juan Hidalgo",     "vendedor": "JUAN HIDALGO NUÑEZ"},
     "jreyes.mt":    {"password": "Musa5374y", "nombre": "Juan Reyes",       "vendedor": "JUAN REYES AVILA"},
     "dtorres.mt":   {"password": "Musa2382a", "nombre": "Darllelis Torres", "vendedor": "DARLLELIS TORRES VELASQUEZ"},
+    "gzambrano.mr":   {"password": "Musa5792v", "nombre": "Gedeon Zambrano",   "vendedor": "GEDEON ZAMBRANO MEZA"},
+    "icolmenarez.mr": {"password": "Musa4893t", "nombre": "Ilen Colmenarez",   "vendedor": "ILEN COLMENAREZ"},
+    "msanchez.mr":    {"password": "Musa6239y", "nombre": "Milangela Sanchez", "vendedor": "MILANGELA SANCHEZ"},
 }
 
 # ══════════════════════════════════════════════════════
