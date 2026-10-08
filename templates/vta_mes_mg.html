@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}Vta Mes Mg Acum{% endblock %}
-{% block page_title %}Venta Mensual y Margen Acumulado{% endblock %}
-{% block page_subtitle %}Evolucion mensual de ventas y margen por categoria{% endblock %}
+{% block title %}{% if es_vendedor %}Vta del Mes{% else %}Vta Mes Mg Acum{% endif %}{% endblock %}
+{% block page_title %}{% if es_vendedor %}Mi Venta Mensual{% else %}Venta Mensual y Margen Acumulado{% endif %}{% endblock %}
+{% block page_subtitle %}{% if es_vendedor %}Evolucion mensual de tu venta por categoria{% else %}Evolucion mensual de ventas y margen por categoria{% endif %}{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}?v={{ asset_v('css/multiselect.css') }}">
@@ -147,13 +147,13 @@
         <option value="excluir">Excluir Distribución</option>
       </select>
     </div>
-    <div>
+    <div{% if es_vendedor %} hidden{% endif %}>
       <div class="fp-label">Sucursal</div>
       <select class="fp-select" id="fp-sucursal">
         <option value="">Todas</option>
       </select>
     </div>
-    <div>
+    <div{% if es_vendedor %} hidden{% endif %}>
       <div class="fp-label">Vendedor</div>
       <select class="fp-select" id="fp-vendedor">
         <option value="">Todos</option>
@@ -236,8 +236,10 @@
                 <tr>
                   <th>Categoria</th>
                   <th class="num">Vta Acum</th>
+                  {% if not es_vendedor %}
                   <th class="num">Mg Acum</th>
                   <th class="num">% Mg</th>
+                  {% endif %}
                 </tr>
               </thead>
               <tbody id="tbody-acum">
@@ -284,6 +286,8 @@ const fmtPct = (v, pos=true) => {
 
 // ── Estado ────────────────────────────────────────────────
 let _filtrosDisp = {};
+// Cuenta de vendedor: la API no manda margen, la tabla acumulada va sin esas columnas.
+const SIN_MARGEN = {{ 'true' if es_vendedor else 'false' }};
 
 // ── Carga filtros ─────────────────────────────────────────
 async function cargarFiltros() {
@@ -439,6 +443,12 @@ function renderTablaAcum(d) {
     const pct    = f.pct_mg || 0;
     const barW   = Math.min(pct / MAX_PCT * 100, 100).toFixed(1);
     const cls    = isTotal ? 'total-row' : '';
+    if (SIN_MARGEN) {
+      return `<tr class="${cls}">
+      <td class="col-cat">${f.categoria}</td>
+      <td class="num">${fmtM(f.vta_acum)}</td>
+    </tr>`;
+    }
     return `<tr class="${cls}">
       <td class="col-cat">${f.categoria}</td>
       <td class="num">${fmtM(f.vta_acum)}</td>

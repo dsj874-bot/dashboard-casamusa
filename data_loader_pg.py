@@ -1134,7 +1134,7 @@ def get_seguimiento_ppto_pg(filtro_sucursal=None, filtro_canal=None, fecha_corte
     }
 
 
-def get_filtros_vta_acum_pg(filtro_sucursal=None, filtro_canal=None):
+def get_filtros_vta_acum_pg(filtro_sucursal=None, filtro_canal=None, filtro_vendedor=None):
     frag_suc, suc = _filtro_sucursal_sql(filtro_sucursal)
     frag_canal, canal = _filtro_canal_sql(filtro_canal)
     params = {}
@@ -1142,6 +1142,11 @@ def get_filtros_vta_acum_pg(filtro_sucursal=None, filtro_canal=None):
         params["suc"] = suc
     if canal:
         params["canal"] = canal
+    # Cuenta de vendedor: las opciones de los filtros salen solo de su
+    # propia venta (no ve los clientes ni productos de los demas).
+    if filtro_vendedor:
+        frag_canal += " AND vendedor = %(vend)s"
+        params["vend"] = filtro_vendedor
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:

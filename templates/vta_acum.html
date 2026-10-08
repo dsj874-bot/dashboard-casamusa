@@ -172,14 +172,14 @@
       </select>
     </div>
 
-    <div class="filtro-item">
+    <div class="filtro-item"{% if es_vendedor %} hidden{% endif %}>
       <label>Sucursal</label>
       <select id="f-sucursal">
         <option value="">Todas</option>
       </select>
     </div>
 
-    <div class="filtro-item">
+    <div class="filtro-item"{% if es_vendedor %} hidden{% endif %}>
       <label>Vendedor</label>
       <select id="f-vendedor">
         <option value="">Todos</option>

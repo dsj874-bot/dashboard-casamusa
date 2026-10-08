@@ -117,6 +117,13 @@ GERENTES = {
     # Comercial.
     "adquisiciones@casamusa.cl": {"password": "Adquisiciones2026", "nombre": "Adquisiciones", "admin_adquisiciones": True},
     "caliaga@casamusa.cl":       {"password": "Inventario2026",    "nombre": "C. Aliaga",      "admin_inventario": True},
+    # Vendedores (2026-10-08, partiendo por Maipu): "vendedor" es el
+    # nombre tal cual viene en ventas.vendedor. Solo ven Vta Acumulada y
+    # Vta del Mes, filtradas a su propia venta y sin margen -- ver
+    # PREFIJOS_PERMITIDOS_VENDEDOR y _vendedor_forzado().
+    "mgatica.mp":   {"password": "Musa7863j", "nombre": "Marcelo Gatica",   "vendedor": "MARCELO GATICA"},
+    "mescalona.mp": {"password": "Musa4978s", "nombre": "Marlene Escalona", "vendedor": "MARLENE ESCALONA"},
+    "pnavea.mp":    {"password": "Musa2652n", "nombre": "Pedro Navea",      "vendedor": "PEDRO NAVEA"},
 }
 
 # ══════════════════════════════════════════════════════
@@ -305,6 +312,28 @@ USUARIOS_GERENCIA = {
 PREFIJOS_SOLO_GERENCIA = ("/finanzas", "/logistica", "/bodega", "/forecast", "/api/forecast", "/tareas")
 
 
+# Cuenta de vendedor: solo estas rutas, todo lo demas redirige a su Vta
+# Acumulada. Lista blanca (no negra) a proposito: una pantalla nueva del
+# dashboard queda cerrada para el vendedor hasta que se agregue aqui.
+PREFIJOS_PERMITIDOS_VENDEDOR = (
+    "/vta_acum", "/api/vta_acum", "/api/filtros_vta_acum",
+    "/vta_mes_mg", "/api/vta_mes_mg",
+    "/api/fecha_corte", "/api/estado_datos", "/api/ping",
+    "/login", "/logout", "/static/",
+)
+
+
+@app.before_request
+def _restringir_vendedor():
+    if "usuario" not in session or not session.get("vendedor"):
+        return None
+    if request.path.startswith(PREFIJOS_PERMITIDOS_VENDEDOR):
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "msg": "No disponible para este perfil."}), 403
+    return redirect(url_for("vta_acum"))
+
+
 @app.before_request
 def _restringir_areas_no_comercial():
     if not request.path.startswith(PREFIJOS_SOLO_GERENCIA):
@@ -352,6 +381,9 @@ def inject_es_admin():
         # de todos modos tiene su propia fila de NE (ej. Elennys/
         # E-commerce bajo "CANAL DIGITAL") -- ver _sucursal_ne_forzada().
         "puede_cargar_ne": bool(session.get("sucursal") or session.get("sucursal_ne")),
+        # Cuenta de vendedor: menu con solo sus dos pantallas, sin
+        # filtros de sucursal/vendedor y sin columnas de margen.
+        "es_vendedor": bool(session.get("vendedor")),
     }
 
 
@@ -366,6 +398,25 @@ def _canal_forzado():
     logueado (ej. E-commerce), o None si ve todos los canales sin
     restriccion. Mismo mecanismo que _sucursal_forzada()."""
     return session.get("canal")
+
+
+def _vendedor_forzado():
+    """Vendedor al que esta atada una cuenta de vendedor (ver GERENTES),
+    o None. Solo ve su propia venta, en todas las sucursales donde haya
+    vendido -- por eso NO se combina con _sucursal_forzada()."""
+    return session.get("vendedor")
+
+
+def _sin_margen(datos):
+    """Quita del JSON todo dato de margen (mg_*, pct_mg*, utilidad*)
+    para las cuentas de vendedor -- no basta con esconder la columna en
+    pantalla, el dato no debe llegar al navegador."""
+    if isinstance(datos, dict):
+        return {k: _sin_margen(v) for k, v in datos.items()
+                if not (k.startswith(("mg", "pct_mg", "utilidad")))}
+    if isinstance(datos, list):
+        return [_sin_margen(v) for v in datos]
+    return datos
 
 
 def _sucursal_ne_forzada():
@@ -428,6 +479,9 @@ def login():
             session["sucursal"] = gerente.get("sucursal")
             session["canal"]    = gerente.get("canal")
             session["sucursal_ne"] = gerente.get("sucursal_ne")
+            session["vendedor"] = gerente.get("vendedor")
+            if session["vendedor"]:
+                return redirect(url_for("vta_acum"))
             return redirect(url_for("inicio"))
         error = "Correo o contraseña incorrectos."
     return render_template("login.html", error=error)
@@ -2471,7 +2525,8 @@ def vta_acum():
 def api_filtros_vta_acum():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_filtros_vta_acum_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
+            return jsonify(data_loader_pg.get_filtros_vta_acum_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(),
+                                                                  filtro_vendedor=_vendedor_forzado()))
         return jsonify(data_loader.get_filtros_vta_acum(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2486,6 +2541,8 @@ def api_vta_acum():
             filtros["sucursal"] = _sucursal_forzada()
         if _canal_forzado():
             filtros["tipo_venta"] = _canal_forzado()
+        if _vendedor_forzado():
+            filtros["vendedor"] = [_vendedor_forzado()]
         if USAR_POSTGRES_COMERCIAL:
             return jsonify(data_loader_pg.get_vta_acum_pg(filtros, fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_vta_acum(filtros))
@@ -2510,6 +2567,9 @@ def api_vta_mes_mg():
             filtros["sucursal"] = _sucursal_forzada()
         if _canal_forzado():
             filtros["tipo_venta"] = _canal_forzado()
+        if _vendedor_forzado():
+            filtros["vendedor"] = [_vendedor_forzado()]
+            return jsonify(_sin_margen(data_loader_pg.get_vta_mes_mg_acum_pg(filtros, fecha_corte=_fecha_corte_sesion())))
         if USAR_POSTGRES_COMERCIAL:
             return jsonify(data_loader_pg.get_vta_mes_mg_acum_pg(filtros, fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_vta_mes_mg_acum(filtros))

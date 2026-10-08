@@ -718,6 +718,15 @@
 
   <div class="sidebar-nav">
 
+    {% if es_vendedor %}
+    <div class="nav-section-title">Mi venta</div>
+    <a href="/vta_acum" class="nav-item {% if active == 'vta_acum' %}active{% endif %}">
+      <span class="nav-icon">📈</span><span class="nav-label"> Vta Acumulada</span>
+    </a>
+    <a href="/vta_mes_mg" class="nav-item {% if active == 'vta_mes_mg' %}active{% endif %}">
+      <span class="nav-icon">📊</span><span class="nav-label"> Vta del Mes</span>
+    </a>
+    {% else %}
     <a href="/inicio" class="nav-item" style="border:1px solid var(--border);border-radius:8px;margin-bottom:14px;">
       <span class="nav-icon">🏠</span><span class="nav-label"> Todas las áreas</span>
     </a>
@@ -798,13 +807,16 @@
     </a>
     {% endif %}
     {% endblock %}
+    {% endif %}
 
   </div>
 
   <div class="sidebar-user">
     <div class="user-info">
       <div class="user-name">{{ session_nombre }}</div>
-      {% if sucursal_sesion %}
+      {% if es_vendedor %}
+      <div class="user-role">👤 Vendedor</div>
+      {% elif sucursal_sesion %}
       <div class="user-role">🏪 Sucursal {{ sucursal_sesion }}</div>
       {% elif canal_sesion %}
       <div class="user-role">🛒 Canal {{ canal_sesion }}</div>
