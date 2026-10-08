@@ -324,6 +324,11 @@ PREFIJOS_PERMITIDOS_VENDEDOR = (
 )
 
 
+# Categorias de Vta del Mes que el vendedor no ve (Proveedor sale como
+# codigo de proveedor, no le sirve).
+CATEGORIAS_OCULTAS_VENDEDOR = ("proveedor",)
+
+
 @app.before_request
 def _restringir_vendedor():
     if "usuario" not in session or not session.get("vendedor"):
@@ -2526,8 +2531,12 @@ def vta_acum():
 def api_filtros_vta_acum():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_filtros_vta_acum_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(),
-                                                                  filtro_vendedor=_vendedor_forzado()))
+            datos = data_loader_pg.get_filtros_vta_acum_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(),
+                                                           filtro_vendedor=_vendedor_forzado())
+            if _vendedor_forzado():
+                for cat in CATEGORIAS_OCULTAS_VENDEDOR:
+                    datos["categorias"].pop(cat, None)
+            return jsonify(datos)
         return jsonify(data_loader.get_filtros_vta_acum(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2570,6 +2579,8 @@ def api_vta_mes_mg():
             filtros["tipo_venta"] = _canal_forzado()
         if _vendedor_forzado():
             filtros["vendedor"] = [_vendedor_forzado()]
+            if filtros.get("categoria") in CATEGORIAS_OCULTAS_VENDEDOR:
+                filtros["categoria"] = "marca"
             return jsonify(_sin_margen(data_loader_pg.get_vta_mes_mg_acum_pg(filtros, fecha_corte=_fecha_corte_sesion())))
         if USAR_POSTGRES_COMERCIAL:
             return jsonify(data_loader_pg.get_vta_mes_mg_acum_pg(filtros, fecha_corte=_fecha_corte_sesion()))
