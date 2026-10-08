@@ -123,7 +123,6 @@ GERENTES = {
     # PREFIJOS_PERMITIDOS_VENDEDOR y _vendedor_forzado().
     "mgatica.mp":   {"password": "Musa7863j", "nombre": "Marcelo Gatica",   "vendedor": "MARCELO GATICA"},
     "mescalona.mp": {"password": "Musa4978s", "nombre": "Marlene Escalona", "vendedor": "MARLENE ESCALONA"},
-    "pnavea.mp":    {"password": "Musa2652n", "nombre": "Pedro Navea",      "vendedor": "PEDRO NAVEA"},
 }
 
 # ══════════════════════════════════════════════════════
