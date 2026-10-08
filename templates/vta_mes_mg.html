@@ -115,6 +115,14 @@
   align-items: start;
 }
 @media(max-width:1100px){ .dual-grid { grid-template-columns:1fr; } }
+/* Cuenta de vendedor: sin tabla acumulada al lado, el total va como ultima columna */
+.dual-grid.solo { grid-template-columns: 1fr; }
+
+/* ── Encabezados ordenables ─────────────────────── */
+.tbl-sm thead th.ordenable { cursor: pointer; user-select: none; }
+.tbl-sm thead th.ordenable:hover { color: var(--text); }
+.tbl-sm thead th .flecha { opacity: .35; margin-left: 3px; }
+.tbl-sm thead th.activo .flecha { opacity: 1; color: var(--accent); }
 
 /* ── Tabla acumulada fija ───────────────────────── */
 .tbl-acum-wrap { width: 360px; flex-shrink: 0; }
@@ -215,7 +223,7 @@
 
     <!-- Tablas dual -->
     <div class="sec-title" id="sec-title-cat">Venta Mensual</div>
-    <div class="dual-grid">
+    <div class="dual-grid{% if es_vendedor %} solo{% endif %}">
 
       <!-- Tabla mensual -->
       <div class="table-card" style="margin-bottom:0">
@@ -227,6 +235,7 @@
         </div>
       </div>
 
+      {% if not es_vendedor %}
       <!-- Tabla acumulada -->
       <div class="tbl-acum-wrap">
         <div class="table-card" style="margin-bottom:0">
@@ -249,6 +258,7 @@
           </div>
         </div>
       </div>
+      {% endif %}
 
     </div><!-- /dual-grid -->
 
@@ -366,6 +376,7 @@ async function aplicar() {
   if(d.error){ alert('Error: ' + d.error); return; }
 
   renderKPIs(d.kpis);
+  _ultimoD = d;
   renderTablaMensual(d);
   renderTablaAcum(d);
 
@@ -407,27 +418,65 @@ function renderKPIs(k) {
 }
 
 // ── Tabla mensual ─────────────────────────────────────────
+// Orden por columna al hacer clic en el encabezado: null = el orden que
+// manda la API (venta acumulada de mayor a menor). La fila Total general
+// queda siempre arriba.
+let _ultimoD = null;
+let _orden = { col: null, dir: 1 };
+
+function ordenarPor(col) {
+  if (_orden.col === col) {
+    _orden.dir = -_orden.dir;
+  } else {
+    // Texto parte de la A; montos parten del mayor
+    _orden = { col, dir: col === 'categoria' ? 1 : -1 };
+  }
+  if (_ultimoD) renderTablaMensual(_ultimoD);
+}
+
 function renderTablaMensual(d) {
   const meses  = d.meses         || [];
   const nommes = d.nombres_meses || [];
   const tbl    = document.getElementById('tbl-mensual');
 
+  // Cuenta de vendedor: la tabla acumulada no se muestra, su venta
+  // acumulada va como ultima columna (filas_acum viene en el mismo orden).
+  const acum = {};
+  (d.filas_acum || []).forEach(f => { acum[f.categoria] = f.vta_acum; });
+  const filas = (d.filas_mensual || []).map(f => SIN_MARGEN ? { ...f, total: acum[f.categoria] } : f);
+
+  if (_orden.col) {
+    const c = _orden.col, dir = _orden.dir;
+    filas.sort((a, b) => c === 'categoria'
+      ? dir * String(a.categoria).localeCompare(String(b.categoria), 'es')
+      : dir * ((a[c] || 0) - (b[c] || 0)));
+  }
+
   // Encabezado
-  let th = '<tr><th>Categoria Parametro</th>';
-  nommes.forEach(nm => { th += `<th class="num">${nm}.</th>`; });
-  th += '</tr>';
-  tbl.querySelector('thead').innerHTML = th;
+  const th = (col, texto, num) => {
+    const activo = _orden.col === col;
+    const flecha = activo ? (_orden.dir > 0 ? '▲' : '▼') : '↕';
+    return `<th class="ordenable${num ? ' num' : ''}${activo ? ' activo' : ''}" onclick="ordenarPor('${col}')"
+              title="Ordenar">${texto}<span class="flecha">${flecha}</span></th>`;
+  };
+  let h = '<tr>' + th('categoria', 'Categoria Parametro', false);
+  meses.forEach((m, i) => { h += th('m' + m, nommes[i] + '.', true); });
+  if (SIN_MARGEN) h += th('total', 'Total', true);
+  h += '</tr>';
+  tbl.querySelector('thead').innerHTML = h;
 
   // Fila total
   const totRow = d.total_mensual || {};
   let html = `<tr class="total-row"><td class="col-cat">Total general</td>`;
   meses.forEach(m => { html += `<td class="num">${fmtM(totRow['m'+m])}</td>`; });
+  if (SIN_MARGEN) html += `<td class="num">${fmtM((d.total_acum || {}).vta_acum)}</td>`;
   html += '</tr>';
 
   // Filas detalle
-  (d.filas_mensual || []).forEach(f => {
+  filas.forEach(f => {
     html += `<tr><td class="col-cat">${f.categoria}</td>`;
     meses.forEach(m => { html += `<td class="num">${fmtM(f['m'+m])}</td>`; });
+    if (SIN_MARGEN) html += `<td class="num">${fmtM(f.total)}</td>`;
     html += '</tr>';
   });
 
@@ -436,6 +485,8 @@ function renderTablaMensual(d) {
 
 // ── Tabla acumulada ───────────────────────────────────────
 function renderTablaAcum(d) {
+  const tbody = document.getElementById('tbody-acum');
+  if (!tbody) return;  // cuenta de vendedor: no hay tabla acumulada
   const ta  = d.total_acum  || {};
   const MAX_PCT = 80;
 
@@ -464,7 +515,7 @@ function renderTablaAcum(d) {
 
   let html = fila(ta, true);
   (d.filas_acum || []).forEach(f => { html += fila(f, false); });
-  document.getElementById('tbody-acum').innerHTML = html;
+  tbody.innerHTML = html;
 }
 
 // ── Init ──────────────────────────────────────────────────
