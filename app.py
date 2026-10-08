@@ -118,8 +118,8 @@ GERENTES = {
     "adquisiciones@casamusa.cl": {"password": "Adquisiciones2026", "nombre": "Adquisiciones", "admin_adquisiciones": True},
     "caliaga@casamusa.cl":       {"password": "Inventario2026",    "nombre": "C. Aliaga",      "admin_inventario": True},
     # Vendedores (2026-10-08, partiendo por Maipu): "vendedor" es el
-    # nombre tal cual viene en ventas.vendedor. Solo ven Vta Acumulada y
-    # Vta del Mes, filtradas a su propia venta y sin margen -- ver
+    # nombre tal cual viene en ventas.vendedor. Solo ven Vta del Mes y
+    # Vta Acumulada, filtradas a su propia venta y sin margen -- ver
     # PREFIJOS_PERMITIDOS_VENDEDOR y _vendedor_forzado().
     "mgatica.mp":   {"password": "Musa7863j", "nombre": "Marcelo Gatica",   "vendedor": "MARCELO GATICA"},
     "mescalona.mp": {"password": "Musa4978s", "nombre": "Marlene Escalona", "vendedor": "MARLENE ESCALONA"},
@@ -312,7 +312,7 @@ PREFIJOS_SOLO_GERENCIA = ("/finanzas", "/logistica", "/bodega", "/forecast", "/a
 
 
 # Cuenta de vendedor: solo estas rutas, todo lo demas redirige a su Vta
-# Acumulada. Lista blanca (no negra) a proposito: una pantalla nueva del
+# del Mes (su pantalla de inicio). Lista blanca (no negra) a proposito: una pantalla nueva del
 # dashboard queda cerrada para el vendedor hasta que se agregue aqui.
 PREFIJOS_PERMITIDOS_VENDEDOR = (
     "/vta_acum", "/api/vta_acum", "/api/filtros_vta_acum",
@@ -330,7 +330,7 @@ def _restringir_vendedor():
         return None
     if request.path.startswith("/api/"):
         return jsonify({"ok": False, "msg": "No disponible para este perfil."}), 403
-    return redirect(url_for("vta_acum"))
+    return redirect(url_for("vta_mes_mg"))
 
 
 @app.before_request
@@ -480,7 +480,7 @@ def login():
             session["sucursal_ne"] = gerente.get("sucursal_ne")
             session["vendedor"] = gerente.get("vendedor")
             if session["vendedor"]:
-                return redirect(url_for("vta_acum"))
+                return redirect(url_for("vta_mes_mg"))
             return redirect(url_for("inicio"))
         error = "Correo o contraseña incorrectos."
     return render_template("login.html", error=error)

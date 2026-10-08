@@ -720,11 +720,11 @@
 
     {% if es_vendedor %}
     <div class="nav-section-title">Mi venta</div>
-    <a href="/vta_acum" class="nav-item {% if active == 'vta_acum' %}active{% endif %}">
-      <span class="nav-icon">📈</span><span class="nav-label"> Vta Acumulada</span>
-    </a>
     <a href="/vta_mes_mg" class="nav-item {% if active == 'vta_mes_mg' %}active{% endif %}">
       <span class="nav-icon">📊</span><span class="nav-label"> Vta del Mes</span>
+    </a>
+    <a href="/vta_acum" class="nav-item {% if active == 'vta_acum' %}active{% endif %}">
+      <span class="nav-icon">📈</span><span class="nav-label"> Vta Acumulada</span>
     </a>
     {% else %}
     <a href="/inicio" class="nav-item" style="border:1px solid var(--border);border-radius:8px;margin-bottom:14px;">
