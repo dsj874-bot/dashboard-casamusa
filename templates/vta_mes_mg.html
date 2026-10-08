@@ -107,6 +107,40 @@
 }
 .sec-title::after { content:''; flex:1; height:1px; background: var(--border); }
 
+/* ── KPI en tabla (cuenta de vendedor) -- mismo encabezado que Vta Acumulada ── */
+.kpi-tabla-wrap {
+  grid-column: 1/-1; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; overflow-x: auto;
+}
+.kpi-tabla { width: 100%; border-collapse: collapse; }
+.kpi-tabla .grp-header th {
+  padding: 9px 14px; font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  text-align: center; border-bottom: 1px solid var(--border);
+  border-right: 2px solid var(--border);
+}
+.kpi-tabla .grp-header th:last-child { border-right: none; }
+.kpi-tabla .grp-header .grp-1 { background:rgba(34,163,71,0.10); color:var(--accent); }
+.kpi-tabla .grp-header .grp-2 { background:rgba(59,130,246,0.10); color:var(--blue); }
+.kpi-tabla .grp-header .grp-3 { background:rgba(245,158,11,0.10); color:var(--amber); }
+.kpi-tabla .col-header th {
+  padding: 7px 14px; font-size: 10px; font-weight: 600;
+  text-transform: uppercase; color: var(--muted); text-align: right;
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border); white-space: nowrap;
+}
+.kpi-tabla .col-header th.sep { border-right: 2px solid var(--border); }
+.kpi-tabla .col-header th:last-child { border-right: none; }
+.kpi-tabla .data-row td {
+  padding: 14px 14px; font-size: 14px; font-weight: 700; color: var(--text);
+  text-align: right; border-right: 1px solid var(--border); white-space: nowrap;
+}
+.kpi-tabla .data-row td.sep { border-right: 2px solid var(--border); }
+.kpi-tabla .data-row td:last-child { border-right: none; }
+.kpi-tabla .data-row td.vp { color: var(--accent); }
+.kpi-tabla .data-row td.vn { color: var(--red); }
+.kpi-tabla .data-row td.ant { color: var(--muted2); }
+
 /* ── Grid doble tabla ───────────────────────────── */
 .dual-grid {
   display: grid;
@@ -385,7 +419,47 @@ async function aplicar() {
 }
 
 // ── KPIs ──────────────────────────────────────────────────
+// Cuenta de vendedor: encabezado en tabla, igual al de Vta Acumulada
+// (esa pantalla no la tiene; su acumulado va en la columna Total).
+function renderKPIsTabla(k) {
+  const fmtVar = v => v == null ? '—' : (v >= 0 ? '▲ ' : '▼ ') + Math.abs(v).toFixed(1) + '%';
+  const varCls = v => v == null ? '' : (v >= 0 ? 'vp' : 'vn');
+  document.getElementById('kpi-area').innerHTML = `
+    <div class="kpi-tabla-wrap">
+      <table class="kpi-tabla">
+        <tr class="grp-header">
+          <th colspan="3" class="grp-1">Vta Año Actual / Año Anterior</th>
+          <th colspan="3" class="grp-2">Vta Mes Actual / Vta Mes Año Anterior</th>
+          <th colspan="3" class="grp-3">Vta Mes Actual / Vta Mes Anterior</th>
+        </tr>
+        <tr class="col-header">
+          <th>Venta ${k.ano_actual}</th>
+          <th>Venta ${k.ano_anterior}</th>
+          <th class="sep">Var ${k.ano_anterior}</th>
+          <th>${k.mes_nombre} ${k.ano_actual}</th>
+          <th>${k.mes_nombre} ${k.ano_anterior}</th>
+          <th class="sep">Var ${k.ano_anterior}</th>
+          <th>${k.mes_nombre} ${k.ano_actual}</th>
+          <th>${k.mes_anterior_nombre} ${k.ano_actual}</th>
+          <th>Var ${k.mes_anterior_nombre}</th>
+        </tr>
+        <tr class="data-row">
+          <td>${fmtM(k.v_ano_actual)}</td>
+          <td class="ant">${fmtM(k.v_ano_anterior)}</td>
+          <td class="sep ${varCls(k.var_ano)}">${fmtVar(k.var_ano)}</td>
+          <td>${fmtM(k.v_mes_actual)}</td>
+          <td class="ant">${fmtM(k.v_mes_ant_ano)}</td>
+          <td class="sep ${varCls(k.var_mes_ano)}">${fmtVar(k.var_mes_ano)}</td>
+          <td>${fmtM(k.v_mes_actual)}</td>
+          <td class="ant">${fmtM(k.v_mes_ant_mes)}</td>
+          <td class="${varCls(k.var_mes_mes)}">${fmtVar(k.var_mes_mes)}</td>
+        </tr>
+      </table>
+    </div>`;
+}
+
 function renderKPIs(k) {
+  if (SIN_MARGEN) return renderKPIsTabla(k);
   const grupo = (titulo, cols) => `
     <div class="kpi-group">
       <div class="kpi-group-ttl">${titulo}</div>

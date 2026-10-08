@@ -118,8 +118,8 @@ GERENTES = {
     "adquisiciones@casamusa.cl": {"password": "Adquisiciones2026", "nombre": "Adquisiciones", "admin_adquisiciones": True},
     "caliaga@casamusa.cl":       {"password": "Inventario2026",    "nombre": "C. Aliaga",      "admin_inventario": True},
     # Vendedores (2026-10-08, partiendo por Maipu): "vendedor" es el
-    # nombre tal cual viene en ventas.vendedor. Solo ven Vta del Mes y
-    # Vta Acumulada, filtradas a su propia venta y sin margen -- ver
+    # nombre tal cual viene en ventas.vendedor. Solo ven Vta del Mes
+    # (con su acumulado), filtrada a su propia venta y sin margen -- ver
     # PREFIJOS_PERMITIDOS_VENDEDOR y _vendedor_forzado().
     "mgatica.mp":   {"password": "Musa7863j", "nombre": "Marcelo Gatica",   "vendedor": "MARCELO GATICA"},
     "mescalona.mp": {"password": "Musa4978s", "nombre": "Marlene Escalona", "vendedor": "MARLENE ESCALONA"},
@@ -315,7 +315,9 @@ PREFIJOS_SOLO_GERENCIA = ("/finanzas", "/logistica", "/bodega", "/forecast", "/a
 # del Mes (su pantalla de inicio). Lista blanca (no negra) a proposito: una pantalla nueva del
 # dashboard queda cerrada para el vendedor hasta que se agregue aqui.
 PREFIJOS_PERMITIDOS_VENDEDOR = (
-    "/vta_acum", "/api/vta_acum", "/api/filtros_vta_acum",
+    # /api/filtros_vta_acum: las opciones de filtro de Vta del Mes salen
+    # de ahi; la pantalla Vta Acumulada en si NO esta permitida.
+    "/api/filtros_vta_acum",
     "/vta_mes_mg", "/api/vta_mes_mg",
     "/api/fecha_corte", "/api/estado_datos", "/api/ping",
     "/login", "/logout", "/static/",
