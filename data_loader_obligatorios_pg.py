@@ -367,7 +367,7 @@ def _cargar_productos_extra_pg(cur, codigos):
 
 
 def _dominante_proveedor_por_codigo_pg(cur, codigos):
-    """Proveedor con mas lineas de compra (2025+2026) para cada codigo
+    """Proveedor con mas lineas de compra (ultimos dos años) para cada codigo
     -- proxy simple de "quien nos vende esto" (la mayoria de los
     productos obligatorios tienen un solo proveedor real; para los que
     tienen mas de uno, se usa el que mas se repite)."""
@@ -378,7 +378,7 @@ def _dominante_proveedor_por_codigo_pg(cur, codigos):
            FROM (
                SELECT codigo, nombre_proveedor, count(*) AS n
                FROM compras
-               WHERE codigo = ANY(%(codigos)s) AND ano IN (2025, 2026) AND nombre_proveedor IS NOT NULL
+               WHERE codigo = ANY(%(codigos)s) AND ano >= (SELECT max(ano) FROM compras) - 1 AND nombre_proveedor IS NOT NULL
                GROUP BY codigo, nombre_proveedor
            ) t
            ORDER BY codigo, n DESC""",
