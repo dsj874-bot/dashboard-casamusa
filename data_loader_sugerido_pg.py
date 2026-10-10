@@ -26,10 +26,16 @@ import data_loader_clasificacion_pg as dcl
 import data_loader_exclusion_compra as dec
 
 # Meses de venta de la sucursal por clase; "emb" = 1 embalaje; 0 = no comprar
-# AY y BY eran 2 meses; el usuario fijo 1,5 como maximo (2026-10-10)
-META_MESES = {"AX": 1.5, "AY": 1.5, "AZ": 1.5, "BX": 1.5, "BY": 1.5, "BZ": 1.0,
-              "CX": 1.0, "CY": "emb", "CZ": 0, "SV": 0}
-META_NUEVO = 1.5
+# Metas diferenciadas por clase, elegidas por el usuario 2026-10-10 (con
+# el tope de 1,5 cinco clases quedaban iguales): mas proteccion solo en los
+# A con venta variable; X se repone seguido sin colchon; Z casi sin stock.
+#        X     Y      Z
+#   A    1     1,5    1
+#   B    1     1      0,5
+#   C    0,5   1 emb  0
+META_MESES = {"AX": 1.0, "AY": 1.5, "AZ": 1.0, "BX": 1.0, "BY": 1.0, "BZ": 0.5,
+              "CX": 0.5, "CY": "emb", "CZ": 0, "SV": 0}
+META_NUEVO = 1.0
 # Tope de la meta en meses (None = sin tope) y base de la venta mensual:
 # "datos_duros" (venta_mensual de inventario_stock), "12m" (promedio de los
 # 12 meses del periodo) o "12m_sin_proyectos" (sin compras de proyecto).

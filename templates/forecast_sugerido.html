@@ -187,13 +187,13 @@ function pintarMarcas(d) {
 }
 
 function pintarMetas(d) {
-  const txt = v => v === 'emb' ? '1 embalaje' : (v ? String(v).replace('.', ',') + (v === 1 ? ' mes' : ' meses') : 'no comprar');
+  const txt = v => v === 'emb' ? '1 embalaje' : !v ? 'no comprar' : v === 0.5 ? 'medio mes' : v === 1 ? '1 mes' : String(v).replace('.', ',') + ' meses';
   document.getElementById('metas').innerHTML = ['AX', 'AY', 'AZ', 'BX', 'BY', 'BZ', 'CX', 'CY', 'CZ', 'SV'].map(c =>
     `<div class="meta ${TONO[c]}"><div class="c">${c === 'SV' ? 'Sin venta' : c}</div><div class="v">${txt(d.metas[c])}</div></div>`).join('');
   const nombres = Object.fromEntries(d.sucursales.map(s => [s.codigo, s.nombre]));
   document.getElementById('sobre').innerHTML = '<strong>Stock sobre la meta</strong> (de aquí salen los traspasos): ' +
     Object.entries(d.exceso_traspasable).map(([s, v]) => `${nombres[s]} <strong>${fmtM(v)}</strong>`).join(' · ') +
-    `<br>Productos nuevos: ${String(d.meta_nuevo).replace('.', ',')} meses.`;
+    `<br>Productos nuevos: ${txt(d.meta_nuevo)}.`;
 }
 
 function pintarDetalle() {
