@@ -161,6 +161,22 @@ def get_panel_logistica(desde=None, hasta=None, sucursal=None, chofer=None, tipo
                             "despachos": int((g["tipo"] == "Despacho").sum()), "retiros": int((g["tipo"] == "Retiro").sum()),
                             "pct": _pct(g["ok"].sum(), len(g))})
 
+    # Serie semanal del periodo elegido (semanas de lunes a domingo)
+    semanal = []
+    if not cerr.empty:
+        lunes = cerr["fecha"] - pd.to_timedelta(cerr["fecha"].dt.dayofweek, unit="D")
+        for ini, g in cerr.groupby(lunes):
+            iso = ini.isocalendar()
+            fin = ini + timedelta(days=6)
+            semanal.append({
+                "semana": int(iso[1]), "ano": int(iso[0]),
+                "desde": ini.date().isoformat(), "hasta": fin.date().isoformat(),
+                "etiqueta": f"S{int(iso[1])} · {ini.day:02d}/{ini.month:02d}",
+                "total": int(len(g)), "despachos": int((g["tipo"] == "Despacho").sum()),
+                "retiros": int((g["tipo"] == "Retiro").sum()), "incumplidos": int((~g["ok"]).sum()),
+                "dias": int(g["fecha"].nunique()), "pct": _pct(g["ok"].sum(), len(g)),
+            })
+
     # Capacidad: cumplimiento segun movimientos del dia y por chofer
     capacidad, por_chofer_dia = [], []
     if not cerr.empty:
@@ -227,6 +243,7 @@ def get_panel_logistica(desde=None, hasta=None, sucursal=None, chofer=None, tipo
             "proximos_7d": int(len(proximos)),
         },
         "mensual": mensual,
+        "semanal": semanal,
         "anual": anual,
         "meses_nombre": [MESES_ES[m] for m in range(1, 13)],
         "capacidad": capacidad,

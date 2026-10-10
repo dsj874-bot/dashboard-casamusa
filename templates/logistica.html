@@ -101,6 +101,16 @@
   </div>
 </div>
 
+<div class="lg-card" style="margin-bottom:18px">
+  <div class="lg-card-titulo">Cumplimiento por semana</div>
+  <div class="lg-card-sub" id="semana-sub">Semanas de lunes a domingo del período elegido. Barras: movimientos cerrados (rojo = incumplidos). Línea: % cumplido; la punteada marca la meta de 95%.</div>
+  <div style="position:relative;height:260px"><canvas id="chart-semanal"></canvas></div>
+  <details style="margin-top:12px">
+    <summary style="cursor:pointer;font-size:12px;color:var(--muted2)">Ver tabla por semana</summary>
+    <div class="lg-wrap alto" style="margin-top:8px"><table class="lg-tabla" id="tabla-semanas"></table></div>
+  </details>
+</div>
+
 <div class="lg-grid tres">
   <div class="lg-card">
     <div class="lg-card-titulo">Por chofer</div>
@@ -160,7 +170,7 @@ const fmtP = v => v == null ? '—' : Number(v).toLocaleString('es-CL', { minimu
 const tono = v => v == null ? '' : v >= 95 ? 'alto' : v >= 90 ? 'medio' : 'bajo';
 const fmtF = iso => iso ? iso.split('-').reverse().join('-') : '—';
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-let rango = String(new Date().getFullYear()), filtrosListos = false, chart = null;
+let rango = String(new Date().getFullYear()), filtrosListos = false, chart = null, chartSem = null;
 
 function fechasRango() {
   const hoy = new Date(); const iso = d => d.toISOString().slice(0, 10);
@@ -246,6 +256,37 @@ function pintar(d) {
       },
     },
   });
+
+  // Cumplimiento por semana
+  if (chartSem) chartSem.destroy();
+  const sem = d.semanal;
+  chartSem = new Chart(document.getElementById('chart-semanal'), {
+    data: {
+      labels: sem.map(s => s.etiqueta),
+      datasets: [
+        { type: 'bar', label: 'Cumplidos', data: sem.map(s => s.total - s.incumplidos), backgroundColor: css('--accent'), stack: 's', yAxisID: 'y', borderRadius: 2, order: 3 },
+        { type: 'bar', label: 'Incumplidos', data: sem.map(s => s.incumplidos), backgroundColor: css('--red'), stack: 's', yAxisID: 'y', borderRadius: 2, order: 3 },
+        { type: 'line', label: '% cumplido', data: sem.map(s => s.pct), borderColor: css('--amber'), backgroundColor: css('--amber'), yAxisID: 'y2', tension: .2, pointRadius: sem.length > 30 ? 0 : 3, order: 1 },
+        { type: 'line', label: 'Meta 95%', data: sem.map(() => 95), borderColor: css('--muted2'), borderDash: [4, 4], pointRadius: 0, yAxisID: 'y2', order: 2 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: css('--muted2'), boxWidth: 12 } },
+        tooltip: { callbacks: { title: items => { const s = sem[items[0].dataIndex]; return 'Semana ' + s.semana + ' · ' + fmtF(s.desde) + ' al ' + fmtF(s.hasta); } } },
+      },
+      scales: {
+        x: { stacked: true, ticks: { color: css('--muted2'), maxRotation: 60, autoSkip: true }, grid: { display: false } },
+        y: { stacked: true, ticks: { color: css('--muted2') }, grid: { color: css('--border') } },
+        y2: { position: 'right', min: 60, max: 100, ticks: { color: css('--amber'), callback: v => v + '%' }, grid: { display: false } },
+      },
+    },
+  });
+  const malas = sem.filter(s => s.pct != null && s.pct < 90).length;
+  document.getElementById('semana-sub').textContent = `${fmtN(sem.length)} semanas en el período · ${fmtN(malas)} bajo 90%. Barras: movimientos cerrados (rojo = incumplidos). Línea: % cumplido; la punteada marca 95%.`;
+  tabla('tabla-semanas', [['Semana', 1], ['Del', 1], ['Días'], ['Despachos'], ['Retiros'], ['Incumplidos'], ['Cumplimiento']],
+    [...sem].reverse().map(s => `<tr><td class="izq">S${s.semana} ${s.ano}</td><td class="izq">${fmtF(s.desde)} al ${fmtF(s.hasta)}</td><td>${fmtN(s.dias)}</td><td>${fmtN(s.despachos)}</td><td>${fmtN(s.retiros)}</td><td>${fmtN(s.incumplidos)}</td><td>${barra(s.pct)}</td></tr>`));
 
   tabla('tabla-capacidad', [['Movimientos en el día', 1], ['Días'], ['Movimientos'], ['Cumplimiento']],
     d.capacidad.map(f => `<tr><td class="izq">${f.tramo}</td><td>${fmtN(f.dias)}</td><td>${fmtN(f.movimientos)}</td><td>${barra(f.pct)}</td></tr>`)
