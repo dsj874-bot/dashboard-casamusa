@@ -45,7 +45,10 @@ def _meta_unidades(clase, ciclo, vm, emb):
     return math.ceil(round(regla * vm, 6)) if vm > 0 else 0
 
 
-def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None):
+def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None, sucursal=None):
+    # Filtro por sucursal: lo que falta en esas sucursales, con la parte que les toca
+    # de lo que cubre San Isidro y las OC en camino (ver mas abajo)
+    sucs_filtro = [x for x in (sucursal or []) if x in dcl.SUCURSALES] or None
     clases_filtro = set(clase) if clase else None   # 'clase' se reusa abajo por sucursal
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
@@ -110,6 +113,11 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None)
             continue
         if familia and p["familia"] not in familia:
             continue
+        emp = por_alc.get("EMPRESA")
+        clase_emp = ((emp["abc"] + emp["xyz"]) if emp["abc"] else "SV") if emp else None
+        # Filtro por clasificacion: la clase de la empresa (la columna Clase)
+        if clases_filtro and clase_emp not in clases_filtro:
+            continue
         emb, cup = int(p["emb"]), float(p["cup"])
         detalle, necesidad, exceso_si, necesidad_otros = {}, 0, 0.0, 0
         for s in SUCURSALES:
@@ -128,22 +136,29 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None)
             cajas = math.ceil(round(falta / emb, 6)) if falta > 0 else 0
             envio = cajas * emb
             exceso = max(0.0, disp - meta) if meta > 0 or clase in ("CZ", "SV") else 0.0
-            exceso_suc[s] += exceso * cup
+            if not sucs_filtro or s in sucs_filtro:
+                exceso_suc[s] += exceso * cup
             necesidad += envio
             if s == "SI":
                 exceso_si = exceso
             else:
                 necesidad_otros += envio
             detalle[s] = {"clase": clase, "envio": envio, "stock": st, "meta": meta}
-        emp = por_alc.get("EMPRESA")
-        clase_emp = ((emp["abc"] + emp["xyz"]) if emp["abc"] else "SV") if emp else None
-        # Filtro por clasificacion: la clase de la empresa (la columna Clase)
-        if clases_filtro and clase_emp not in clases_filtro:
-            continue
         oc_u, oc_v = oc.get(cod, (0.0, 0.0))
         # Antes de comprar se despacha desde San Isidro lo que le sobra
         desde_si = min(exceso_si, necesidad_otros)
-        bruto = max(0.0, necesidad - desde_si - oc_u)
+        oc_usada = min(oc_u, max(0.0, necesidad - desde_si))
+        if sucs_filtro:
+            # Lo que cubren San Isidro y las OC se reparte entre las
+            # sucursales segun lo que le falta a cada una; sin filtro la
+            # suma de todas da exactamente el calculo de la empresa.
+            nec_sel = sum(detalle[s]["envio"] for s in sucs_filtro if s in detalle)
+            otros_sel = sum(detalle[s]["envio"] for s in sucs_filtro if s in detalle and s != "SI")
+            desde_si = desde_si * otros_sel / necesidad_otros if necesidad_otros else 0.0
+            oc_usada = oc_usada * nec_sel / necesidad if necesidad else 0.0
+            necesidad = nec_sel
+            oc_u = oc_usada
+        bruto = max(0.0, necesidad - desde_si - oc_usada)
         compra = math.ceil(round(bruto / emb, 6)) * emb if bruto > 0 else 0
         if cod in excluidos:
             compra = 0
@@ -183,18 +198,22 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None)
             k = x["clase"] or "-"
             por_clase[k] = por_clase.get(k, 0.0) + x["valor"]
     oc_desc = sum(min(x["oc_en_camino"], max(0.0, x["necesidad"] - x["desde_si"])) * x["cup"] for x in productos)
+    if sucs_filtro:
+        # con filtro, oc_en_camino ya es la parte de la OC que le toca a esas sucursales
+        oc_desc = sum(x["oc_en_camino"] * x["cup"] for x in productos)
     desde_si_v = sum(x["desde_si"] * x["cup"] for x in productos)
     return {
         "calculo": {"desde": calc["desde"].isoformat(), "hasta": calc["hasta"].isoformat(),
                     "calculado_en": calc["calculado_en"].isoformat()},
         "metas": META_MESES, "meta_nuevo": META_NUEVO,
-        "sucursales": [{"codigo": s, "nombre": dcl.NOMBRE_ALCANCE[s]} for s in SUCURSALES],
+        "sucursales": [{"codigo": s, "nombre": dcl.NOMBRE_ALCANCE[s]} for s in (sucs_filtro or SUCURSALES)],
+        "todas_sucursales": [{"codigo": s, "nombre": dcl.NOMBRE_ALCANCE[s]} for s in SUCURSALES],
         "total": round(sum(x["valor"] for x in productos), 0),
         "n_productos": sum(1 for x in productos if x["compra"] > 0),
         "n_proveedores": sum(1 for d in por_prov.values() if d["productos"] > 0),
         "oc_descontada": round(oc_desc, 0),
         "desde_san_isidro": round(desde_si_v, 0),
-        "exceso_traspasable": {s: round(v, 0) for s, v in exceso_suc.items()},
+        "exceso_traspasable": {s: round(v, 0) for s, v in exceso_suc.items() if not sucs_filtro or s in sucs_filtro},
         "por_proveedor": sorted([d for d in por_prov.values() if d["productos"] > 0], key=lambda d: -d["valor"]),
         "por_marca": sorted(por_marca.values(), key=lambda d: -d["valor"]),
         "n_marcas": len(por_marca),

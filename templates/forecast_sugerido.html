@@ -65,6 +65,7 @@
 
 {% block content %}
 <div class="sg-barra">
+  <div class="sg-filtro"><label for="f-sucursal">Sucursal</label><select id="f-sucursal"></select></div>
   <div class="sg-filtro"><label for="f-marca">Marca</label><select id="f-marca"></select></div>
   <div class="sg-filtro"><label for="f-familia">Familia</label><select id="f-familia"></select></div>
   <div class="sg-filtro"><label for="f-clase">Clasificación</label><select id="f-clase"></select></div>
@@ -89,7 +90,8 @@
     <div class="sg-card-sub">
       En cada sucursal, la meta de stock es la venta mensual de la sucursal por los meses de la clase que tiene
       el producto <em>en esa sucursal</em>. Lo que falta se redondea a embalaje. Antes de comprar se despacha desde
-      San Isidro lo que tiene sobre su meta, y se descuentan las OC de stock por recibir.
+      San Isidro lo que tiene sobre su meta, y se descuentan las OC de stock por recibir. Si filtras por sucursal,
+      ves lo que le falta a esa sucursal, con la parte que le toca de lo que cubren San Isidro y las OC.
     </div>
     <div class="metas" id="metas"></div>
     <div class="sobre" id="sobre"></div>
@@ -126,7 +128,7 @@ let datos = null, filtrosListos = false, orden = { k: 'valor', dir: -1 };
 
 function qs() {
   const p = new URLSearchParams();
-  ['marca', 'familia', 'clase'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
+  ['sucursal', 'marca', 'familia', 'clase'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
   return p.toString();
 }
 
@@ -137,14 +139,17 @@ async function cargar() {
   if (!d.calculo) { document.getElementById('periodo').textContent = 'Falta calcular la Clasificación de Productos.'; return; }
   datos = d;
   if (!filtrosListos) {
+    const nomSuc = Object.fromEntries(d.todas_sucursales.map(s => [s.codigo, s.nombre]));
     const opciones = {
+      sucursal: d.todas_sucursales.map(s => s.codigo),
       marca: d.por_marca.map(m => m.marca),
       familia: [...new Set(d.productos.map(p => p.familia).filter(Boolean))].sort(),
       clase: ['AX', 'AY', 'AZ', 'BX', 'BY', 'BZ', 'CX', 'CY', 'CZ', 'SV'],
     };
     Object.entries(opciones).forEach(([k, vals]) => {
       const sel = document.getElementById('f-' + k);
-      sel.innerHTML = vals.map(v => `<option value="${esc(v)}">${esc(k === 'clase' && v === 'SV' ? 'Sin venta' : v)}</option>`).join('');
+      const texto = v => k === 'sucursal' ? nomSuc[v] : (k === 'clase' && v === 'SV' ? 'Sin venta' : v);
+      sel.innerHTML = vals.map(v => `<option value="${esc(v)}">${esc(texto(v))}</option>`).join('');
       initMultiSelect(sel);
       sel.addEventListener('change', cargar);
     });
@@ -161,7 +166,7 @@ function pintarKpis(d) {
     <div class="sg-kpi"><div class="sg-kpi-label">Compra sugerida</div><div class="sg-kpi-valor">${fmtM(d.total)}</div><div class="sg-kpi-sub">a CUP · ${fmtN(d.n_productos)} productos · ${fmtN(d.n_marcas)} marcas</div></div>
     <div class="sg-kpi"><div class="sg-kpi-label">Se cubre desde San Isidro</div><div class="sg-kpi-valor verde">${fmtM(d.desde_san_isidro)}</div><div class="sg-kpi-sub">stock central sobre su meta, despachar antes de comprar</div></div>
     <div class="sg-kpi"><div class="sg-kpi-label">OC de stock ya en camino</div><div class="sg-kpi-valor">${fmtM(d.oc_descontada)}</div><div class="sg-kpi-sub">descontadas de la compra</div></div>
-    <div class="sg-kpi"><div class="sg-kpi-label">Stock sobre la meta</div><div class="sg-kpi-valor">${fmtM(sobre)}</div><div class="sg-kpi-sub">en las 6 sucursales (no se compra)</div></div>`;
+    <div class="sg-kpi"><div class="sg-kpi-label">Stock sobre la meta</div><div class="sg-kpi-valor">${fmtM(sobre)}</div><div class="sg-kpi-sub">${Object.keys(d.exceso_traspasable).length === 6 ? 'en las 6 sucursales' : 'en las sucursales elegidas'} (no se compra)</div></div>`;
 }
 
 function pintarMarcas(d) {

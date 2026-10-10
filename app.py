@@ -1468,6 +1468,7 @@ def api_forecast_sugerido():
             marca=request.args.getlist("marca") or None,
             familia=request.args.getlist("familia") or None,
             clase=request.args.getlist("clase") or None,
+            sucursal=request.args.getlist("sucursal") or None,
         ))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
