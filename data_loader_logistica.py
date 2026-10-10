@@ -161,11 +161,15 @@ def get_panel_logistica(desde=None, hasta=None, sucursal=None, chofer=None, tipo
                             "despachos": int((g["tipo"] == "Despacho").sum()), "retiros": int((g["tipo"] == "Retiro").sum()),
                             "pct": _pct(g["ok"].sum(), len(g))})
 
-    # Serie semanal del periodo elegido (semanas de lunes a domingo)
+    # Serie semanal (semanas de lunes a domingo) de TODA la planilla, con
+    # los filtros de sucursal/chofer/tipo pero sin el periodo: el grafico
+    # tiene su propio selector (este mes, 3 y 6 meses, por año) y recorta
+    # en el navegador.
     semanal = []
-    if not cerr.empty:
-        lunes = cerr["fecha"] - pd.to_timedelta(cerr["fecha"].dt.dayofweek, unit="D")
-        for ini, g in cerr.groupby(lunes):
+    bs = bc.assign(ok=bc["cumplimiento"].eq("Cumplido"))
+    if not bs.empty:
+        lunes = bs["fecha"] - pd.to_timedelta(bs["fecha"].dt.dayofweek, unit="D")
+        for ini, g in bs.groupby(lunes):
             iso = ini.isocalendar()
             fin = ini + timedelta(days=6)
             semanal.append({
