@@ -842,9 +842,10 @@
         📥 Descargar Excel
       </button>
       {% endblock %}
-      {% if es_pantalla_comercial %}
+      {% if es_pantalla_comercial or es_pantalla_fecha_adq %}
       <div class="fecha-corte-wrap">
-        <button type="button" class="fecha-corte-btn" id="fecha-corte-btn">📅 Datos al <strong id="fecha-corte-label">…</strong></button>
+        <button type="button" class="fecha-corte-btn" id="fecha-corte-btn"
+                data-area="{{ 'adquisiciones' if es_pantalla_fecha_adq else '' }}">📅 Datos al <strong id="fecha-corte-label">…</strong></button>
         <div class="fecha-corte-panel" id="fecha-corte-panel">
           <label for="fecha-corte-input">Ver el dashboard como estaba al</label>
           <input type="date" id="fecha-corte-input">
@@ -912,7 +913,9 @@
       errorEl.style.display = 'block';
     }
 
-    fetch('/api/fecha_corte').then(r => r.json()).then(d => {
+    // Adquisiciones guarda su propia fecha (ver api_fecha_corte)
+    const area = btn.dataset.area || '';
+    fetch('/api/fecha_corte' + (area ? '?area=' + area : '')).then(r => r.json()).then(d => {
       if (!d.ok) return;
       input.max = d.fecha_real;
       if (d.fecha_corte) {
@@ -940,7 +943,7 @@
       fetch('/api/fecha_corte', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fecha_corte: fechaCorte }),
+        body: JSON.stringify({ fecha_corte: fechaCorte, area: area }),
       })
         .then(r => r.json())
         .then(d => {

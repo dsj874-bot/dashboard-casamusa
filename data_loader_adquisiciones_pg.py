@@ -64,16 +64,30 @@ def _filtro_tipo(tipo_compra):
     return " AND tipo_compra = %(tipo)s", " AND tipo_oc = %(tipo)s", {"tipo": tipo_compra}
 
 
-def _fecha_datos_pg(cur, frag_c, frag_r, params):
+def _fecha_datos_pg(cur, frag_c, frag_r, params, fecha_corte=None):
+    """Ultima fecha con compras o recepciones -- o la fecha de corte
+    elegida en el selector "Datos al" de Adquisiciones, si es anterior
+    (ver _fecha_corte_adq_sesion() en app.py)."""
     cur.execute(f"SELECT max(fecha_creacion) AS f FROM compras WHERE ano = 2026 {frag_c}", params)
     fc = cur.fetchone()["f"]
     cur.execute(f"SELECT max(fecha_recepcion) AS f FROM recepciones WHERE ano = 2026 {frag_r}", params)
     fr = cur.fetchone()["f"]
     candidatas = [d for d in (fc, fr) if d is not None]
-    return max(candidatas) if candidatas else None
+    if not candidatas:
+        return None
+    real = max(candidatas)
+    return min(real, fecha_corte) if fecha_corte else real
 
 
-def get_resumen_combinado_pg(tipo_compra=None):
+def fecha_datos_real_adq_pg():
+    """Tope del selector "Datos al" de Adquisiciones: la ultima fecha
+    cargada de compras o recepciones (independiente de la de ventas)."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            return _fecha_datos_pg(cur, "", "", {})
+
+
+def get_resumen_combinado_pg(tipo_compra=None, fecha_corte=None):
     """KPIs de Adquisiciones -- dos filas (Comprado / Recibido), mismos
     3 grupos de comparacion que el resto del dashboard (Año Actual/
     Anterior, Mes Actual/Año Ant, Mes Actual/Mes Ant)."""
@@ -81,34 +95,37 @@ def get_resumen_combinado_pg(tipo_compra=None):
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
-            fecha_datos = _fecha_datos_pg(cur, frag_c, frag_r, params)
+            fecha_datos = _fecha_datos_pg(cur, frag_c, frag_r, params, fecha_corte)
             if fecha_datos is None:
                 return {"filas": [], "ano_actual": 2026, "ano_anterior": 2025, "fecha_datos": None}
 
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
             mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
+            # "corte": todo lo de 2026 se suma solo hasta fecha_datos. Sin
+            # fecha de corte elegida no cambia nada (no hay datos despues
+            # de la ultima carga); con una, deja fuera lo posterior.
             params.update({"mes_actual": mes_actual, "dia_actual": dia_actual, "mes_anterior": mes_anterior,
-                           "dia_mes_ant": dia_corte_mes_anterior(fecha_datos)})
+                           "dia_mes_ant": dia_corte_mes_anterior(fecha_datos), "corte": fecha_datos})
 
             cur.execute(
                 f"""SELECT
-                      coalesce(sum(precio_total) FILTER (WHERE ano = 2026), 0) AS ano_26,
+                      coalesce(sum(precio_total) FILTER (WHERE ano = 2026 AND fecha_creacion <= %(corte)s), 0) AS ano_26,
                       coalesce(sum(precio_total) FILTER (
                           WHERE ano = 2025 AND (
                               extract(month from fecha_creacion) < %(mes_actual)s OR
                               (extract(month from fecha_creacion) = %(mes_actual)s AND extract(day from fecha_creacion) <= %(dia_actual)s)
                           )
                       ), 0) AS ano_25,
-                      coalesce(sum(precio_total) FILTER (WHERE ano = 2026 AND extract(month from fecha_creacion) = %(mes_actual)s), 0) AS mes_26,
+                      coalesce(sum(precio_total) FILTER (WHERE ano = 2026 AND extract(month from fecha_creacion) = %(mes_actual)s AND fecha_creacion <= %(corte)s), 0) AS mes_26,
                       coalesce(sum(precio_total) FILTER (
                           WHERE ano = 2025 AND extract(month from fecha_creacion) = %(mes_actual)s AND extract(day from fecha_creacion) <= %(dia_actual)s
                       ), 0) AS mes_25,
                       coalesce(sum(precio_total) FILTER (
                           WHERE ano = 2026 AND extract(month from fecha_creacion) = %(mes_anterior)s AND extract(day from fecha_creacion) <= %(dia_mes_ant)s
                       ), 0) AS mes_ant,
-                      count(DISTINCT n_orden_compra) FILTER (WHERE ano = 2026) AS oc_26,
-                      count(DISTINCT nombre_proveedor) FILTER (WHERE ano = 2026) AS proveedores_26
+                      count(DISTINCT n_orden_compra) FILTER (WHERE ano = 2026 AND fecha_creacion <= %(corte)s) AS oc_26,
+                      count(DISTINCT nombre_proveedor) FILTER (WHERE ano = 2026 AND fecha_creacion <= %(corte)s) AS proveedores_26
                     FROM compras WHERE ano IN (2025, 2026) {frag_c}""",
                 params,
             )
@@ -116,22 +133,22 @@ def get_resumen_combinado_pg(tipo_compra=None):
 
             cur.execute(
                 f"""SELECT
-                      coalesce(sum(total_clp) FILTER (WHERE ano = 2026), 0) AS ano_26,
+                      coalesce(sum(total_clp) FILTER (WHERE ano = 2026 AND fecha_recepcion <= %(corte)s), 0) AS ano_26,
                       coalesce(sum(total_clp) FILTER (
                           WHERE ano = 2025 AND (
                               extract(month from fecha_recepcion) < %(mes_actual)s OR
                               (extract(month from fecha_recepcion) = %(mes_actual)s AND extract(day from fecha_recepcion) <= %(dia_actual)s)
                           )
                       ), 0) AS ano_25,
-                      coalesce(sum(total_clp) FILTER (WHERE ano = 2026 AND extract(month from fecha_recepcion) = %(mes_actual)s), 0) AS mes_26,
+                      coalesce(sum(total_clp) FILTER (WHERE ano = 2026 AND extract(month from fecha_recepcion) = %(mes_actual)s AND fecha_recepcion <= %(corte)s), 0) AS mes_26,
                       coalesce(sum(total_clp) FILTER (
                           WHERE ano = 2025 AND extract(month from fecha_recepcion) = %(mes_actual)s AND extract(day from fecha_recepcion) <= %(dia_actual)s
                       ), 0) AS mes_25,
                       coalesce(sum(total_clp) FILTER (
                           WHERE ano = 2026 AND extract(month from fecha_recepcion) = %(mes_anterior)s AND extract(day from fecha_recepcion) <= %(dia_mes_ant)s
                       ), 0) AS mes_ant,
-                      count(DISTINCT n_recepcion) FILTER (WHERE ano = 2026) AS rec_26,
-                      count(DISTINCT nombre_proveedor) FILTER (WHERE ano = 2026) AS proveedores_26
+                      count(DISTINCT n_recepcion) FILTER (WHERE ano = 2026 AND fecha_recepcion <= %(corte)s) AS rec_26,
+                      count(DISTINCT nombre_proveedor) FILTER (WHERE ano = 2026 AND fecha_recepcion <= %(corte)s) AS proveedores_26
                     FROM recepciones WHERE ano IN (2025, 2026) {frag_r}""",
                 params,
             )
@@ -167,10 +184,15 @@ def get_resumen_combinado_pg(tipo_compra=None):
     }
 
 
-def get_por_mes_combinado_pg(tipo_compra=None):
+def get_por_mes_combinado_pg(tipo_compra=None, fecha_corte=None):
     """Comprado y Recibido por mes calendario, año actual vs año
-    anterior completo -- para el grafico de evolucion mensual."""
+    anterior completo -- para el grafico de evolucion mensual. Con
+    fecha de corte, el año actual se corta ahi (el anterior va entero)."""
     frag_c, frag_r, params = _filtro_tipo(tipo_compra)
+    if fecha_corte:
+        frag_c += " AND (ano = 2025 OR fecha_creacion <= %(corte)s)"
+        frag_r += " AND (ano = 2025 OR fecha_recepcion <= %(corte)s)"
+        params["corte"] = fecha_corte
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
@@ -341,7 +363,10 @@ _CTE_ABAST = """
         SELECT least(
             (SELECT max(fecha_conta)     FROM ventas      WHERE ano = 2026),
             (SELECT max(fecha_creacion)  FROM compras     WHERE ano = 2026),
-            (SELECT max(fecha_recepcion) FROM recepciones WHERE ano = 2026)
+            (SELECT max(fecha_recepcion) FROM recepciones WHERE ano = 2026),
+            -- fecha de corte del selector "Datos al"; least() ignora el
+            -- NULL cuando no hay ninguna elegida
+            %(fecha_corte)s::date
         ) AS f
     ),
     defecto AS (
@@ -402,7 +427,7 @@ _CTE_ABAST = """
 """
 
 
-def get_abastecimiento_proveedor_pg():
+def get_abastecimiento_proveedor_pg(fecha_corte=None):
     """Costo de venta vs Comprado vs Recibido por proveedor, solo
     productos nacionales -- para medir sobreabastecimiento. Incluye la
     serie mensual del ratio, que es donde se ve si el problema se esta
@@ -444,7 +469,8 @@ def get_abastecimiento_proveedor_pg():
        universo contra el que se compara.
     """
     params = {"armadas": list(MARCAS_ARMADAS),
-              "prov_imp": list(PROVEEDORES_IMPORTADOS)}
+              "prov_imp": list(PROVEEDORES_IMPORTADOS),
+              "fecha_corte": fecha_corte}
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:

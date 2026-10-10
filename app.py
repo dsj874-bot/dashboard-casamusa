@@ -390,6 +390,9 @@ def inject_es_admin():
         "es_pantalla_comercial": not request.path.startswith(
             PREFIJOS_RESTRINGIDOS_INVENTARIO + PREFIJOS_RESTRINGIDOS_ADQUISICIONES + PREFIJOS_SOLO_GERENCIA
         ),
+        # Resumen de Adquisiciones tiene su propio "Datos al", separado
+        # del de Ventas (ver _fecha_corte_adq_sesion()).
+        "es_pantalla_fecha_adq": request.path == "/adquisiciones",
         # Distinto de es_admin_inventario: ese es "puede gestionar datos
         # del area", este es "puede ejecutar /admin/actualizar_inventario",
         # que exige estar en USUARIOS_INVENTARIO. Una cuenta admin global
@@ -448,6 +451,14 @@ def _sucursal_ne_forzada():
     NE vive bajo "CANAL DIGITAL" en vendedor_home aunque sus reportes
     de Comercial no esten restringidos por sucursal)."""
     return session.get("sucursal") or session.get("sucursal_ne")
+
+
+def _fecha_corte_adq_sesion():
+    """Fecha de corte del selector "Datos al" de Adquisiciones, o None.
+    Separada de la de Ventas a proposito (pedido del usuario 2026-10-10):
+    mover una no mueve la otra."""
+    valor = session.get("fecha_corte_adq")
+    return date.fromisoformat(valor) if valor else None
 
 
 def _fecha_corte_sesion():
@@ -572,7 +583,7 @@ def api_adquisiciones_resumen():
     try:
         tipo = request.args.get("tipo", "") or None
         if USAR_POSTGRES_ADQUISICIONES:
-            return jsonify(data_loader_adquisiciones_pg.get_resumen_combinado_pg(tipo))
+            return jsonify(data_loader_adquisiciones_pg.get_resumen_combinado_pg(tipo, fecha_corte=_fecha_corte_adq_sesion()))
         return jsonify(data_loader_adquisiciones.get_resumen(tipo))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -584,7 +595,7 @@ def api_adquisiciones_por_mes():
     try:
         tipo = request.args.get("tipo", "") or None
         if USAR_POSTGRES_ADQUISICIONES:
-            return jsonify(data_loader_adquisiciones_pg.get_por_mes_combinado_pg(tipo))
+            return jsonify(data_loader_adquisiciones_pg.get_por_mes_combinado_pg(tipo, fecha_corte=_fecha_corte_adq_sesion()))
         return jsonify(data_loader_adquisiciones.get_compras_por_mes(tipo))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -600,7 +611,7 @@ def api_adquisiciones_abastecimiento():
     if not USAR_POSTGRES_ADQUISICIONES:
         return jsonify({"error": "Este indicador necesita Postgres (USAR_POSTGRES_ADQUISICIONES=1)."}), 503
     try:
-        datos = data_loader_adquisiciones_pg.get_abastecimiento_proveedor_pg()
+        datos = data_loader_adquisiciones_pg.get_abastecimiento_proveedor_pg(fecha_corte=_fecha_corte_adq_sesion())
         # El inventario por sucursal viaja en la misma respuesta: es la
         # comprobacion independiente del mismo fenomeno y se muestra en
         # la misma pantalla, no vale la pena un segundo viaje a Oregon.
@@ -2406,8 +2417,16 @@ def api_subir_recepciones():
 def api_fecha_corte():
     if not USAR_POSTGRES_COMERCIAL:
         return jsonify({"ok": False, "msg": "Esta funcion requiere Postgres (USAR_POSTGRES_COMERCIAL=1)."}), 400
+    body = (request.get_json(silent=True) or {}) if request.method == "POST" else {}
+    # area=adquisiciones: fecha propia de Adquisiciones (otra clave de
+    # sesion y otro tope: la ultima compra/recepcion, no la ultima venta).
+    es_adq = (request.args.get("area") or body.get("area")) == "adquisiciones"
+    clave = "fecha_corte_adq" if es_adq else "fecha_corte"
     try:
-        fecha_real = data_loader_pg.fecha_datos_real_pg()
+        if es_adq:
+            fecha_real = data_loader_adquisiciones_pg.fecha_datos_real_adq_pg()
+        else:
+            fecha_real = data_loader_pg.fecha_datos_real_pg()
     except Exception as e:
         return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
 
@@ -2415,13 +2434,12 @@ def api_fecha_corte():
         return jsonify({
             "ok": True,
             "fecha_real": fecha_real.isoformat(),
-            "fecha_corte": session.get("fecha_corte"),
+            "fecha_corte": session.get(clave),
         })
 
-    body = request.get_json(silent=True) or {}
     valor = body.get("fecha_corte")
     if not valor:
-        session.pop("fecha_corte", None)
+        session.pop(clave, None)
         return jsonify({"ok": True, "fecha_real": fecha_real.isoformat(), "fecha_corte": None})
 
     try:
@@ -2431,8 +2449,8 @@ def api_fecha_corte():
     if elegida > fecha_real:
         return jsonify({"ok": False, "msg": f"No puedes elegir una fecha posterior a la ultima cargada ({fecha_real.strftime('%d/%m/%Y')})."}), 400
 
-    session["fecha_corte"] = elegida.isoformat()
-    return jsonify({"ok": True, "fecha_real": fecha_real.isoformat(), "fecha_corte": session["fecha_corte"]})
+    session[clave] = elegida.isoformat()
+    return jsonify({"ok": True, "fecha_real": fecha_real.isoformat(), "fecha_corte": session[clave]})
 
 
 # ══════════════════════════════════════════════════════
