@@ -250,14 +250,14 @@
           <thead>
             <tr>
               <th id="th-cat" data-key="categoria" style="text-align:left">Categoría</th>
-              <th data-key="vta_acum">Vta Acum 2026</th>
-              <th data-key="vta_acum_ant">Vta Acum 2025</th>
+              <th data-key="vta_acum" id="th-vta-acum">Vta Acum</th>
+              <th data-key="vta_acum_ant" id="th-vta-acum-ant">Vta Acum Año Ant.</th>
               <th data-key="pct_crec">% Crec.</th>
               <th data-key="pct_mkt_share">% Mkt Share</th>
               <th data-key="promedio_venta">Promedio Venta</th>
               <th data-key="promedio_venta_ant">Prom. Año Ant.</th>
               <th data-key="proyeccion">Proyección Anual</th>
-              <th data-key="vta_cierre_ant">Cierre 2025</th>
+              <th data-key="vta_cierre_ant" id="th-cierre-ant">Cierre Año Ant.</th>
             </tr>
           </thead>
           <tbody id="tbody-acum">
@@ -368,6 +368,10 @@ function aplicar() {
   .then(data => {
     if(data.error) { alert('Error: ' + data.error); return; }
     renderKPIs(data.kpis);
+    // El año sale de la fecha de datos (o de corte), no va fijo en la tabla
+    document.getElementById('th-vta-acum').textContent = 'Vta Acum ' + data.kpis.ano_actual;
+    document.getElementById('th-vta-acum-ant').textContent = 'Vta Acum ' + data.kpis.ano_anterior;
+    document.getElementById('th-cierre-ant').textContent = 'Cierre ' + data.kpis.ano_anterior;
     renderTabla(data);
   })
   .catch(e => console.error('Error datos:', e));

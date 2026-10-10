@@ -75,8 +75,8 @@
       <thead>
         <tr>
           <th>Sucursal</th>
-          <th class="text-right">Vta Acum 2026</th>
-          <th class="text-right">Vta Acum 2025</th>
+          <th class="text-right" id="th-acum-act">Vta Acum</th>
+          <th class="text-right" id="th-acum-ant">Vta Acum Año Ant.</th>
           <th class="text-right">% Crec.</th>
           <th class="text-right">Ppto Anual</th>
           <th class="text-right">Ppto Prorrateado</th>
@@ -108,8 +108,8 @@
 <div class="table-card" id="tabla-mensual-wrap" style="margin-bottom:28px;">
   <!-- year tabs -->
   <div style="display:flex;gap:8px;padding:14px 20px;border-bottom:1px solid var(--border);">
-    <button class="btn-tab active" id="tab-26" onclick="switchTab(26)">2026</button>
-    <button class="btn-tab"        id="tab-25" onclick="switchTab(25)">2025</button>
+    <button class="btn-tab active" id="tab-26" onclick="switchTab(26)">Año actual</button>
+    <button class="btn-tab"        id="tab-25" onclick="switchTab(25)">Año anterior</button>
   </div>
   <div class="table-wrap">
     <table class="tbl-mensual">
@@ -170,7 +170,16 @@ async function cargar() {
 }
 
 // ── KPIs ───────────────────────────────────────────────
+// Años de la fecha de datos (o de corte). Las claves internas siguen
+// siendo 26/25 (= año actual / anterior); solo cambian los rotulos.
+let _anos = { act: '', ant: '' };
+
 function renderKPIs(k) {
+  _anos = { act: String(k.ano_actual), ant: String(k.ano_anterior) };
+  document.getElementById('th-acum-act').textContent = 'Vta Acum ' + _anos.act;
+  document.getElementById('th-acum-ant').textContent = 'Vta Acum ' + _anos.ant;
+  document.getElementById('tab-26').textContent = _anos.act;
+  document.getElementById('tab-25').textContent = _anos.ant;
   const card = (label, val, sub, pct, positiveIsGood=true) => `
     <div class="kpi-card">
       <div class="kpi-label">${label}</div>
@@ -280,7 +289,7 @@ function renderChart(data) {
       datasets: [
         {
           type: 'bar',
-          label: '2026',
+          label: _anos.act,
           data: t26,
           backgroundColor: 'rgba(59,130,246,0.6)',
           borderColor: cssVar('--blue'),
@@ -290,7 +299,7 @@ function renderChart(data) {
         },
         {
           type: 'bar',
-          label: '2025',
+          label: _anos.ant,
           data: t25,
           backgroundColor: 'rgba(100,116,139,0.35)',
           borderColor: cssVar('--muted2'),

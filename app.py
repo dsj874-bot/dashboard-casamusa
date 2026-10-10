@@ -2494,7 +2494,8 @@ def api_ventas_por_sucursal():
 def api_filtros_proyeccion():
     try:
         if USAR_POSTGRES_COMERCIAL:
-            return jsonify(data_loader_pg.get_filtros_proyeccion_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado()))
+            return jsonify(data_loader_pg.get_filtros_proyeccion_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(),
+                                                                  fecha_corte=_fecha_corte_sesion()))
         return jsonify(data_loader.get_filtros_proyeccion(filtro_sucursal=_sucursal_forzada()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2566,7 +2567,7 @@ def api_filtros_vta_acum():
     try:
         if USAR_POSTGRES_COMERCIAL:
             datos = data_loader_pg.get_filtros_vta_acum_pg(filtro_sucursal=_sucursal_forzada(), filtro_canal=_canal_forzado(),
-                                                           filtro_vendedor=_vendedor_forzado())
+                                                           filtro_vendedor=_vendedor_forzado(), fecha_corte=_fecha_corte_sesion())
             if _vendedor_forzado():
                 for cat in CATEGORIAS_OCULTAS_VENDEDOR:
                     datos["categorias"].pop(cat, None)
