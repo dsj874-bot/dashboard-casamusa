@@ -68,9 +68,9 @@ def _fecha_datos_pg(cur, frag_c, frag_r, params, fecha_corte=None):
     """Ultima fecha con compras o recepciones -- o la fecha de corte
     elegida en el selector "Datos al" de Adquisiciones, si es anterior
     (ver _fecha_corte_adq_sesion() en app.py)."""
-    cur.execute(f"SELECT max(fecha_creacion) AS f FROM compras WHERE ano = 2026 {frag_c}", params)
+    cur.execute(f"SELECT max(fecha_creacion) AS f FROM compras WHERE true {frag_c}", params)
     fc = cur.fetchone()["f"]
-    cur.execute(f"SELECT max(fecha_recepcion) AS f FROM recepciones WHERE ano = 2026 {frag_r}", params)
+    cur.execute(f"SELECT max(fecha_recepcion) AS f FROM recepciones WHERE true {frag_r}", params)
     fr = cur.fetchone()["f"]
     candidatas = [d for d in (fc, fr) if d is not None]
     if not candidatas:
@@ -97,7 +97,12 @@ def get_resumen_combinado_pg(tipo_compra=None, fecha_corte=None):
         with conn.cursor() as cur:
             fecha_datos = _fecha_datos_pg(cur, frag_c, frag_r, params, fecha_corte)
             if fecha_datos is None:
-                return {"filas": [], "ano_actual": 2026, "ano_anterior": 2025, "fecha_datos": None}
+                return {"filas": [], "ano_actual": date.today().year, "ano_anterior": date.today().year - 1, "fecha_datos": None}
+            # Año actual = el de la fecha de datos (o de corte): con un corte en
+            # 2025 la pantalla muestra 2025, y en enero 2027 pasa sola.
+            ano_act = fecha_datos.year
+            ano_ant = ano_act - 1
+            params.update({"ano_act": ano_act, "ano_ant": ano_ant})
 
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
@@ -110,46 +115,46 @@ def get_resumen_combinado_pg(tipo_compra=None, fecha_corte=None):
 
             cur.execute(
                 f"""SELECT
-                      coalesce(sum(precio_total) FILTER (WHERE ano = 2026 AND fecha_creacion <= %(corte)s), 0) AS ano_26,
+                      coalesce(sum(precio_total) FILTER (WHERE ano = %(ano_act)s AND fecha_creacion <= %(corte)s), 0) AS ano_26,
                       coalesce(sum(precio_total) FILTER (
-                          WHERE ano = 2025 AND (
+                          WHERE ano = %(ano_ant)s AND (
                               extract(month from fecha_creacion) < %(mes_actual)s OR
                               (extract(month from fecha_creacion) = %(mes_actual)s AND extract(day from fecha_creacion) <= %(dia_actual)s)
                           )
                       ), 0) AS ano_25,
-                      coalesce(sum(precio_total) FILTER (WHERE ano = 2026 AND extract(month from fecha_creacion) = %(mes_actual)s AND fecha_creacion <= %(corte)s), 0) AS mes_26,
+                      coalesce(sum(precio_total) FILTER (WHERE ano = %(ano_act)s AND extract(month from fecha_creacion) = %(mes_actual)s AND fecha_creacion <= %(corte)s), 0) AS mes_26,
                       coalesce(sum(precio_total) FILTER (
-                          WHERE ano = 2025 AND extract(month from fecha_creacion) = %(mes_actual)s AND extract(day from fecha_creacion) <= %(dia_actual)s
+                          WHERE ano = %(ano_ant)s AND extract(month from fecha_creacion) = %(mes_actual)s AND extract(day from fecha_creacion) <= %(dia_actual)s
                       ), 0) AS mes_25,
                       coalesce(sum(precio_total) FILTER (
-                          WHERE ano = 2026 AND extract(month from fecha_creacion) = %(mes_anterior)s AND extract(day from fecha_creacion) <= %(dia_mes_ant)s
+                          WHERE ano = %(ano_act)s AND extract(month from fecha_creacion) = %(mes_anterior)s AND extract(day from fecha_creacion) <= %(dia_mes_ant)s
                       ), 0) AS mes_ant,
-                      count(DISTINCT n_orden_compra) FILTER (WHERE ano = 2026 AND fecha_creacion <= %(corte)s) AS oc_26,
-                      count(DISTINCT nombre_proveedor) FILTER (WHERE ano = 2026 AND fecha_creacion <= %(corte)s) AS proveedores_26
-                    FROM compras WHERE ano IN (2025, 2026) {frag_c}""",
+                      count(DISTINCT n_orden_compra) FILTER (WHERE ano = %(ano_act)s AND fecha_creacion <= %(corte)s) AS oc_26,
+                      count(DISTINCT nombre_proveedor) FILTER (WHERE ano = %(ano_act)s AND fecha_creacion <= %(corte)s) AS proveedores_26
+                    FROM compras WHERE ano IN (%(ano_ant)s, %(ano_act)s) {frag_c}""",
                 params,
             )
             rc = cur.fetchone()
 
             cur.execute(
                 f"""SELECT
-                      coalesce(sum(total_clp) FILTER (WHERE ano = 2026 AND fecha_recepcion <= %(corte)s), 0) AS ano_26,
+                      coalesce(sum(total_clp) FILTER (WHERE ano = %(ano_act)s AND fecha_recepcion <= %(corte)s), 0) AS ano_26,
                       coalesce(sum(total_clp) FILTER (
-                          WHERE ano = 2025 AND (
+                          WHERE ano = %(ano_ant)s AND (
                               extract(month from fecha_recepcion) < %(mes_actual)s OR
                               (extract(month from fecha_recepcion) = %(mes_actual)s AND extract(day from fecha_recepcion) <= %(dia_actual)s)
                           )
                       ), 0) AS ano_25,
-                      coalesce(sum(total_clp) FILTER (WHERE ano = 2026 AND extract(month from fecha_recepcion) = %(mes_actual)s AND fecha_recepcion <= %(corte)s), 0) AS mes_26,
+                      coalesce(sum(total_clp) FILTER (WHERE ano = %(ano_act)s AND extract(month from fecha_recepcion) = %(mes_actual)s AND fecha_recepcion <= %(corte)s), 0) AS mes_26,
                       coalesce(sum(total_clp) FILTER (
-                          WHERE ano = 2025 AND extract(month from fecha_recepcion) = %(mes_actual)s AND extract(day from fecha_recepcion) <= %(dia_actual)s
+                          WHERE ano = %(ano_ant)s AND extract(month from fecha_recepcion) = %(mes_actual)s AND extract(day from fecha_recepcion) <= %(dia_actual)s
                       ), 0) AS mes_25,
                       coalesce(sum(total_clp) FILTER (
-                          WHERE ano = 2026 AND extract(month from fecha_recepcion) = %(mes_anterior)s AND extract(day from fecha_recepcion) <= %(dia_mes_ant)s
+                          WHERE ano = %(ano_act)s AND extract(month from fecha_recepcion) = %(mes_anterior)s AND extract(day from fecha_recepcion) <= %(dia_mes_ant)s
                       ), 0) AS mes_ant,
-                      count(DISTINCT n_recepcion) FILTER (WHERE ano = 2026 AND fecha_recepcion <= %(corte)s) AS rec_26,
-                      count(DISTINCT nombre_proveedor) FILTER (WHERE ano = 2026 AND fecha_recepcion <= %(corte)s) AS proveedores_26
-                    FROM recepciones WHERE ano IN (2025, 2026) {frag_r}""",
+                      count(DISTINCT n_recepcion) FILTER (WHERE ano = %(ano_act)s AND fecha_recepcion <= %(corte)s) AS rec_26,
+                      count(DISTINCT nombre_proveedor) FILTER (WHERE ano = %(ano_act)s AND fecha_recepcion <= %(corte)s) AS proveedores_26
+                    FROM recepciones WHERE ano IN (%(ano_ant)s, %(ano_act)s) {frag_r}""",
                 params,
             )
             rr = cur.fetchone()
@@ -178,8 +183,8 @@ def get_resumen_combinado_pg(tipo_compra=None, fecha_corte=None):
         "proveedores_recepcion": int(rr["proveedores_26"]),
         "mes_nombre":         MESES.get(mes_actual, ""),
         "mes_anterior_nombre": MESES.get(mes_anterior, ""),
-        "ano_actual":         2026,
-        "ano_anterior":       2025,
+        "ano_actual":         ano_act,
+        "ano_anterior":       ano_ant,
         "fecha_datos":        fecha_datos.strftime("%d-%m-%Y"),
     }
 
@@ -189,16 +194,20 @@ def get_por_mes_combinado_pg(tipo_compra=None, fecha_corte=None):
     anterior completo -- para el grafico de evolucion mensual. Con
     fecha de corte, el año actual se corta ahi (el anterior va entero)."""
     frag_c, frag_r, params = _filtro_tipo(tipo_compra)
-    if fecha_corte:
-        frag_c += " AND (ano = 2025 OR fecha_creacion <= %(corte)s)"
-        frag_r += " AND (ano = 2025 OR fecha_recepcion <= %(corte)s)"
-        params["corte"] = fecha_corte
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
+            fecha_datos = _fecha_datos_pg(cur, frag_c, frag_r, params, fecha_corte)
+            ano_act = fecha_datos.year if fecha_datos else date.today().year
+            ano_ant = ano_act - 1
+            params.update({"ano_act": ano_act, "ano_ant": ano_ant})
+            if fecha_corte:
+                frag_c += " AND (ano = %(ano_ant)s OR fecha_creacion <= %(corte)s)"
+                frag_r += " AND (ano = %(ano_ant)s OR fecha_recepcion <= %(corte)s)"
+                params["corte"] = fecha_corte
             cur.execute(
                 f"""SELECT extract(month from fecha_creacion)::int AS mes, ano, sum(precio_total) AS total
-                    FROM compras WHERE ano IN (2025, 2026) {frag_c}
+                    FROM compras WHERE ano IN (%(ano_ant)s, %(ano_act)s) {frag_c}
                     GROUP BY mes, ano""",
                 params,
             )
@@ -206,7 +215,7 @@ def get_por_mes_combinado_pg(tipo_compra=None, fecha_corte=None):
 
             cur.execute(
                 f"""SELECT extract(month from fecha_recepcion)::int AS mes, ano, sum(total_clp) AS total
-                    FROM recepciones WHERE ano IN (2025, 2026) {frag_r}
+                    FROM recepciones WHERE ano IN (%(ano_ant)s, %(ano_act)s) {frag_r}
                     GROUP BY mes, ano""",
                 params,
             )
@@ -217,13 +226,13 @@ def get_por_mes_combinado_pg(tipo_compra=None, fecha_corte=None):
         meses.append({
             "mes":               mes,
             "mes_nombre":        MESES.get(mes, ""),
-            "comprado_actual":   round(filas_c.get((mes, 2026), 0.0), 0),
-            "comprado_anterior": round(filas_c.get((mes, 2025), 0.0), 0),
-            "recibido_actual":   round(filas_r.get((mes, 2026), 0.0), 0),
-            "recibido_anterior": round(filas_r.get((mes, 2025), 0.0), 0),
+            "comprado_actual":   round(filas_c.get((mes, ano_act), 0.0), 0),
+            "comprado_anterior": round(filas_c.get((mes, ano_ant), 0.0), 0),
+            "recibido_actual":   round(filas_r.get((mes, ano_act), 0.0), 0),
+            "recibido_anterior": round(filas_r.get((mes, ano_ant), 0.0), 0),
         })
 
-    return {"meses": meses, "ano_actual": 2026, "ano_anterior": 2025}
+    return {"meses": meses, "ano_actual": ano_act, "ano_anterior": ano_ant}
 
 
 def get_por_proveedor_combinado_pg(tipo_compra=None):
@@ -236,23 +245,28 @@ def get_por_proveedor_combinado_pg(tipo_compra=None):
         with conn.cursor() as cur:
             fecha_datos = _fecha_datos_pg(cur, frag_c, frag_r, params)
             if fecha_datos is None:
-                return {"proveedores": [], "ano_actual": 2026, "ano_anterior": 2025}
+                return {"proveedores": [], "ano_actual": date.today().year, "ano_anterior": date.today().year - 1}
+            # Año actual = el de la fecha de datos (o de corte): con un corte en
+            # 2025 la pantalla muestra 2025, y en enero 2027 pasa sola.
+            ano_act = fecha_datos.year
+            ano_ant = ano_act - 1
+            params.update({"ano_act": ano_act, "ano_ant": ano_ant})
             mes_actual = fecha_datos.month
             dia_actual = fecha_datos.day
             params.update({"mes_actual": mes_actual, "dia_actual": dia_actual})
 
             cur.execute(
                 f"""SELECT nombre_proveedor,
-                      coalesce(sum(precio_total) FILTER (WHERE ano = 2026), 0) AS c_26,
+                      coalesce(sum(precio_total) FILTER (WHERE ano = %(ano_act)s), 0) AS c_26,
                       coalesce(sum(precio_total) FILTER (
-                          WHERE ano = 2025 AND (
+                          WHERE ano = %(ano_ant)s AND (
                               extract(month from fecha_creacion) < %(mes_actual)s OR
                               (extract(month from fecha_creacion) = %(mes_actual)s AND extract(day from fecha_creacion) <= %(dia_actual)s)
                           )
                       ), 0) AS c_25,
-                      count(DISTINCT n_orden_compra) FILTER (WHERE ano = 2026) AS n_oc
+                      count(DISTINCT n_orden_compra) FILTER (WHERE ano = %(ano_act)s) AS n_oc
                     FROM compras
-                    WHERE ano IN (2025, 2026) AND nombre_proveedor IS NOT NULL {frag_c}
+                    WHERE ano IN (%(ano_ant)s, %(ano_act)s) AND nombre_proveedor IS NOT NULL {frag_c}
                     GROUP BY nombre_proveedor""",
                 params,
             )
@@ -260,16 +274,16 @@ def get_por_proveedor_combinado_pg(tipo_compra=None):
 
             cur.execute(
                 f"""SELECT nombre_proveedor,
-                      coalesce(sum(total_clp) FILTER (WHERE ano = 2026), 0) AS r_26,
+                      coalesce(sum(total_clp) FILTER (WHERE ano = %(ano_act)s), 0) AS r_26,
                       coalesce(sum(total_clp) FILTER (
-                          WHERE ano = 2025 AND (
+                          WHERE ano = %(ano_ant)s AND (
                               extract(month from fecha_recepcion) < %(mes_actual)s OR
                               (extract(month from fecha_recepcion) = %(mes_actual)s AND extract(day from fecha_recepcion) <= %(dia_actual)s)
                           )
                       ), 0) AS r_25,
-                      count(DISTINCT n_recepcion) FILTER (WHERE ano = 2026) AS n_rec
+                      count(DISTINCT n_recepcion) FILTER (WHERE ano = %(ano_act)s) AS n_rec
                     FROM recepciones
-                    WHERE ano IN (2025, 2026) AND nombre_proveedor IS NOT NULL {frag_r}
+                    WHERE ano IN (%(ano_ant)s, %(ano_act)s) AND nombre_proveedor IS NOT NULL {frag_r}
                     GROUP BY nombre_proveedor""",
                 params,
             )
@@ -281,7 +295,7 @@ def get_por_proveedor_combinado_pg(tipo_compra=None):
                 f"""SELECT nombre_proveedor, extract(month from fecha_creacion)::int AS mes,
                       sum(precio_total) AS total
                     FROM compras
-                    WHERE ano = 2026 AND nombre_proveedor IS NOT NULL {frag_c}
+                    WHERE ano = %(ano_act)s AND nombre_proveedor IS NOT NULL {frag_c}
                     GROUP BY nombre_proveedor, mes""",
                 params,
             )
@@ -293,7 +307,7 @@ def get_por_proveedor_combinado_pg(tipo_compra=None):
                 f"""SELECT nombre_proveedor, extract(month from fecha_recepcion)::int AS mes,
                       sum(total_clp) AS total
                     FROM recepciones
-                    WHERE ano = 2026 AND nombre_proveedor IS NOT NULL {frag_r}
+                    WHERE ano = %(ano_act)s AND nombre_proveedor IS NOT NULL {frag_r}
                     GROUP BY nombre_proveedor, mes""",
                 params,
             )
@@ -341,8 +355,8 @@ def get_por_proveedor_combinado_pg(tipo_compra=None):
 
     return {
         "proveedores": proveedores,
-        "ano_actual":  2026,
-        "ano_anterior": 2025,
+        "ano_actual":  ano_act,
+        "ano_anterior": ano_ant,
     }
 
 
@@ -361,9 +375,9 @@ def get_por_proveedor_combinado_pg(tipo_compra=None):
 _CTE_ABAST = """
     corte AS (
         SELECT least(
-            (SELECT max(fecha_conta)     FROM ventas      WHERE ano = 2026),
-            (SELECT max(fecha_creacion)  FROM compras     WHERE ano = 2026),
-            (SELECT max(fecha_recepcion) FROM recepciones WHERE ano = 2026),
+            (SELECT max(fecha_conta)     FROM ventas),
+            (SELECT max(fecha_creacion)  FROM compras),
+            (SELECT max(fecha_recepcion) FROM recepciones),
             -- fecha de corte del selector "Datos al"; least() ignora el
             -- NULL cuando no hay ninguna elegida
             %(fecha_corte)s::date
@@ -399,7 +413,7 @@ _CTE_ABAST = """
           JOIN productos p ON p.codigo = v.codigo_cm
           LEFT JOIN defecto d ON d.codigo = v.codigo_cm
          CROSS JOIN corte
-         WHERE v.ano = 2026 AND v.fecha_conta <= corte.f
+         WHERE v.ano = %(ano_act)s AND v.fecha_conta <= corte.f
            AND p.procedencia = 'Nacional'
            AND coalesce(p.marca, '') <> ALL(%(armadas)s)
            AND coalesce(d.rut, '') <> ALL(%(prov_imp)s)
@@ -409,7 +423,7 @@ _CTE_ABAST = """
           JOIN productos p ON p.codigo = c.codigo
           LEFT JOIN defecto d ON d.codigo = c.codigo
          CROSS JOIN corte
-         WHERE c.ano = 2026 AND c.fecha_creacion <= corte.f
+         WHERE c.ano = %(ano_act)s AND c.fecha_creacion <= corte.f
            AND p.procedencia = 'Nacional'
            AND coalesce(p.marca, '') <> ALL(%(armadas)s)
            AND coalesce(d.rut, '') <> ALL(%(prov_imp)s)
@@ -419,7 +433,7 @@ _CTE_ABAST = """
           JOIN productos p ON p.codigo = r.codigo
           LEFT JOIN defecto d ON d.codigo = r.codigo
          CROSS JOIN corte
-         WHERE r.ano = 2026 AND r.fecha_recepcion <= corte.f
+         WHERE r.ano = %(ano_act)s AND r.fecha_recepcion <= corte.f
            AND p.procedencia = 'Nacional'
            AND coalesce(p.marca, '') <> ALL(%(armadas)s)
            AND coalesce(d.rut, '') <> ALL(%(prov_imp)s)
@@ -474,6 +488,18 @@ def get_abastecimiento_proveedor_pg(fecha_corte=None):
 
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
+            # El año de los movimientos es el de la fecha de corte del CTE
+            # (la menor de las tres cargas, o la elegida en "Datos al").
+            cur.execute(
+                """SELECT least((SELECT max(fecha_conta) FROM ventas),
+                                (SELECT max(fecha_creacion) FROM compras),
+                                (SELECT max(fecha_recepcion) FROM recepciones),
+                                %(fecha_corte)s::date) AS f""",
+                params,
+            )
+            f_corte = cur.fetchone()["f"]
+            ano_act = f_corte.year if f_corte else date.today().year
+            params["ano_act"] = ano_act
 
             # Desglose familia/subfamilia dentro de cada proveedor. Es el
             # mismo escaneo, solo agrupado con dos columnas mas: 422
@@ -657,7 +683,7 @@ def get_abastecimiento_proveedor_pg(fecha_corte=None):
         "meses":             meses,
         "sesgo_parcial":     sesgo_parcial,
         "dia_corte":         fecha_corte.day if fecha_corte else None,
-        "ano":               2026,
+        "ano":               ano_act,
         "fecha_corte":       fecha_corte.strftime("%d-%m-%Y") if fecha_corte else None,
     }
 
@@ -1238,6 +1264,10 @@ def get_lead_time_combinado_pg():
     sobre las tablas compras/recepciones en vez del Excel."""
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
+            # Año actual = el de la ultima compra/recepcion cargada
+            ano_act = (_fecha_datos_pg(cur, "", "", {}) or date.today()).year
+            ano_ant = ano_act - 1
+            pa = {"ano_act": ano_act, "ano_ant": ano_ant}
             cur.execute(
                 """WITH primera_recepcion AS (
                        SELECT n_oc, min(fecha_recepcion) AS fecha_recepcion
@@ -1250,7 +1280,7 @@ def get_lead_time_combinado_pg():
                            pr.fecha_recepcion
                        FROM compras c
                        LEFT JOIN primera_recepcion pr ON pr.n_oc = c.n_orden_compra
-                       WHERE c.ano IN (2025, 2026)
+                       WHERE c.ano IN (%(ano_ant)s, %(ano_act)s)
                        ORDER BY c.ano, c.n_orden_compra
                    ),
                    oc_lt AS (
@@ -1269,6 +1299,7 @@ def get_lead_time_combinado_pg():
                    FROM oc_lt
                    WHERE nombre_proveedor IS NOT NULL
                    GROUP BY ano, nombre_proveedor""",
+                pa,
             )
             grupos = cur.fetchall()
 
@@ -1283,18 +1314,19 @@ def get_lead_time_combinado_pg():
                            c.ano, c.fecha_creacion, pr.fecha_recepcion
                        FROM compras c
                        LEFT JOIN primera_recepcion pr ON pr.n_oc = c.n_orden_compra
-                       WHERE c.ano IN (2025, 2026)
+                       WHERE c.ano IN (%(ano_ant)s, %(ano_act)s)
                        ORDER BY c.ano, c.n_orden_compra
                    )
                    SELECT ano, avg(fecha_recepcion - fecha_creacion) AS lead_promedio
                    FROM oc
                    WHERE fecha_recepcion IS NOT NULL AND fecha_recepcion >= fecha_creacion
                    GROUP BY ano""",
+                pa,
             )
             empresa = {r["ano"]: r["lead_promedio"] for r in cur.fetchall()}
 
-    g26 = {r["nombre_proveedor"]: r for r in grupos if r["ano"] == 2026}
-    g25 = {r["nombre_proveedor"]: r for r in grupos if r["ano"] == 2025}
+    g26 = {r["nombre_proveedor"]: r for r in grupos if r["ano"] == ano_act}
+    g25 = {r["nombre_proveedor"]: r for r in grupos if r["ano"] == ano_ant}
 
     items = []
     for nombre, fila in g26.items():
@@ -1316,10 +1348,10 @@ def get_lead_time_combinado_pg():
 
     return {
         "items": items,
-        "lead_time_empresa_actual":   round(float(empresa[2026]), 1) if empresa.get(2026) is not None else None,
-        "lead_time_empresa_anterior": round(float(empresa[2025]), 1) if empresa.get(2025) is not None else None,
-        "ano_actual": 2026,
-        "ano_anterior": 2025,
+        "lead_time_empresa_actual":   round(float(empresa[ano_act]), 1) if empresa.get(ano_act) is not None else None,
+        "lead_time_empresa_anterior": round(float(empresa[ano_ant]), 1) if empresa.get(ano_ant) is not None else None,
+        "ano_actual": ano_act,
+        "ano_anterior": ano_ant,
     }
 
 
@@ -1334,14 +1366,19 @@ def get_cumplimiento_combinado_pg():
     (igual que el original) sobre las fechas leidas de Postgres."""
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
+            # Año actual = el de la ultima compra/recepcion cargada
+            ano_act = (_fecha_datos_pg(cur, "", "", {}) or date.today()).year
+            ano_ant = ano_act - 1
+            pa = {"ano_act": ano_act, "ano_ant": ano_ant}
             cur.execute(
                 """SELECT n_orden_compra, codigo,
                        min(nombre_proveedor) AS proveedor,
                        min(fecha_creacion) AS fecha_creacion,
                        sum(cantidad_comprada) AS cantidad_comprada
                    FROM compras
-                   WHERE ano = 2026
+                   WHERE ano = %(ano_act)s
                    GROUP BY n_orden_compra, codigo""",
+                pa,
             )
             lineas_compra = cur.fetchall()
 
@@ -1350,8 +1387,9 @@ def get_cumplimiento_combinado_pg():
                        sum(cantidad) AS cantidad_recibida,
                        min(fecha_recepcion) AS fecha_primera_recepcion
                    FROM recepciones
-                   WHERE ano IN (2025, 2026)
+                   WHERE ano IN (%(ano_ant)s, %(ano_act)s)
                    GROUP BY n_oc, codigo""",
+                pa,
             )
             recepcion_por_linea = {(r["n_orden_compra"], r["codigo"]): r for r in cur.fetchall()}
 
@@ -1407,5 +1445,5 @@ def get_cumplimiento_combinado_pg():
         "items": items,
         "resumen": resumen,
         "umbral_dias_habiles": UMBRAL_ON_TIME_DIAS_HABILES,
-        "ano_actual": 2026,
+        "ano_actual": ano_act,
     }

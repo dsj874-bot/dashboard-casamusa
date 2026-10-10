@@ -2250,7 +2250,15 @@ def api_subir_datos_duros():
 def subir_compras():
     return render_template("subir_compras.html",
                            active="subir_compras",
+                           anos_subida=_anos_subida_adq(),
                            session_nombre=session.get("nombre"))
+
+
+def _anos_subida_adq():
+    """Años que se pueden subir en Compras/Recepciones: el actual y el
+    anterior (antes fijo en 2025/2026; en enero 2027 pasa a 2026/2027)."""
+    hoy = date.today()
+    return [hoy.year - 1, hoy.year]
 
 
 def _leer_archivo_subido(archivo, tmp_suffix=".xlsx"):
@@ -2270,8 +2278,9 @@ def api_subir_compras():
     ano = request.form.get("ano")
     if not archivo or not archivo.filename:
         return jsonify({"ok": False, "msg": "No se recibio ningun archivo."}), 400
-    if ano not in ("2025", "2026"):
-        return jsonify({"ok": False, "msg": "Falta indicar el año (2025 o 2026)."}), 400
+    anos_ok = [str(a) for a in _anos_subida_adq()]
+    if ano not in anos_ok:
+        return jsonify({"ok": False, "msg": f"Falta indicar el año ({anos_ok[0]} o {anos_ok[1]})."}), 400
     if not archivo.filename.lower().endswith(".xlsx"):
         return jsonify({"ok": False, "msg": "El archivo debe ser .xlsx."}), 400
     ano = int(ano)
@@ -2316,7 +2325,7 @@ def api_subir_compras():
     # en Vercel el filesystem del proyecto es de solo lectura (solo
     # /tmp es escribible), asi que esto falla ahi -- no debe abortar
     # la carga real a Postgres, que es la fuente de verdad en produccion.
-    destino = data_loader_adquisiciones.COMPRAS_2025_XLSX if ano == 2025 else data_loader_adquisiciones.COMPRAS_2026_XLSX
+    destino = data_loader_adquisiciones.ruta_compras_xlsx(ano)
     try:
         os.makedirs(data_loader_adquisiciones.DATA_DIR_ADQUISICIONES, exist_ok=True)
         shutil.copy(tmp_path, destino)
@@ -2350,8 +2359,9 @@ def api_subir_recepciones():
     ano = request.form.get("ano")
     if not archivo or not archivo.filename:
         return jsonify({"ok": False, "msg": "No se recibio ningun archivo."}), 400
-    if ano not in ("2025", "2026"):
-        return jsonify({"ok": False, "msg": "Falta indicar el año (2025 o 2026)."}), 400
+    anos_ok = [str(a) for a in _anos_subida_adq()]
+    if ano not in anos_ok:
+        return jsonify({"ok": False, "msg": f"Falta indicar el año ({anos_ok[0]} o {anos_ok[1]})."}), 400
     if not archivo.filename.lower().endswith(".xlsx"):
         return jsonify({"ok": False, "msg": "El archivo debe ser .xlsx."}), 400
     ano = int(ano)
@@ -2381,7 +2391,7 @@ def api_subir_recepciones():
     df = df[~df["NOMBRE_PROVEEDOR"].isin(data_loader_adquisiciones.PROVEEDORES_EXCLUIDOS)]
 
     # Best-effort -- ver comentario equivalente en /api/subir_compras.
-    destino = data_loader_adquisiciones.RECEPCIONES_2025_XLSX if ano == 2025 else data_loader_adquisiciones.RECEPCIONES_2026_XLSX
+    destino = data_loader_adquisiciones.ruta_recepciones_xlsx(ano)
     try:
         os.makedirs(data_loader_adquisiciones.DATA_DIR_ADQUISICIONES, exist_ok=True)
         shutil.copy(tmp_path, destino)

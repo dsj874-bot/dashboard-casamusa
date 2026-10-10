@@ -71,8 +71,8 @@
     <div class="bloque-sub">Excel con las columnas de siempre (FECHA_CREACION, N_ORDEN_COMPRA, PRECIO_TOTAL, etc.)</div>
 
     <div class="fila-ano" id="ano-compras">
-      <div class="btn-ano" data-ano="2025">2025</div>
-      <div class="btn-ano activo" data-ano="2026">2026</div>
+      {% for a in anos_subida %}<div class="btn-ano{% if loop.last %} activo{% endif %}" data-ano="{{ a }}">{{ a }}</div>
+      {% endfor %}
     </div>
 
     <div class="drop-zone" id="drop-compras">
@@ -94,8 +94,8 @@
     <div class="bloque-sub">Excel con las columnas de siempre (FECHA_RECEPCION, N_OC, TOTAL_CLP, etc.)</div>
 
     <div class="fila-ano" id="ano-recepciones">
-      <div class="btn-ano" data-ano="2025">2025</div>
-      <div class="btn-ano activo" data-ano="2026">2026</div>
+      {% for a in anos_subida %}<div class="btn-ano{% if loop.last %} activo{% endif %}" data-ano="{{ a }}">{{ a }}</div>
+      {% endfor %}
     </div>
 
     <div class="drop-zone" id="drop-recepciones">
@@ -125,7 +125,7 @@ function armarBloque(prefijo, endpoint) {
   const btnSubir  = document.getElementById(`btn-subir-${prefijo}`);
   const resultadoEl = document.getElementById(`resultado-${prefijo}`);
 
-  let anoElegido = "2026";
+  let anoElegido = "{{ anos_subida[-1] }}";
   let archivoActual = null;
 
   anoWrap.querySelectorAll(".btn-ano").forEach(b => {

@@ -23,6 +23,16 @@ COMPRAS_2026_XLSX = os.path.join(DATA_DIR_ADQUISICIONES, "Compras_2026.xlsx")
 RECEPCIONES_2025_XLSX = os.path.join(DATA_DIR_ADQUISICIONES, "Recepciones_2025.xlsx")
 RECEPCIONES_2026_XLSX = os.path.join(DATA_DIR_ADQUISICIONES, "Recepciones_2026.xlsx")
 
+
+def ruta_compras_xlsx(ano):
+    """Excel local de compras de un año (Compras_<año>.xlsx)."""
+    return os.path.join(DATA_DIR_ADQUISICIONES, f"Compras_{ano}.xlsx")
+
+
+def ruta_recepciones_xlsx(ano):
+    """Excel local de recepciones de un año (Recepciones_<año>.xlsx)."""
+    return os.path.join(DATA_DIR_ADQUISICIONES, f"Recepciones_{ano}.xlsx")
+
 MESES = {
     1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
     5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
@@ -68,7 +78,7 @@ def _hoja_con_datos(xl):
 
 
 def _leer_archivo(ano):
-    xlsx = COMPRAS_2025_XLSX if ano == 2025 else COMPRAS_2026_XLSX
+    xlsx = ruta_compras_xlsx(ano)
     if not os.path.exists(xlsx):
         raise FileNotFoundError(f"No se encontro {xlsx}")
 
@@ -101,7 +111,7 @@ def get_df_2026():
 
 
 def _leer_archivo_recepciones(ano):
-    xlsx = RECEPCIONES_2025_XLSX if ano == 2025 else RECEPCIONES_2026_XLSX
+    xlsx = ruta_recepciones_xlsx(ano)
     if not os.path.exists(xlsx):
         raise FileNotFoundError(f"No se encontro {xlsx}")
 
