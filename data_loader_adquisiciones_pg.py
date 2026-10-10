@@ -407,11 +407,16 @@ _CTE_ABAST = """
         ) y WHERE rn = 1
     ),
     movs AS (
+        -- Costo de venta con el mismo ajuste al reporte de margen del ERP
+        -- que usa v_ventas (migracion 015): el costo del export de SAP
+        -- viene al CUP del dia del export y queda inflado en los meses
+        -- recargados despues. Sin factor (meses sin reporte) queda igual.
         SELECT d.rut, v.fecha_conta AS fecha, p.familia, p.subfamilia,
-               v.costo_total AS costo_venta, 0::numeric AS comprado, 0::numeric AS recibido
+               v.costo_total * coalesce(aj.factor, 1) AS costo_venta, 0::numeric AS comprado, 0::numeric AS recibido
           FROM ventas v
           JOIN productos p ON p.codigo = v.codigo_cm
           LEFT JOIN defecto d ON d.codigo = v.codigo_cm
+          LEFT JOIN ajuste_costo_erp aj ON aj.ano = v.ano AND aj.mes = v.mes AND aj.vendedor = v.vendedor
          CROSS JOIN corte
          WHERE v.ano = %(ano_act)s AND v.fecha_conta <= corte.f
            AND p.procedencia = 'Nacional'
