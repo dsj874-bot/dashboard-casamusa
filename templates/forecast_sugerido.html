@@ -65,7 +65,6 @@
 
 {% block content %}
 <div class="sg-barra">
-  <div class="sg-filtro"><label for="f-proveedor">Proveedor</label><select id="f-proveedor"></select></div>
   <div class="sg-filtro"><label for="f-marca">Marca</label><select id="f-marca"></select></div>
   <div class="sg-filtro"><label for="f-familia">Familia</label><select id="f-familia"></select></div>
   <div class="sg-periodo" id="periodo">Cargando…</div>
@@ -75,11 +74,11 @@
 
 <div class="sg-grid">
   <div class="sg-card">
-    <div class="sg-card-titulo">Compra por proveedor</div>
-    <div class="sg-card-sub">Haz clic en un proveedor para ver solo su pedido.</div>
+    <div class="sg-card-titulo">Compra por marca</div>
+    <div class="sg-card-sub">Haz clic en una marca para ver solo su pedido.</div>
     <div class="sg-wrap alto">
       <table class="sg-tabla">
-        <thead><tr><th class="izq">Proveedor</th><th>Productos</th><th>Unidades</th><th>Compra $</th><th>%</th></tr></thead>
+        <thead><tr><th class="izq">Marca</th><th>Productos</th><th>Unidades</th><th>Compra $</th><th>%</th></tr></thead>
         <tbody id="tbody-prov"></tbody>
       </table>
     </div>
@@ -126,7 +125,7 @@ let datos = null, filtrosListos = false, orden = { k: 'valor', dir: -1 };
 
 function qs() {
   const p = new URLSearchParams();
-  ['proveedor', 'marca', 'familia'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
+  ['marca', 'familia'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
   return p.toString();
 }
 
@@ -138,8 +137,7 @@ async function cargar() {
   datos = d;
   if (!filtrosListos) {
     const opciones = {
-      proveedor: d.por_proveedor.map(p => p.proveedor),
-      marca: [...new Set(d.productos.map(p => p.marca).filter(Boolean))].sort(),
+      marca: d.por_marca.map(m => m.marca),
       familia: [...new Set(d.productos.map(p => p.familia).filter(Boolean))].sort(),
     };
     Object.entries(opciones).forEach(([k, vals]) => {
@@ -152,28 +150,28 @@ async function cargar() {
   }
   const f = s => s.split('-').reverse().join('-');
   document.getElementById('periodo').innerHTML = `Clase según ventas del ${f(d.calculo.desde)} al ${f(d.calculo.hasta)}<br>Stock y venta mensual al día`;
-  pintarKpis(d); pintarProveedores(d); pintarMetas(d); pintarDetalle();
+  pintarKpis(d); pintarMarcas(d); pintarMetas(d); pintarDetalle();
 }
 
 function pintarKpis(d) {
   const sobre = Object.values(d.exceso_traspasable).reduce((a, b) => a + b, 0);
   document.getElementById('kpis').innerHTML = `
-    <div class="sg-kpi"><div class="sg-kpi-label">Compra sugerida</div><div class="sg-kpi-valor">${fmtM(d.total)}</div><div class="sg-kpi-sub">a CUP · ${fmtN(d.n_productos)} productos · ${fmtN(d.n_proveedores)} proveedores</div></div>
+    <div class="sg-kpi"><div class="sg-kpi-label">Compra sugerida</div><div class="sg-kpi-valor">${fmtM(d.total)}</div><div class="sg-kpi-sub">a CUP · ${fmtN(d.n_productos)} productos · ${fmtN(d.n_marcas)} marcas</div></div>
     <div class="sg-kpi"><div class="sg-kpi-label">Se cubre desde San Isidro</div><div class="sg-kpi-valor verde">${fmtM(d.desde_san_isidro)}</div><div class="sg-kpi-sub">stock central sobre su meta, despachar antes de comprar</div></div>
     <div class="sg-kpi"><div class="sg-kpi-label">OC de stock ya en camino</div><div class="sg-kpi-valor">${fmtM(d.oc_descontada)}</div><div class="sg-kpi-sub">descontadas de la compra</div></div>
     <div class="sg-kpi"><div class="sg-kpi-label">Stock sobre la meta</div><div class="sg-kpi-valor">${fmtM(sobre)}</div><div class="sg-kpi-sub">en las 6 sucursales (no se compra)</div></div>`;
 }
 
-function pintarProveedores(d) {
-  const sel = mselValores(document.getElementById('f-proveedor'));
-  const tot = d.por_proveedor.reduce((a, p) => a + p.valor, 0);
-  document.getElementById('tbody-prov').innerHTML = d.por_proveedor.map(p => `
-    <tr class="clic${sel.length === 1 && sel[0] === p.proveedor ? ' sel' : ''}" data-p="${esc(p.proveedor)}">
-      <td class="izq">${esc(p.proveedor)}</td><td>${fmtN(p.productos)}</td><td>${fmtN(p.unidades)}</td>
+function pintarMarcas(d) {
+  const sel = mselValores(document.getElementById('f-marca'));
+  const tot = d.por_marca.reduce((a, p) => a + p.valor, 0);
+  document.getElementById('tbody-prov').innerHTML = d.por_marca.map(p => `
+    <tr class="clic${sel.length === 1 && sel[0] === p.marca ? ' sel' : ''}" data-p="${esc(p.marca)}">
+      <td class="izq">${esc(p.marca)}</td><td>${fmtN(p.productos)}</td><td>${fmtN(p.unidades)}</td>
       <td>${fmt$(p.valor)}</td><td>${tot ? (p.valor / tot * 100).toFixed(1).replace('.', ',') + '%' : '—'}</td>
     </tr>`).join('') + `<tr class="total"><td class="izq">Total</td><td>${fmtN(d.n_productos)}</td><td></td><td>${fmt$(tot)}</td><td></td></tr>`;
   document.querySelectorAll('#tbody-prov tr.clic').forEach(tr => tr.onclick = () => {
-    const selProv = document.getElementById('f-proveedor');
+    const selProv = document.getElementById('f-marca');
     const ya = mselValores(selProv);
     Array.from(selProv.options).forEach(o => { o.selected = !(ya.length === 1 && ya[0] === tr.dataset.p) && o.value === tr.dataset.p; });
     if (selProv._msel && selProv._msel.refrescar) selProv._msel.refrescar();
@@ -193,13 +191,13 @@ function pintarMetas(d) {
 
 function pintarDetalle() {
   const d = datos;
-  const cols = [['codigo', 'Código', 1], ['descripcion', 'Descripción', 1], ['proveedor', 'Proveedor', 1], ['clase', 'Clase', 1]]
+  const cols = [['codigo', 'Código', 1], ['descripcion', 'Descripción', 1], ['marca', 'Marca', 1], ['clase', 'Clase', 1]]
     .concat(d.sucursales.map(s => ['s_' + s.codigo, s.nombre, 0]))
     .concat([['desde_si', 'Desde SI', 0], ['oc_en_camino', 'OC en camino', 0], ['compra', 'Comprar (u)', 0], ['cajas', 'Cajas', 0], ['valor', 'Compra $', 0]]);
   document.getElementById('thead-det').innerHTML = cols.map(([k, t, izq]) => `<th class="ord${izq ? ' izq' : ''}" data-k="${k}">${t}</th>`).join('');
   document.querySelectorAll('#thead-det th').forEach(th => th.onclick = () => {
     const k = th.dataset.k;
-    orden = { k, dir: orden.k === k ? -orden.dir : (['codigo', 'descripcion', 'proveedor', 'clase'].includes(k) ? 1 : -1) };
+    orden = { k, dir: orden.k === k ? -orden.dir : (['codigo', 'descripcion', 'marca', 'clase'].includes(k) ? 1 : -1) };
     pintarDetalle();
   });
   const val = (p, k) => k.startsWith('s_') ? ((p.sucursales[k.slice(2)] || {}).envio || 0) : p[k];
@@ -212,7 +210,7 @@ function pintarDetalle() {
   document.getElementById('tbody-det').innerHTML = filas.length ? filas.map(p => `<tr>
       <td class="izq">${esc(p.codigo)}</td>
       <td class="izq desc">${esc(p.descripcion)}</td>
-      <td class="izq">${esc(p.proveedor || '—')}</td>
+      <td class="izq">${esc(p.marca || '—')}</td>
       <td class="izq">${p.clase ? `<span class="pill ${TONO[p.clase] || 'media'}">${p.clase === 'SV' ? 'Sin venta' : p.clase}</span>` : '—'}</td>
       ${d.sucursales.map(s => {
         const x = p.sucursales[s.codigo];

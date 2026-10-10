@@ -162,6 +162,17 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None):
             d["productos"] += 1
             d["valor"] += x["valor"]
             d["unidades"] += x["compra"]
+    # Resumen por marca (pedido del usuario 2026-10-10: "solo por marca,
+    # no por proveedor")
+    por_marca = {}
+    for x in productos:
+        if x["compra"] <= 0:
+            continue
+        k = x["marca"] or "Sin marca"
+        d = por_marca.setdefault(k, {"marca": k, "productos": 0, "valor": 0.0, "unidades": 0})
+        d["productos"] += 1
+        d["valor"] += x["valor"]
+        d["unidades"] += x["compra"]
     por_clase = {}
     for x in productos:
         if x["compra"] > 0:
@@ -181,6 +192,8 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None):
         "desde_san_isidro": round(desde_si_v, 0),
         "exceso_traspasable": {s: round(v, 0) for s, v in exceso_suc.items()},
         "por_proveedor": sorted([d for d in por_prov.values() if d["productos"] > 0], key=lambda d: -d["valor"]),
+        "por_marca": sorted(por_marca.values(), key=lambda d: -d["valor"]),
+        "n_marcas": len(por_marca),
         "por_clase": por_clase,
         "productos": productos,
     }
