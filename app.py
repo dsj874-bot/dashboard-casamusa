@@ -68,8 +68,9 @@ USAR_POSTGRES_ADQUISICIONES = os.environ.get("USAR_POSTGRES_ADQUISICIONES", "1")
 if USAR_POSTGRES_ADQUISICIONES:
     import data_loader_adquisiciones_pg
 
-# Clasificacion de productos (Forecast), solo Postgres (ver migrations/016)
+# Clasificacion de productos y Sugerido de Compra (Forecast), solo Postgres (ver migrations/016)
 import data_loader_clasificacion_pg
+import data_loader_sugerido_pg
 
 # ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
@@ -271,6 +272,7 @@ PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA = (
     "/forecast/plan_compra", "/api/forecast/plan_compras",
     "/forecast/nivel_servicio", "/api/forecast/nivel_servicio",
     "/forecast/clasificacion", "/api/forecast/clasificacion",
+    "/forecast/sugerido", "/api/forecast/sugerido",
 )
 
 
@@ -1447,6 +1449,27 @@ def api_forecast_clasificacion_recalcular():
         return jsonify({"ok": True, **r})
     except Exception as e:
         return jsonify({"ok": False, "msg": f"No se pudo recalcular: {e}"}), 500
+
+
+@app.route("/forecast/sugerido")
+@login_requerido
+def forecast_sugerido():
+    return render_template("forecast_sugerido.html",
+                           active="forecast_sugerido",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/forecast/sugerido")
+@login_requerido
+def api_forecast_sugerido():
+    try:
+        return jsonify(data_loader_sugerido_pg.get_sugerido_compra_pg(
+            proveedor=request.args.getlist("proveedor") or None,
+            marca=request.args.getlist("marca") or None,
+            familia=request.args.getlist("familia") or None,
+        ))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/forecast")

@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block title %}Sugerido de Compra{% endblock %}
+{% block page_title %}Sugerido de Compra{% endblock %}
+{% block page_subtitle %}Productos nacionales · meta de stock según la clase de cada producto en cada sucursal{% endblock %}
+
+{% block sidebar_nav %}{% include "_forecast_sidebar.html" %}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}?v={{ asset_v('css/multiselect.css') }}">
+<style>
+  .sg-barra { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 18px; }
+  .sg-filtro { display: flex; flex-direction: column; gap: 4px; min-width: 190px; }
+  .sg-filtro label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .sg-periodo { margin-left: auto; font-size: 11.5px; color: var(--muted2); text-align: right; line-height: 1.4; }
+
+  .sg-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+  @media (max-width: 900px) { .sg-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .sg-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+  .sg-kpi-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 6px; }
+  .sg-kpi-valor { font-size: 22px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+  .sg-kpi-valor.verde { color: var(--accent); }
+  .sg-kpi-sub { font-size: 11.5px; color: var(--muted2); margin-top: 3px; }
+
+  .sg-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; margin-bottom: 18px; }
+  @media (max-width: 1100px) { .sg-grid { grid-template-columns: 1fr; } }
+  .sg-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+  .sg-card-titulo { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+  .sg-card-sub { font-size: 12px; color: var(--muted2); margin-bottom: 12px; line-height: 1.5; }
+
+  .sg-tabla { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .sg-tabla th {
+    text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
+    padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; background: var(--surface);
+  }
+  .sg-tabla td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  .sg-tabla .izq { text-align: left; }
+  .sg-tabla td.desc { white-space: normal; min-width: 220px; max-width: 320px; }
+  .sg-tabla tr.clic { cursor: pointer; }
+  .sg-tabla tr.clic:hover td, .sg-tabla tr.sel td { background: var(--surface2); }
+  .sg-tabla tr.total td { font-weight: 700; color: var(--amber); }
+  .sg-wrap { overflow-x: auto; }
+  .sg-wrap.alto { max-height: 360px; overflow-y: auto; }
+  .sg-wrap.alto th { position: sticky; top: 0; }
+  .sg-tabla th.ord { cursor: pointer; user-select: none; }
+
+  .metas { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-bottom: 14px; }
+  .meta { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--surface2); }
+  .meta .c { font-size: 11px; font-weight: 800; }
+  .meta .v { font-size: 12px; color: var(--muted2); }
+  .meta.sana .c { color: var(--accent); } .meta.media .c { color: var(--amber); } .meta.mala .c { color: var(--red); }
+  .sobre { font-size: 12px; line-height: 1.7; color: var(--muted2); border-top: 1px solid var(--border); padding-top: 10px; }
+  .sobre strong { color: var(--text); }
+
+  .pill { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
+  .pill.sana { background: rgba(34,163,71,.15); color: var(--accent); }
+  .pill.media { background: rgba(245,158,11,.15); color: var(--amber); }
+  .pill.mala { background: rgba(239,68,68,.14); color: var(--red); }
+  .suc { line-height: 1.25; }
+  .suc small { display: block; font-size: 9.5px; color: var(--muted2); }
+  .cero { color: var(--muted2); }
+  .vacio { text-align: center; padding: 36px; color: var(--muted2); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sg-barra">
+  <div class="sg-filtro"><label for="f-proveedor">Proveedor</label><select id="f-proveedor"></select></div>
+  <div class="sg-filtro"><label for="f-marca">Marca</label><select id="f-marca"></select></div>
+  <div class="sg-filtro"><label for="f-familia">Familia</label><select id="f-familia"></select></div>
+  <div class="sg-periodo" id="periodo">Cargando…</div>
+</div>
+
+<div class="sg-kpis" id="kpis"></div>
+
+<div class="sg-grid">
+  <div class="sg-card">
+    <div class="sg-card-titulo">Compra por proveedor</div>
+    <div class="sg-card-sub">Haz clic en un proveedor para ver solo su pedido.</div>
+    <div class="sg-wrap alto">
+      <table class="sg-tabla">
+        <thead><tr><th class="izq">Proveedor</th><th>Productos</th><th>Unidades</th><th>Compra $</th><th>%</th></tr></thead>
+        <tbody id="tbody-prov"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="sg-card">
+    <div class="sg-card-titulo">Cómo se calcula</div>
+    <div class="sg-card-sub">
+      En cada sucursal, la meta de stock es la venta mensual de la sucursal por los meses de la clase que tiene
+      el producto <em>en esa sucursal</em>. Lo que falta se redondea a embalaje. Antes de comprar se despacha desde
+      San Isidro lo que tiene sobre su meta, y se descuentan las OC de stock por recibir.
+    </div>
+    <div class="metas" id="metas"></div>
+    <div class="sobre" id="sobre"></div>
+  </div>
+</div>
+
+<div class="sg-card">
+  <div class="sg-card-titulo" id="det-titulo">Detalle por producto</div>
+  <div class="sg-card-sub" id="det-sub">
+    Fuera del sugerido: importados, códigos 6 (a pedido), los marcados "no comprar", CZ y sin venta en 12 meses.
+  </div>
+  <div class="sg-wrap">
+    <table class="sg-tabla">
+      <thead><tr id="thead-det"></tr></thead>
+      <tbody id="tbody-det"><tr><td class="vacio" colspan="14">Cargando…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/multiselect.js') }}?v={{ asset_v('js/multiselect.js') }}"></script>
+<script>
+if (typeof initMultiSelect !== 'function') {
+  window.initMultiSelect = function (sel) { if (sel) sel.multiple = true; };
+  window.mselValores = function (sel) { return sel ? Array.from(sel.selectedOptions).map(o => o.value) : []; };
+}
+const TONO = { AX: 'sana', AY: 'sana', BX: 'sana', AZ: 'media', BY: 'media', BZ: 'media', CX: 'media', CY: 'mala', CZ: 'mala', SV: 'mala' };
+const fmt$ = v => v == null ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
+const fmtM = v => '$' + (v / 1e6).toLocaleString('es-CL', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + ' M';
+const fmtN = v => v == null ? '—' : Math.round(v).toLocaleString('es-CL');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let datos = null, filtrosListos = false, orden = { k: 'valor', dir: -1 };
+
+function qs() {
+  const p = new URLSearchParams();
+  ['proveedor', 'marca', 'familia'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
+  return p.toString();
+}
+
+async function cargar() {
+  document.getElementById('tbody-det').innerHTML = '<tr><td class="vacio" colspan="14">Calculando…</td></tr>';
+  const d = await fetch('/api/forecast/sugerido?' + qs()).then(r => r.json());
+  if (d.error) { document.getElementById('periodo').textContent = 'Error: ' + d.error; return; }
+  if (!d.calculo) { document.getElementById('periodo').textContent = 'Falta calcular la Clasificación de Productos.'; return; }
+  datos = d;
+  if (!filtrosListos) {
+    const opciones = {
+      proveedor: d.por_proveedor.map(p => p.proveedor),
+      marca: [...new Set(d.productos.map(p => p.marca).filter(Boolean))].sort(),
+      familia: [...new Set(d.productos.map(p => p.familia).filter(Boolean))].sort(),
+    };
+    Object.entries(opciones).forEach(([k, vals]) => {
+      const sel = document.getElementById('f-' + k);
+      sel.innerHTML = vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+      initMultiSelect(sel);
+      sel.addEventListener('change', cargar);
+    });
+    filtrosListos = true;
+  }
+  const f = s => s.split('-').reverse().join('-');
+  document.getElementById('periodo').innerHTML = `Clase según ventas del ${f(d.calculo.desde)} al ${f(d.calculo.hasta)}<br>Stock y venta mensual al día`;
+  pintarKpis(d); pintarProveedores(d); pintarMetas(d); pintarDetalle();
+}
+
+function pintarKpis(d) {
+  const sobre = Object.values(d.exceso_traspasable).reduce((a, b) => a + b, 0);
+  document.getElementById('kpis').innerHTML = `
+    <div class="sg-kpi"><div class="sg-kpi-label">Compra sugerida</div><div class="sg-kpi-valor">${fmtM(d.total)}</div><div class="sg-kpi-sub">a CUP · ${fmtN(d.n_productos)} productos · ${fmtN(d.n_proveedores)} proveedores</div></div>
+    <div class="sg-kpi"><div class="sg-kpi-label">Se cubre desde San Isidro</div><div class="sg-kpi-valor verde">${fmtM(d.desde_san_isidro)}</div><div class="sg-kpi-sub">stock central sobre su meta, despachar antes de comprar</div></div>
+    <div class="sg-kpi"><div class="sg-kpi-label">OC de stock ya en camino</div><div class="sg-kpi-valor">${fmtM(d.oc_descontada)}</div><div class="sg-kpi-sub">descontadas de la compra</div></div>
+    <div class="sg-kpi"><div class="sg-kpi-label">Stock sobre la meta</div><div class="sg-kpi-valor">${fmtM(sobre)}</div><div class="sg-kpi-sub">en las 6 sucursales (no se compra)</div></div>`;
+}
+
+function pintarProveedores(d) {
+  const sel = mselValores(document.getElementById('f-proveedor'));
+  const tot = d.por_proveedor.reduce((a, p) => a + p.valor, 0);
+  document.getElementById('tbody-prov').innerHTML = d.por_proveedor.map(p => `
+    <tr class="clic${sel.length === 1 && sel[0] === p.proveedor ? ' sel' : ''}" data-p="${esc(p.proveedor)}">
+      <td class="izq">${esc(p.proveedor)}</td><td>${fmtN(p.productos)}</td><td>${fmtN(p.unidades)}</td>
+      <td>${fmt$(p.valor)}</td><td>${tot ? (p.valor / tot * 100).toFixed(1).replace('.', ',') + '%' : '—'}</td>
+    </tr>`).join('') + `<tr class="total"><td class="izq">Total</td><td>${fmtN(d.n_productos)}</td><td></td><td>${fmt$(tot)}</td><td></td></tr>`;
+  document.querySelectorAll('#tbody-prov tr.clic').forEach(tr => tr.onclick = () => {
+    const selProv = document.getElementById('f-proveedor');
+    const ya = mselValores(selProv);
+    Array.from(selProv.options).forEach(o => { o.selected = !(ya.length === 1 && ya[0] === tr.dataset.p) && o.value === tr.dataset.p; });
+    if (selProv._msel && selProv._msel.refrescar) selProv._msel.refrescar();
+    cargar();
+  });
+}
+
+function pintarMetas(d) {
+  const txt = v => v === 'emb' ? '1 embalaje' : (v ? String(v).replace('.', ',') + ' meses' : 'no comprar');
+  document.getElementById('metas').innerHTML = ['AX', 'AY', 'AZ', 'BX', 'BY', 'BZ', 'CX', 'CY', 'CZ', 'SV'].map(c =>
+    `<div class="meta ${TONO[c]}"><div class="c">${c === 'SV' ? 'Sin venta' : c}</div><div class="v">${txt(d.metas[c])}</div></div>`).join('');
+  const nombres = Object.fromEntries(d.sucursales.map(s => [s.codigo, s.nombre]));
+  document.getElementById('sobre').innerHTML = '<strong>Stock sobre la meta</strong> (no se compra; revisar traspasos): ' +
+    Object.entries(d.exceso_traspasable).map(([s, v]) => `${nombres[s]} <strong>${fmtM(v)}</strong>`).join(' · ') +
+    `<br>Productos nuevos: ${String(d.meta_nuevo).replace('.', ',')} meses.`;
+}
+
+function pintarDetalle() {
+  const d = datos;
+  const cols = [['codigo', 'Código', 1], ['descripcion', 'Descripción', 1], ['proveedor', 'Proveedor', 1], ['clase', 'Clase', 1]]
+    .concat(d.sucursales.map(s => ['s_' + s.codigo, s.nombre, 0]))
+    .concat([['desde_si', 'Desde SI', 0], ['oc_en_camino', 'OC en camino', 0], ['compra', 'Comprar (u)', 0], ['cajas', 'Cajas', 0], ['valor', 'Compra $', 0]]);
+  document.getElementById('thead-det').innerHTML = cols.map(([k, t, izq]) => `<th class="ord${izq ? ' izq' : ''}" data-k="${k}">${t}</th>`).join('');
+  document.querySelectorAll('#thead-det th').forEach(th => th.onclick = () => {
+    const k = th.dataset.k;
+    orden = { k, dir: orden.k === k ? -orden.dir : (['codigo', 'descripcion', 'proveedor', 'clase'].includes(k) ? 1 : -1) };
+    pintarDetalle();
+  });
+  const val = (p, k) => k.startsWith('s_') ? ((p.sucursales[k.slice(2)] || {}).envio || 0) : p[k];
+  const filas = d.productos.filter(p => p.compra > 0 || p.necesidad > 0).sort((a, b) => {
+    const x = val(a, orden.k), y = val(b, orden.k);
+    if (x == null) return 1; if (y == null) return -1;
+    return (typeof x === 'string' ? x.localeCompare(y, 'es') : x - y) * orden.dir;
+  });
+  document.getElementById('det-titulo').textContent = `Detalle por producto · ${fmtN(filas.length)} productos`;
+  document.getElementById('tbody-det').innerHTML = filas.length ? filas.map(p => `<tr>
+      <td class="izq">${esc(p.codigo)}</td>
+      <td class="izq desc">${esc(p.descripcion)}</td>
+      <td class="izq">${esc(p.proveedor || '—')}</td>
+      <td class="izq">${p.clase ? `<span class="pill ${TONO[p.clase] || 'media'}">${p.clase === 'SV' ? 'Sin venta' : p.clase}</span>` : '—'}</td>
+      ${d.sucursales.map(s => {
+        const x = p.sucursales[s.codigo];
+        if (!x || !x.clase) return '<td class="cero">—</td>';
+        return `<td class="suc ${x.envio ? '' : 'cero'}">${x.envio ? fmtN(x.envio) : '0'}<small>${x.clase === 'SV' ? 'sin venta' : x.clase} · stock ${fmtN(x.stock)}</small></td>`;
+      }).join('')}
+      <td class="${p.desde_si ? '' : 'cero'}">${fmtN(p.desde_si)}</td>
+      <td class="${p.oc_en_camino ? '' : 'cero'}">${fmtN(p.oc_en_camino)}</td>
+      <td><strong>${fmtN(p.compra)}</strong>${p.excluido ? '<small style="display:block;color:var(--red)">no comprar</small>' : ''}</td>
+      <td>${fmtN(p.cajas)}</td>
+      <td><strong>${fmt$(p.valor)}</strong></td>
+    </tr>`).join('') : '<tr><td class="vacio" colspan="14">Nada que comprar con estos filtros.</td></tr>';
+}
+
+cargar();
+</script>
+{% endblock %}
