@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+
+{% block title %}Nueva solicitud{% endblock %}
+{% block page_title %}Nueva solicitud{% endblock %}
+{% block page_subtitle %}Control de Inventario · entrada, salida, merma, postventa o garantía{% endblock %}
+
+{% block sidebar_nav %}{% include "_solicitudes_sidebar.html" %}{% endblock %}
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .sn-wrap { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  .sn-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+  .sn-paso { font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin-bottom: 4px; }
+  .sn-titulo { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 12px; }
+  .sn-ayuda { font-size: 12.5px; color: var(--muted2); line-height: 1.5; margin-top: -4px; margin-bottom: 12px; }
+
+  .sn-tipos { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 760px) { .sn-tipos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .sn-tipo {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 10px;
+    color: var(--text); font: inherit; cursor: pointer; text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center;
+  }
+  .sn-tipo .ic { font-size: 24px; }
+  .sn-tipo .nm { font-size: 13px; font-weight: 700; }
+  .sn-tipo .rq { font-size: 10.5px; color: var(--muted2); }
+  .sn-tipo.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: rgba(34,163,71,.08); }
+  .sn-tipo:focus-visible, .sn-chip:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .sn-fila { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 640px) { .sn-fila { grid-template-columns: 1fr; } }
+  .sn-campo { display: flex; flex-direction: column; gap: 5px; }
+  .sn-campo label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .sn-campo input, .sn-campo select, .sn-campo textarea {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+    font: inherit; font-size: 14px; padding: 10px 12px; width: 100%; box-sizing: border-box;
+  }
+  .sn-campo textarea { min-height: 90px; resize: vertical; }
+  .sn-contador { font-size: 11px; color: var(--muted2); text-align: right; }
+  .sn-contador.falta { color: var(--red); }
+
+  .sn-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .sn-chip { background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; padding: 7px 13px; color: var(--muted2); font: inherit; font-size: 13px; cursor: pointer; }
+  .sn-chip.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .sn-buscar { position: relative; }
+  .sn-resultados {
+    position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; max-height: 300px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,.35); display: none;
+  }
+  .sn-resultados.ver { display: block; }
+  .sn-res { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--border); font-size: 13px; display: flex; justify-content: space-between; gap: 10px; }
+  .sn-res:hover, .sn-res.activo { background: var(--surface2); }
+  .sn-res small { color: var(--muted2); white-space: nowrap; }
+
+  .sn-lineas { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+  .sn-lineas th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); padding: 6px 6px; border-bottom: 1px solid var(--border); }
+  .sn-lineas td { padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .sn-lineas input { width: 90px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 7px 8px; font: inherit; }
+  .sn-lineas .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sn-quitar { background: none; border: none; color: var(--red); cursor: pointer; font-size: 16px; }
+  .sn-muted { color: var(--muted2); font-size: 11.5px; }
+
+  .sn-doc { margin-top: 10px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+  .sn-doc .cab { font-weight: 700; margin-bottom: 6px; }
+  .sn-doc label { display: flex; gap: 8px; align-items: center; padding: 4px 0; cursor: pointer; }
+
+  .sn-fotos { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+  .sn-foto { position: relative; width: 96px; height: 96px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+  .sn-foto img { width: 100%; height: 100%; object-fit: cover; }
+  .sn-foto button { position: absolute; top: 3px; right: 3px; background: rgba(0,0,0,.6); color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; }
+  .btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 9px; padding: 10px 14px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+  .btn.primario { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 15px; padding: 13px 18px; width: 100%; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .sn-obligatorio { color: var(--red); font-size: 11px; font-weight: 700; margin-left: 6px; }
+
+  .sn-resumen { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted2); margin-bottom: 12px; }
+  .sn-resumen strong { color: var(--text); font-size: 16px; }
+  .sn-msg { display: none; border-radius: 10px; padding: 12px 14px; font-size: 14px; margin-top: 12px; line-height: 1.5; }
+  .sn-msg.ver { display: block; }
+  .sn-msg.ok { background: rgba(34,163,71,.12); border: 1px solid var(--accent); color: var(--text); }
+  .sn-msg.error { background: rgba(239,68,68,.1); border: 1px solid var(--red); color: var(--red-light, var(--red)); }
+  .oculto { display: none !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sn-wrap">
+
+  <div class="sn-card">
+    <div class="sn-paso">Paso 1</div>
+    <div class="sn-titulo">¿Qué tipo de solicitud es?</div>
+    <div class="sn-tipos" id="tipos" role="radiogroup" aria-label="Tipo de solicitud"></div>
+  </div>
+
+  <div class="sn-card oculto" id="bloque-datos">
+    <div class="sn-paso">Paso 2</div>
+    <div class="sn-titulo" id="titulo-datos">Datos</div>
+    <div class="sn-ayuda" id="ayuda-tipo"></div>
+    <div class="sn-fila">
+      <div class="sn-campo"><label for="f-sucursal">Sucursal</label><select id="f-sucursal"></select></div>
+      <div class="sn-campo oculto" id="campo-destino"><label for="f-destino">Sucursal de destino</label><select id="f-destino"></select></div>
+    </div>
+    <div class="sn-campo" style="margin-top:12px"><label>Motivo</label><div class="sn-chips" id="subtipos"></div></div>
+    <div class="sn-fila" style="margin-top:12px">
+      <div class="sn-campo" id="campo-documento"><label for="f-documento" id="lbl-documento">Documento</label>
+        <div style="display:flex;gap:8px"><input id="f-documento" autocomplete="off" inputmode="numeric"><button type="button" class="btn oculto" id="btn-doc">Buscar</button></div>
+      </div>
+      <div class="sn-campo" id="campo-tercero"><label for="f-tercero" id="lbl-tercero">Cliente o proveedor (opcional)</label><input id="f-tercero" autocomplete="off"></div>
+    </div>
+    <div id="doc-resultado"></div>
+  </div>
+
+  <div class="sn-card oculto" id="bloque-productos">
+    <div class="sn-paso">Paso 3</div>
+    <div class="sn-titulo">Productos</div>
+    <div class="sn-buscar">
+      <div class="sn-campo"><label for="f-buscar">Buscar por código o descripción</label><input id="f-buscar" autocomplete="off" placeholder="Ej: 125520 o cable halógeno 2,5"></div>
+      <div class="sn-resultados" id="resultados" role="listbox"></div>
+    </div>
+    <table class="sn-lineas" id="tabla-lineas">
+      <thead><tr><th>Producto</th><th class="num">Stock suc.</th><th>Cantidad</th><th class="num">Valor</th><th></th></tr></thead>
+      <tbody id="tbody-lineas"><tr><td colspan="5" class="sn-muted" style="padding:14px 6px">Todavía no agregas productos.</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="sn-card oculto" id="bloque-respaldo">
+    <div class="sn-paso">Paso 4</div>
+    <div class="sn-titulo">Respaldo</div>
+    <div class="sn-campo"><label for="f-explicacion" id="lbl-explicacion">Explicación</label>
+      <textarea id="f-explicacion" placeholder=""></textarea>
+      <div class="sn-contador" id="contador"></div>
+    </div>
+    <div class="sn-campo" style="margin-top:14px">
+      <label>Fotos <span id="foto-oblig"></span></label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label class="btn" for="f-camara" style="text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--text)">📷 Tomar foto</label>
+        <label class="btn" for="f-galeria" style="text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--text)">🖼️ Elegir de la galería</label>
+      </div>
+      <input type="file" id="f-camara" accept="image/*" capture="environment" class="oculto">
+      <input type="file" id="f-galeria" accept="image/*" multiple class="oculto">
+      <div class="sn-fotos" id="fotos"></div>
+      <div class="sn-muted" id="fotos-info">Una foto bien tomada basta. Se achica antes de enviarla.</div>
+    </div>
+  </div>
+
+  <div class="sn-card oculto" id="bloque-enviar">
+    <div class="sn-resumen" id="resumen"></div>
+    <button type="button" class="btn primario" id="btn-enviar">Enviar solicitud</button>
+    <div class="sn-msg" id="msg"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const ICONOS = { ENTRADA: '📥', SALIDA: '📤', MERMA: '💥', POSTVENTA: '🔁', GARANTIA: '🛠️' };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt$ = v => '$' + Math.round(v || 0).toLocaleString('es-CL');
+const fmtN = v => Number(v || 0).toLocaleString('es-CL', { maximumFractionDigits: 2 });
+let cfg = null, tipo = null, subtipo = null, lineas = [], fotos = [], topes = {};
+
+async function iniciar() {
+  cfg = await fetch('/api/solicitudes/config').then(r => r.json());
+  document.getElementById('tipos').innerHTML = cfg.orden_tipos.map(k => [k, cfg.tipos[k]]).map(([k, t]) => `
+    <button type="button" class="sn-tipo" role="radio" aria-checked="false" data-t="${k}">
+      <span class="ic">${ICONOS[k] || '📄'}</span><span class="nm">${esc(t.nombre)}</span>
+      <span class="rq">${t.foto ? 'foto obligatoria' : t.explicacion_min >= 20 ? 'explicación obligatoria' : 'explicación'}</span>
+    </button>`).join('');
+  document.querySelectorAll('.sn-tipo').forEach(b => b.onclick = () => elegirTipo(b.dataset.t));
+  const opt = l => l.map(s => `<option value="${s.codigo}">${esc(s.nombre)}</option>`).join('');
+  document.getElementById('f-sucursal').innerHTML = (cfg.sucursales.length > 1 ? '<option value="">Elige…</option>' : '') + opt(cfg.sucursales);
+  document.getElementById('f-destino').innerHTML = '<option value="">Elige…</option>' + opt(cfg.todas_sucursales);
+}
+
+function elegirTipo(t) {
+  tipo = t; subtipo = null; topes = {};
+  const r = cfg.tipos[t];
+  document.querySelectorAll('.sn-tipo').forEach(b => { const s = b.dataset.t === t; b.classList.toggle('sel', s); b.setAttribute('aria-checked', s); });
+  ['bloque-datos', 'bloque-productos', 'bloque-respaldo', 'bloque-enviar'].forEach(id => document.getElementById(id).classList.remove('oculto'));
+  document.getElementById('titulo-datos').textContent = r.nombre;
+  document.getElementById('ayuda-tipo').textContent = r.ayuda;
+  document.getElementById('subtipos').innerHTML = r.subtipos.map(s => `<button type="button" class="sn-chip" data-s="${esc(s)}">${esc(s)}</button>`).join('');
+  document.querySelectorAll('.sn-chip').forEach(b => b.onclick = () => {
+    subtipo = b.dataset.s;
+    document.querySelectorAll('.sn-chip').forEach(x => x.classList.toggle('sel', x === b));
+    document.getElementById('campo-destino').classList.toggle('oculto', subtipo !== 'Traspaso enviado');
+    actualizar();
+  });
+  document.getElementById('campo-destino').classList.add('oculto');
+  document.getElementById('campo-documento').classList.toggle('oculto', !r.documento);
+  document.getElementById('lbl-documento').textContent = r.documento || '';
+  document.getElementById('btn-doc').classList.toggle('oculto', t !== 'POSTVENTA');
+  document.getElementById('lbl-tercero').textContent = t === 'POSTVENTA' ? 'Cliente' : t === 'GARANTIA' ? 'Proveedor o servicio técnico' : 'Cliente o proveedor (opcional)';
+  document.getElementById('campo-tercero').classList.toggle('oculto', !['POSTVENTA', 'GARANTIA', 'SALIDA'].includes(t));
+  document.getElementById('doc-resultado').innerHTML = '';
+  const lbl = { ENTRADA: 'Comentario (opcional)', SALIDA: '¿Por qué el producto ya no está?', MERMA: '¿Qué le pasó al producto?', POSTVENTA: '¿Qué pasó con el producto?', GARANTIA: 'Describe la falla' };
+  document.getElementById('lbl-explicacion').textContent = lbl[t];
+  document.getElementById('foto-oblig').innerHTML = r.foto ? '<span class="sn-obligatorio">obligatoria</span>' : '<span class="sn-muted">(opcional)</span>';
+  actualizar();
+}
+
+// ── Buscar productos ──
+let timer = null, resIdx = -1, resultados = [];
+document.getElementById('f-buscar').addEventListener('input', e => {
+  clearTimeout(timer);
+  const q = e.target.value.trim();
+  if (q.length < 2) { cerrarResultados(); return; }
+  timer = setTimeout(async () => {
+    const suc = document.getElementById('f-sucursal').value;
+    resultados = await fetch(`/api/solicitudes/productos?q=${encodeURIComponent(q)}&sucursal=${suc}`).then(r => r.json());
+    const box = document.getElementById('resultados');
+    resIdx = -1;
+    box.innerHTML = resultados.length ? resultados.map((p, i) => `<div class="sn-res" role="option" data-i="${i}"><span><strong>${p.codigo}</strong> · ${esc(p.descripcion)}</span><small>${esc(p.marca || '')}${p.stock != null ? ' · stock ' + fmtN(p.stock) : ''}</small></div>`).join('')
+      : '<div class="sn-res"><span class="sn-muted">Sin resultados</span></div>';
+    box.classList.add('ver');
+    box.querySelectorAll('.sn-res[data-i]').forEach(d => d.onclick = () => agregar(resultados[d.dataset.i]));
+  }, 250);
+});
+document.getElementById('f-buscar').addEventListener('keydown', e => {
+  const items = document.querySelectorAll('#resultados .sn-res[data-i]');
+  if (!items.length) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault(); resIdx = (resIdx + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items.forEach((x, i) => x.classList.toggle('activo', i === resIdx));
+  } else if (e.key === 'Enter') { e.preventDefault(); agregar(resultados[resIdx >= 0 ? resIdx : 0]); }
+  else if (e.key === 'Escape') cerrarResultados();
+});
+document.addEventListener('click', e => { if (!e.target.closest('.sn-buscar')) cerrarResultados(); });
+function cerrarResultados() { document.getElementById('resultados').classList.remove('ver'); }
+
+function agregar(p, cantidad, tope) {
+  if (!p) return;
+  const ya = lineas.find(l => l.codigo === p.codigo);
+  if (ya) { ya.cantidad = Number(ya.cantidad) + (cantidad || 1); }
+  else lineas.push({ codigo: p.codigo, descripcion: p.descripcion, cup: p.cup || 0, stock: p.stock, cantidad: cantidad || 1 });
+  if (tope != null) topes[p.codigo] = tope;
+  document.getElementById('f-buscar').value = ''; cerrarResultados(); pintarLineas();
+}
+
+function pintarLineas() {
+  const tb = document.getElementById('tbody-lineas');
+  tb.innerHTML = lineas.length ? lineas.map((l, i) => `<tr>
+      <td><strong>${l.codigo}</strong><div class="sn-muted">${esc(l.descripcion)}${topes[l.codigo] != null ? ' · vendido: ' + fmtN(topes[l.codigo]) : ''}</div></td>
+      <td class="num">${l.stock != null ? fmtN(l.stock) : '—'}</td>
+      <td><input type="number" min="0" step="any" value="${l.cantidad}" data-i="${i}" aria-label="Cantidad ${l.codigo}"></td>
+      <td class="num">${fmt$(l.cantidad * l.cup)}</td>
+      <td><button type="button" class="sn-quitar" data-q="${i}" aria-label="Quitar ${l.codigo}">✕</button></td></tr>`).join('')
+    : '<tr><td colspan="5" class="sn-muted" style="padding:14px 6px">Todavía no agregas productos.</td></tr>';
+  tb.querySelectorAll('input').forEach(inp => inp.oninput = () => {
+    const l = lineas[inp.dataset.i]; let v = Number(inp.value || 0);
+    if (topes[l.codigo] != null && v > topes[l.codigo]) { v = topes[l.codigo]; inp.value = v; }
+    l.cantidad = v; actualizar(); inp.closest('tr').querySelector('td:nth-child(4)').textContent = fmt$(v * l.cup);
+  });
+  tb.querySelectorAll('.sn-quitar').forEach(b => b.onclick = () => { lineas.splice(b.dataset.q, 1); pintarLineas(); });
+  actualizar();
+}
+
+// ── Postventa: buscar boleta/factura ──
+document.getElementById('btn-doc').onclick = async () => {
+  const n = document.getElementById('f-documento').value.trim();
+  const out = document.getElementById('doc-resultado');
+  if (!n) return;
+  out.innerHTML = '<div class="sn-muted" style="margin-top:8px">Buscando…</div>';
+  const d = await fetch('/api/solicitudes/documento?n=' + encodeURIComponent(n)).then(r => r.json());
+  if (!d.ok) { out.innerHTML = `<div class="sn-msg error ver">${esc(d.msg)}</div>`; return; }
+  out.innerHTML = d.documentos.map((doc, j) => `<div class="sn-doc">
+      <div class="cab">${esc(doc.tipo_doc)} ${esc(doc.folio)} · ${doc.fecha ? doc.fecha.split('-').reverse().join('-') : ''} · ${esc(doc.cliente || '')} · ${esc(doc.sucursal || '')}</div>
+      ${doc.lineas.map((l, i) => `<label><input type="checkbox" data-d="${j}" data-i="${i}"> <strong>${l.codigo}</strong> ${esc(l.descripcion)} <span class="sn-muted">· vendido ${fmtN(l.cantidad)}</span></label>`).join('')}
+    </div>`).join('');
+  if (d.documentos[0] && !document.getElementById('f-tercero').value) document.getElementById('f-tercero').value = d.documentos[0].cliente || '';
+  out.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = async () => {
+    const l = d.documentos[cb.dataset.d].lineas[cb.dataset.i];
+    if (cb.checked) {
+      const info = (await fetch(`/api/solicitudes/productos?q=${l.codigo}&sucursal=${document.getElementById('f-sucursal').value}`).then(r => r.json())).find(p => p.codigo === l.codigo) || { codigo: l.codigo, descripcion: l.descripcion, cup: 0 };
+      agregar(info, l.cantidad, l.cantidad);
+    } else { lineas = lineas.filter(x => x.codigo !== l.codigo); delete topes[l.codigo]; pintarLineas(); }
+  });
+};
+
+// ── Fotos: se achican en el navegador antes de subir ──
+async function achicar(file) {
+  const url = URL.createObjectURL(file);
+  const img = await new Promise((ok, mal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = mal; i.src = url; });
+  const max = 1280, k = Math.min(1, max / Math.max(img.width, img.height));
+  const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  URL.revokeObjectURL(url);
+  return await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.72));
+}
+async function agregarFotos(files) {
+  for (const f of files) {
+    if (fotos.length >= (cfg.max_fotos || 5)) { mostrar(false, `Máximo ${cfg.max_fotos} fotos.`); break; }
+    try { const b = await achicar(f); fotos.push({ blob: b, url: URL.createObjectURL(b), nombre: (f.name || 'foto').replace(/\.\w+$/, '') + '.jpg' }); }
+    catch (e) { mostrar(false, 'No se pudo leer una de las fotos.'); }
+  }
+  pintarFotos();
+}
+['f-camara', 'f-galeria'].forEach(id => document.getElementById(id).addEventListener('change', e => { agregarFotos([...e.target.files]); e.target.value = ''; }));
+function pintarFotos() {
+  document.getElementById('fotos').innerHTML = fotos.map((f, i) => `<div class="sn-foto"><img src="${f.url}" alt="Foto ${i + 1}"><button type="button" data-i="${i}" aria-label="Quitar foto">✕</button></div>`).join('');
+  document.querySelectorAll('.sn-foto button').forEach(b => b.onclick = () => { URL.revokeObjectURL(fotos[b.dataset.i].url); fotos.splice(b.dataset.i, 1); pintarFotos(); });
+  const kb = fotos.reduce((a, f) => a + f.blob.size, 0) / 1024;
+  document.getElementById('fotos-info').textContent = fotos.length ? `${fotos.length} foto(s) · ${Math.round(kb)} KB en total` : 'Una foto bien tomada basta. Se achica antes de enviarla.';
+  actualizar();
+}
+
+document.getElementById('f-explicacion').addEventListener('input', actualizar);
+document.getElementById('f-sucursal').addEventListener('change', actualizar);
+
+function faltantes() {
+  if (!tipo) return ['el tipo'];
+  const r = cfg.tipos[tipo], f = [];
+  if (!document.getElementById('f-sucursal').value) f.push('la sucursal');
+  if (!subtipo) f.push('el motivo');
+  if (subtipo === 'Traspaso enviado' && !document.getElementById('f-destino').value) f.push('la sucursal de destino');
+  if (!lineas.some(l => Number(l.cantidad) > 0)) f.push('al menos un producto');
+  if (document.getElementById('f-explicacion').value.trim().length < r.explicacion_min) f.push('la explicación');
+  if (r.foto && !fotos.length) f.push('la foto');
+  return f;
+}
+
+function actualizar() {
+  if (!tipo) return;
+  const r = cfg.tipos[tipo], n = document.getElementById('f-explicacion').value.trim().length;
+  const c = document.getElementById('contador');
+  c.textContent = r.explicacion_min ? `${n} / mínimo ${r.explicacion_min} caracteres` : '';
+  c.classList.toggle('falta', r.explicacion_min && n < r.explicacion_min);
+  const cant = lineas.reduce((a, l) => a + Number(l.cantidad || 0), 0), monto = lineas.reduce((a, l) => a + Number(l.cantidad || 0) * l.cup, 0);
+  const f = faltantes();
+  document.getElementById('resumen').innerHTML = `<span>${lineas.length} producto(s) · <strong>${fmtN(cant)}</strong> unidades</span><span>Valor estimado (CUP) <strong>${fmt$(monto)}</strong></span>` +
+    (f.length ? `<span style="width:100%;color:var(--amber)">Falta: ${f.join(', ')}</span>` : '');
+  document.getElementById('btn-enviar').disabled = f.length > 0;
+}
+
+function mostrar(ok, texto) { const m = document.getElementById('msg'); m.className = 'sn-msg ver ' + (ok ? 'ok' : 'error'); m.innerHTML = texto; }
+
+document.getElementById('btn-enviar').onclick = async () => {
+  const b = document.getElementById('btn-enviar'); b.disabled = true; b.textContent = 'Enviando…';
+  const fd = new FormData();
+  fd.append('tipo', tipo); fd.append('subtipo', subtipo);
+  fd.append('sucursal', document.getElementById('f-sucursal').value);
+  fd.append('sucursal_destino', document.getElementById('f-destino').value);
+  fd.append('explicacion', document.getElementById('f-explicacion').value);
+  fd.append('documento', document.getElementById('f-documento').value);
+  fd.append('tercero', document.getElementById('f-tercero').value);
+  fd.append('lineas', JSON.stringify(lineas.map(l => ({ codigo: l.codigo, cantidad: l.cantidad }))));
+  fotos.forEach(f => fd.append('fotos', f.blob, f.nombre));
+  try {
+    const d = await fetch('/api/solicitudes', { method: 'POST', body: fd }).then(r => r.json());
+    if (d.ok) {
+      mostrar(true, `<strong>${esc(d.numero)}</strong> creada. <a href="/solicitudes#${d.id}" style="color:var(--accent)">Ver la solicitud</a> · <a href="/solicitudes/nueva" style="color:var(--accent)">Crear otra</a>`);
+      b.textContent = 'Enviada'; return;
+    }
+    mostrar(false, esc(d.msg || 'No se pudo enviar.'));
+  } catch (e) { mostrar(false, 'Error de conexión. Revisa tu internet e intenta de nuevo.'); }
+  b.disabled = false; b.textContent = 'Enviar solicitud';
+};
+
+iniciar();
+</script>
+{% endblock %}

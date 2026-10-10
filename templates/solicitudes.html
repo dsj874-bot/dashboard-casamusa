@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Solicitudes{% endblock %}
+{% block page_title %}Solicitudes de Inventario{% endblock %}
+{% block page_subtitle %}Entradas, salidas, mermas, postventas y garantías{% endblock %}
+
+{% block sidebar_nav %}{% include "_solicitudes_sidebar.html" %}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}?v={{ asset_v('css/multiselect.css') }}">
+<style>
+  .sl-barra { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 18px; }
+  .sl-filtro { display: flex; flex-direction: column; gap: 4px; min-width: 170px; }
+  .sl-filtro label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .sl-nueva { margin-left: auto; background: var(--accent); color: #fff; border-radius: 9px; padding: 10px 16px; font-weight: 700; font-size: 13.5px; text-decoration: none; }
+  .sl-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+  @media (max-width: 900px) { .sl-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .sl-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+  .sl-kpi-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 5px; }
+  .sl-kpi-valor { font-size: 22px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+  .sl-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 6px 0; }
+  .sl-wrap { overflow-x: auto; }
+  .sl-tabla { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .sl-tabla th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .sl-tabla td { padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+  .sl-tabla .num { text-align: right; white-space: nowrap; }
+  .sl-tabla tbody tr { cursor: pointer; }
+  .sl-tabla tbody tr:hover td { background: var(--surface2); }
+  .sl-sub { display: block; font-size: 11px; color: var(--muted2); }
+  .pill { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .e-abierta { background: rgba(59,130,246,.15); color: var(--blue); }
+  .e-en_analisis { background: rgba(245,158,11,.15); color: var(--amber); }
+  .e-aprobada, .e-ejecutada, .e-cerrada { background: rgba(34,163,71,.15); color: var(--accent); }
+  .e-rechazada, .e-anulada { background: rgba(239,68,68,.14); color: var(--red); }
+  .vacio { text-align: center; padding: 40px; color: var(--muted2); }
+
+  .sl-fondo { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 100; display: none; }
+  .sl-fondo.ver { display: block; }
+  .sl-ficha {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100%); background: var(--surface);
+    border-left: 1px solid var(--border); z-index: 101; overflow-y: auto; padding: 20px 22px; transform: translateX(100%); transition: transform .2s;
+  }
+  .sl-ficha.ver { transform: none; }
+  @media (prefers-reduced-motion: reduce) { .sl-ficha { transition: none; } }
+  .sl-ficha h2 { font-size: 18px; margin: 0 0 4px; color: var(--text); }
+  .sl-cerrar { position: absolute; top: 14px; right: 16px; background: none; border: none; color: var(--muted2); font-size: 20px; cursor: pointer; }
+  .sl-sec { margin-top: 18px; }
+  .sl-sec-t { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 8px; }
+  .sl-dato { display: grid; grid-template-columns: 140px 1fr; gap: 6px 10px; font-size: 13px; }
+  .sl-dato span:nth-child(odd) { color: var(--muted2); }
+  .sl-texto { font-size: 13.5px; line-height: 1.55; color: var(--text); background: var(--surface2); border-radius: 10px; padding: 10px 12px; white-space: pre-wrap; }
+  .sl-fotos { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sl-fotos img { width: 120px; height: 120px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); cursor: zoom-in; }
+  .sl-evento { font-size: 12.5px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .sl-evento small { color: var(--muted2); display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sl-barra">
+  <div class="sl-filtro"><label for="f-estado">Estado</label><select id="f-estado"></select></div>
+  <div class="sl-filtro"><label for="f-tipo">Tipo</label><select id="f-tipo"></select></div>
+  <div class="sl-filtro"><label for="f-sucursal">Sucursal</label><select id="f-sucursal"></select></div>
+  <a class="sl-nueva" href="/solicitudes/nueva">➕ Nueva solicitud</a>
+</div>
+
+<div class="sl-kpis" id="kpis"></div>
+
+<div class="sl-card">
+  <div class="sl-wrap">
+    <table class="sl-tabla">
+      <thead><tr><th>N°</th><th>Fecha</th><th>Tipo · motivo</th><th>Sucursal</th><th>Solicita</th><th>Productos</th><th class="num">Unidades</th><th class="num">Valor</th><th>Estado</th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="9" class="vacio">Cargando…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="sl-fondo" id="fondo"></div>
+<aside class="sl-ficha" id="ficha" aria-label="Detalle de la solicitud"></aside>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/multiselect.js') }}?v={{ asset_v('js/multiselect.js') }}"></script>
+<script>
+if (typeof initMultiSelect !== 'function') {
+  window.initMultiSelect = function (sel) { if (sel) sel.multiple = true; };
+  window.mselValores = function (sel) { return sel ? Array.from(sel.selectedOptions).map(o => o.value) : []; };
+}
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt$ = v => '$' + Math.round(v || 0).toLocaleString('es-CL');
+const fmtN = v => Number(v || 0).toLocaleString('es-CL', { maximumFractionDigits: 2 });
+const fFecha = iso => { const d = new Date(iso); return d.toLocaleDateString('es-CL') + ' ' + d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }); };
+const dias = iso => Math.floor((Date.now() - new Date(iso)) / 86400000);
+let cfg = null;
+
+async function iniciar() {
+  cfg = await fetch('/api/solicitudes/config').then(r => r.json());
+  const llenar = (id, pares) => { const s = document.getElementById(id); s.innerHTML = pares.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join(''); initMultiSelect(s); s.addEventListener('change', cargar); };
+  llenar('f-estado', Object.entries(cfg.estados));
+  llenar('f-tipo', cfg.orden_tipos.map(k => [k, cfg.tipos[k].nombre]));
+  llenar('f-sucursal', cfg.todas_sucursales.map(s => [s.codigo, s.nombre]));
+  await cargar();
+  const id = Number(location.hash.slice(1));
+  if (id) abrir(id);
+}
+
+async function cargar() {
+  const p = new URLSearchParams();
+  ['estado', 'tipo', 'sucursal'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
+  const lista = await fetch('/api/solicitudes?' + p).then(r => r.json());
+  if (lista.error) { document.getElementById('tbody').innerHTML = `<tr><td colspan="9" class="vacio">${esc(lista.error)}</td></tr>`; return; }
+  const cuenta = e => lista.filter(s => e.includes(s.estado)).length;
+  document.getElementById('kpis').innerHTML = `
+    <div class="sl-kpi"><div class="sl-kpi-label">Solicitudes</div><div class="sl-kpi-valor">${fmtN(lista.length)}</div></div>
+    <div class="sl-kpi"><div class="sl-kpi-label">Abiertas</div><div class="sl-kpi-valor">${fmtN(cuenta(['abierta']))}</div></div>
+    <div class="sl-kpi"><div class="sl-kpi-label">En análisis</div><div class="sl-kpi-valor">${fmtN(cuenta(['en_analisis']))}</div></div>
+    <div class="sl-kpi"><div class="sl-kpi-label">Valor total</div><div class="sl-kpi-valor">${fmt$(lista.reduce((a, s) => a + s.monto_total, 0))}</div></div>`;
+  document.getElementById('tbody').innerHTML = lista.length ? lista.map(s => `<tr data-id="${s.id}">
+      <td><strong>${s.numero}</strong>${s.n_fotos ? ' 📷' : ''}</td>
+      <td>${fFecha(s.creado_en)}<span class="sl-sub">hace ${dias(s.creado_en)} día(s)</span></td>
+      <td>${esc(s.tipo_nombre)}<span class="sl-sub">${esc(s.subtipo || '')}</span></td>
+      <td>${esc(s.sucursal_nombre)}${s.sucursal_destino ? `<span class="sl-sub">→ ${esc(s.sucursal_destino)}</span>` : ''}</td>
+      <td>${esc(s.solicitante_nombre || s.solicitante)}</td>
+      <td>${esc(s.producto_principal || '')}${s.n_lineas > 1 ? `<span class="sl-sub">y ${s.n_lineas - 1} más</span>` : ''}</td>
+      <td class="num">${fmtN(s.cantidad_total)}</td>
+      <td class="num">${fmt$(s.monto_total)}</td>
+      <td><span class="pill e-${s.estado}">${esc(s.estado_nombre)}</span></td></tr>`).join('')
+    : '<tr><td colspan="9" class="vacio">No hay solicitudes con estos filtros. <a href="/solicitudes/nueva" style="color:var(--accent)">Crear una</a></td></tr>';
+  document.querySelectorAll('#tbody tr[data-id]').forEach(tr => tr.onclick = () => abrir(Number(tr.dataset.id)));
+}
+
+async function abrir(id) {
+  const f = document.getElementById('ficha');
+  f.innerHTML = '<div class="vacio">Cargando…</div>';
+  f.classList.add('ver'); document.getElementById('fondo').classList.add('ver');
+  history.replaceState(null, '', '#' + id);
+  const s = await fetch('/api/solicitudes/' + id).then(r => r.json());
+  if (s.error) { f.innerHTML = `<button class="sl-cerrar" onclick="cerrar()" aria-label="Cerrar">✕</button><div class="vacio">${esc(s.error)}</div>`; return; }
+  f.innerHTML = `<button class="sl-cerrar" onclick="cerrar()" aria-label="Cerrar">✕</button>
+    <h2>${s.numero} · ${esc(s.tipo_nombre)}</h2>
+    <span class="pill e-${s.estado}">${esc(s.estado_nombre)}</span>
+    <div class="sl-sec"><div class="sl-dato">
+      <span>Motivo</span><span>${esc(s.subtipo || '—')}</span>
+      <span>Sucursal</span><span>${esc(s.sucursal_nombre)}${s.sucursal_destino_nombre ? ' → ' + esc(s.sucursal_destino_nombre) : ''}</span>
+      <span>Solicita</span><span>${esc(s.solicitante_nombre || '')} <span style="color:var(--muted2)">(${esc(s.solicitante)})</span></span>
+      <span>Fecha</span><span>${fFecha(s.creado_en)}</span>
+      ${s.documento ? `<span>Documento</span><span>${esc(s.documento)}</span>` : ''}
+      ${s.tercero ? `<span>Cliente / proveedor</span><span>${esc(s.tercero)}</span>` : ''}
+      <span>Valor (CUP)</span><span><strong>${fmt$(s.monto_total)}</strong> · ${fmtN(s.cantidad_total)} unidades</span>
+    </div></div>
+    ${s.explicacion ? `<div class="sl-sec"><div class="sl-sec-t">Explicación</div><div class="sl-texto">${esc(s.explicacion)}</div></div>` : ''}
+    <div class="sl-sec"><div class="sl-sec-t">Productos</div>
+      <table class="sl-tabla"><thead><tr><th>Código</th><th>Descripción</th><th class="num">Cant.</th><th class="num">Valor</th></tr></thead>
+      <tbody>${s.lineas.map(l => `<tr style="cursor:default"><td>${l.codigo}</td><td>${esc(l.descripcion)}</td><td class="num">${fmtN(l.cantidad)}</td><td class="num">${fmt$(l.monto)}</td></tr>`).join('')}</tbody></table>
+    </div>
+    ${s.fotos.length ? `<div class="sl-sec"><div class="sl-sec-t">Fotos</div><div class="sl-fotos">${s.fotos.map(fo => `<a href="/api/solicitudes/foto/${fo.id}" target="_blank" rel="noopener"><img src="/api/solicitudes/foto/${fo.id}" alt="Foto de la solicitud" loading="lazy"></a>`).join('')}</div></div>` : ''}
+    <div class="sl-sec"><div class="sl-sec-t">Historial</div>${s.eventos.map(e => `<div class="sl-evento">${esc(e.comentario || e.estado)}<small>${fFecha(e.ts)} · ${esc(e.usuario || '')} · ${esc(e.estado)}</small></div>`).join('')}</div>`;
+}
+
+function cerrar() {
+  document.getElementById('ficha').classList.remove('ver'); document.getElementById('fondo').classList.remove('ver');
+  history.replaceState(null, '', location.pathname);
+}
+document.getElementById('fondo').onclick = cerrar;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrar(); });
+iniciar();
+</script>
+{% endblock %}

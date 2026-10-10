@@ -411,6 +411,31 @@
     }
 
     /* ══════════════════════════════
+       CELULAR: el menu lateral se esconde y se abre con el boton ☰
+       (las solicitudes de inventario se crean desde el celular, con fotos)
+    ══════════════════════════════ */
+    .menu-fondo { display: none; }
+    @media (max-width: 760px) {
+      body, body.sidebar-collapsed { --sidebar-w: 250px; }
+      .main { margin-left: 0; }
+      /* Se esconde con "left" y no con transform: el boton ☰ esta dentro de la
+         barra y un transform lo arrastraria fuera de la pantalla junto con ella */
+      .sidebar { left: -260px; transition: left .2s; box-shadow: 0 0 40px rgba(0,0,0,.5); }
+      body.menu-movil .sidebar { left: 0; }
+      body.menu-movil .menu-fondo { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 90; }
+      body.sidebar-collapsed .logo-sub, body.sidebar-collapsed .nav-section-title,
+      body.sidebar-collapsed .nav-label, body.sidebar-collapsed .user-info { display: initial; }
+      body.sidebar-collapsed .nav-item { justify-content: flex-start; padding: 8px 12px; gap: 10px; }
+      .sidebar-toggle-btn { left: 10px; top: 14px; width: 34px; height: 34px; font-size: 18px; border-radius: 9px; }
+      body.menu-movil .sidebar-toggle-btn { left: 210px; }
+      .topbar { padding: 12px 14px 12px 54px; flex-wrap: wrap; gap: 8px; }
+      .topbar-right { flex-wrap: wrap; gap: 8px; }
+      .topbar-right .fecha-badge { display: none; }
+      .content { padding: 16px 12px; }
+    }
+    @media (max-width: 760px) and (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+
+    /* ══════════════════════════════
        COMPONENTES REUTILIZABLES
     ══════════════════════════════ */
 
@@ -707,6 +732,7 @@
 </script>
 
 <!-- ══════════ SIDEBAR ══════════ -->
+<div class="menu-fondo" id="menu-fondo"></div>
 <nav class="sidebar">
 
   <button id="sidebar-toggle" class="sidebar-toggle-btn" title="Colapsar menú">‹</button>
@@ -970,8 +996,20 @@
     btnToggleSidebar.textContent = colapsado ? '›' : '‹';
     btnToggleSidebar.title = colapsado ? 'Expandir menú' : 'Colapsar menú';
   }
+  const esMovil = () => window.matchMedia('(max-width: 760px)').matches;
   aplicarEstadoSidebar(document.body.classList.contains('sidebar-collapsed'));
+  if (esMovil()) btnToggleSidebar.textContent = '☰';
+  document.getElementById('menu-fondo').addEventListener('click', function () {
+    document.body.classList.remove('menu-movil');
+    btnToggleSidebar.textContent = '☰';
+  });
   btnToggleSidebar.addEventListener('click', function () {
+    // En el celular el boton abre y cierra el menu (sobre la pagina)
+    if (esMovil()) {
+      const abierto = document.body.classList.toggle('menu-movil');
+      btnToggleSidebar.textContent = abierto ? '✕' : '☰';
+      return;
+    }
     const nuevoEstado = !document.body.classList.contains('sidebar-collapsed');
     localStorage.setItem('sidebarCollapsed', nuevoEstado ? '1' : '0');
     aplicarEstadoSidebar(nuevoEstado);

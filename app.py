@@ -73,6 +73,8 @@ import data_loader_clasificacion_pg
 import data_loader_sugerido_pg
 # Logistica: lee en vivo la planilla de despachos de Google Sheets
 import data_loader_logistica
+# Solicitudes de Control de Inventario (migracion 017)
+import data_loader_solicitudes_pg
 
 # ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
@@ -270,6 +272,12 @@ PREFIJOS_RESTRINGIDOS_ADQUISICIONES = (
     "/adquisiciones", "/api/adquisiciones",
     "/subir_compras", "/api/subir_compras", "/api/subir_recepciones",
 )
+# Solicitudes de Control de Inventario: por ahora solo dsepulveda las prueba
+# en musa360.cl (decision del usuario 2026-10-10). Para abrirlas, sumar aqui
+# a C. Aliaga (ECI) y a los jefes de sucursal.
+USUARIOS_SOLICITUDES = {"dsepulveda@casamusa.cl"}
+PREFIJOS_RESTRINGIDOS_SOLICITUDES = ("/solicitudes", "/api/solicitudes")
+
 PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA = (
     "/forecast/plan_compra", "/api/forecast/plan_compras",
     "/forecast/nivel_servicio", "/api/forecast/nivel_servicio",
@@ -287,6 +295,8 @@ def _restringir_inventario_adquisiciones():
         permitidos = USUARIOS_ADQUISICIONES
     elif path.startswith(PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA):
         permitidos = USUARIOS_FORECAST
+    elif path.startswith(PREFIJOS_RESTRINGIDOS_SOLICITUDES):
+        permitidos = USUARIOS_SOLICITUDES
     else:
         return None
     if "usuario" not in session:
@@ -397,6 +407,7 @@ def inject_es_admin():
         # que NO caiga en esos prefijos ya restringidos es Comercial.
         "es_pantalla_comercial": not request.path.startswith(
             PREFIJOS_RESTRINGIDOS_INVENTARIO + PREFIJOS_RESTRINGIDOS_ADQUISICIONES + PREFIJOS_SOLO_GERENCIA
+            + PREFIJOS_RESTRINGIDOS_SOLICITUDES
         ),
         # Resumen de Adquisiciones tiene su propio "Datos al", separado
         # del de Ventas (ver _fecha_corte_adq_sesion()).
@@ -542,6 +553,7 @@ AREAS = [
     {"slug": "bodega",        "nombre": "Bodega",        "icono": "🏭", "url": "/bodega",        "activo": False},
     {"slug": "forecast",      "nombre": "Forecast",      "icono": "🔮", "url": "/forecast",      "activo": True},
     {"slug": "tareas",        "nombre": "Tareas Pendientes de Gerencia", "icono": "📋", "url": "/tareas", "activo": False},
+    {"slug": "solicitudes",   "nombre": "Solicitudes de Inventario", "icono": "📝", "url": "/solicitudes",   "activo": True},
 ]
 
 
@@ -558,13 +570,15 @@ def inicio():
         areas_visibles = [
             a for a in AREAS
             if a["slug"] == "comercial"
+            or (a["slug"] == "solicitudes" and usuario in USUARIOS_SOLICITUDES)
             or (a["slug"] == "inventario" and usuario in USUARIOS_INVENTARIO)
             or (a["slug"] == "adquisiciones" and usuario in USUARIOS_ADQUISICIONES)
         ]
     else:
         areas_visibles = [
             a for a in AREAS
-            if a["slug"] not in ("inventario", "adquisiciones", "forecast")
+            if a["slug"] not in ("inventario", "adquisiciones", "forecast", "solicitudes")
+            or (a["slug"] == "solicitudes" and usuario in USUARIOS_SOLICITUDES)
             or (a["slug"] == "inventario" and usuario in USUARIOS_INVENTARIO)
             or (a["slug"] == "adquisiciones" and usuario in USUARIOS_ADQUISICIONES)
             or (a["slug"] == "forecast" and usuario in USUARIOS_FORECAST)
@@ -1495,6 +1509,133 @@ def api_forecast_sugerido():
         ))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ══════════════════════════════════════════════════════
+#  SOLICITUDES DE CONTROL DE INVENTARIO (etapa 1: registrar)
+# ══════════════════════════════════════════════════════
+def _sol_ve_todas():
+    """Gerencia, admin y el ECI (admin_inventario) ven todas las solicitudes."""
+    return bool(session.get("admin") or session.get("admin_inventario")
+                or session.get("usuario") in USUARIOS_GERENCIA)
+
+
+def _sol_sucursales_usuario():
+    """Sucursales de un jefe de sucursal (lista), o None si no tiene."""
+    suc = session.get("sucursal")
+    if not suc:
+        return None
+    return list(suc) if isinstance(suc, (list, tuple)) else [suc]
+
+
+@app.route("/solicitudes")
+@login_requerido
+def solicitudes():
+    return render_template("solicitudes.html", active="solicitudes_lista",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/solicitudes/nueva")
+@login_requerido
+def solicitud_nueva():
+    return render_template("solicitud_nueva.html", active="solicitudes_nueva",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/solicitudes/config")
+@login_requerido
+def api_solicitudes_config():
+    sucs = _sol_sucursales_usuario()
+    permitidas = sucs if sucs and not _sol_ve_todas() else list(data_loader_solicitudes_pg.SUCURSALES)
+    return jsonify({
+        "tipos": data_loader_solicitudes_pg.TIPOS,
+        # jsonify ordena las claves: el orden de los botones va aparte
+        "orden_tipos": list(data_loader_solicitudes_pg.TIPOS),
+        "sucursales": [{"codigo": c, "nombre": data_loader_solicitudes_pg.SUCURSALES[c]} for c in permitidas],
+        "todas_sucursales": [{"codigo": c, "nombre": n} for c, n in data_loader_solicitudes_pg.SUCURSALES.items()],
+        "estados": data_loader_solicitudes_pg.ESTADOS,
+        "max_fotos": data_loader_solicitudes_pg.MAX_FOTOS,
+    })
+
+
+@app.route("/api/solicitudes/productos")
+@login_requerido
+def api_solicitudes_productos():
+    try:
+        return jsonify(data_loader_solicitudes_pg.buscar_productos(request.args.get("q"), request.args.get("sucursal")))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/solicitudes/documento")
+@login_requerido
+def api_solicitudes_documento():
+    try:
+        docs = data_loader_solicitudes_pg.buscar_documento(request.args.get("n"))
+        if not docs:
+            return jsonify({"ok": False, "msg": "No encontré esa boleta o factura en las ventas cargadas."})
+        return jsonify({"ok": True, "documentos": docs})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
+@app.route("/api/solicitudes", methods=["GET", "POST"])
+@login_requerido
+def api_solicitudes():
+    if request.method == "GET":
+        try:
+            return jsonify(data_loader_solicitudes_pg.listar_solicitudes(
+                session.get("usuario"), _sol_ve_todas(), _sol_sucursales_usuario(),
+                estado=request.args.getlist("estado") or None,
+                tipo=request.args.getlist("tipo") or None,
+                sucursal=request.args.getlist("sucursal") or None,
+            ))
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    import json as _json
+    try:
+        datos = {k: request.form.get(k) for k in
+                 ("tipo", "subtipo", "sucursal", "sucursal_destino", "explicacion", "documento", "tercero")}
+        sucs = _sol_sucursales_usuario()
+        if sucs and not _sol_ve_todas() and datos.get("sucursal") not in sucs:
+            return jsonify({"ok": False, "msg": "Solo puedes crear solicitudes de tu sucursal."}), 403
+        lineas = _json.loads(request.form.get("lineas") or "[]")
+        fotos = [(f.filename, f.mimetype, f.read()) for f in request.files.getlist("fotos") if f and f.filename]
+        sid, numero = data_loader_solicitudes_pg.crear_solicitud(
+            datos, lineas, fotos, session.get("usuario"), session.get("nombre"))
+        return jsonify({"ok": True, "id": sid, "numero": numero, "msg": f"Solicitud {numero} creada."})
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"No se pudo crear la solicitud: {e}"}), 500
+
+
+def _sol_puede_ver(s):
+    if _sol_ve_todas():
+        return True
+    sucs = _sol_sucursales_usuario() or []
+    return s["solicitante"] == session.get("usuario") or s["sucursal"] in sucs
+
+
+@app.route("/api/solicitudes/<int:sid>")
+@login_requerido
+def api_solicitud_detalle(sid):
+    s = data_loader_solicitudes_pg.get_solicitud(sid)
+    if not s or not _sol_puede_ver(s):
+        return jsonify({"error": "Solicitud no encontrada."}), 404
+    return jsonify(s)
+
+
+@app.route("/api/solicitudes/foto/<int:fid>")
+@login_requerido
+def api_solicitud_foto(fid):
+    f = data_loader_solicitudes_pg.get_foto(fid)
+    if not f or not _sol_puede_ver(f):
+        return jsonify({"error": "Foto no encontrada."}), 404
+    from flask import Response
+    return Response(bytes(f["datos"]), mimetype=f["mime"] or "image/jpeg",
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 @app.route("/forecast")
