@@ -1708,6 +1708,74 @@ def get_vta_mg_pg(filtros=None, fecha_corte=None):
     }
 
 
+# ══════════════════════════════════════════════════════
+#  Margen ajustado al reporte "Margen por vendedor" del ERP (migracion 015)
+# ══════════════════════════════════════════════════════
+def leer_margen_erp_excel(ruta):
+    """Lee el reporte del ERP: una fila por vendedor, columna 'Total anual'
+    y despues tres columnas por mes desde enero (Importe de Ventas,
+    Ganancia bruta, % de ganancia bruta). Devuelve [(mes, vendedor,
+    venta, ganancia)], solo los meses con dato."""
+    import openpyxl
+    ws = openpyxl.load_workbook(ruta, data_only=True, read_only=True).worksheets[0]
+    filas = []
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row or not row[0] or not str(row[0]).strip():
+            continue
+        for m in range(12):
+            i = 2 + 3 * m
+            if i + 1 >= len(row):
+                break
+            venta, ganancia = row[i], row[i + 1]
+            if venta is None and ganancia is None:
+                continue
+            filas.append((m + 1, str(row[0]).strip(), float(venta or 0), float(ganancia or 0)))
+    return filas
+
+
+def cargar_margen_erp_pg(filas, ano, cargado_por="admin"):
+    """Reemplaza el reporte del ERP de ese año en margen_erp y recalcula
+    los factores. Un solo commit: son unos cientos de filas."""
+    with db.get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM margen_erp WHERE ano = %s", (ano,))
+            cur.executemany(
+                """INSERT INTO margen_erp (ano, mes, vendedor, venta, ganancia, cargado_por)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                [(ano, mes, vend, venta, gan, cargado_por) for mes, vend, venta, gan in filas],
+            )
+        conn.commit()
+    return recalcular_ajuste_margen_erp_pg(ano)
+
+
+def recalcular_ajuste_margen_erp_pg(ano):
+    """Factor de costo por vendedor y mes para que el margen de Musa360
+    quede en el % de margen del ERP (ver migracion 015):
+        factor = venta_musa * (1 - ganancia_erp / venta_erp) / costo_musa
+    Solo donde la venta y el costo de Musa360 y la venta del ERP son
+    positivos; el resto queda sin fila (factor 1). Hay que volver a
+    correrlo si se recarga la venta de un mes que ya tiene reporte."""
+    with db.get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM ajuste_costo_erp WHERE ano = %s", (ano,))
+            cur.execute(
+                """INSERT INTO ajuste_costo_erp (ano, mes, vendedor, factor)
+                   SELECT v.ano, v.mes, v.vendedor,
+                          sum(v.total) * (1 - e.ganancia / e.venta) / sum(v.costo_total)
+                     FROM ventas v
+                     JOIN margen_erp e ON e.ano = v.ano AND e.mes = v.mes AND e.vendedor = trim(v.vendedor)
+                    WHERE v.ano = %(ano)s AND e.venta > 0
+                    GROUP BY v.ano, v.mes, v.vendedor, e.ganancia, e.venta
+                   HAVING sum(v.total) > 0 AND sum(v.costo_total) > 0""",
+                {"ano": ano},
+            )
+            n = cur.rowcount
+            cur.execute("SELECT min(factor) mn, max(factor) mx FROM ajuste_costo_erp WHERE ano = %s", (ano,))
+            r = cur.fetchone()
+        conn.commit()
+    return {"ajustados": n, "factor_min": float(r["mn"] or 1), "factor_max": float(r["mx"] or 1)}
+
+
 def asignar_vendedor_home(vendedor, sucursal, vigente_desde=None, updated_by="admin"):
     """Asigna o cambia la sucursal 'home' de un vendedor en vendedor_home.
     Como sucursal_logica/vendedor_rpt se calculan al consultar (ver
