@@ -67,6 +67,7 @@
 <div class="sg-barra">
   <div class="sg-filtro"><label for="f-marca">Marca</label><select id="f-marca"></select></div>
   <div class="sg-filtro"><label for="f-familia">Familia</label><select id="f-familia"></select></div>
+  <div class="sg-filtro"><label for="f-clase">Clasificación</label><select id="f-clase"></select></div>
   <div class="sg-periodo" id="periodo">Cargando…</div>
 </div>
 
@@ -125,7 +126,7 @@ let datos = null, filtrosListos = false, orden = { k: 'valor', dir: -1 };
 
 function qs() {
   const p = new URLSearchParams();
-  ['marca', 'familia'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
+  ['marca', 'familia', 'clase'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
   return p.toString();
 }
 
@@ -139,10 +140,11 @@ async function cargar() {
     const opciones = {
       marca: d.por_marca.map(m => m.marca),
       familia: [...new Set(d.productos.map(p => p.familia).filter(Boolean))].sort(),
+      clase: ['AX', 'AY', 'AZ', 'BX', 'BY', 'BZ', 'CX', 'CY', 'CZ', 'SV'],
     };
     Object.entries(opciones).forEach(([k, vals]) => {
       const sel = document.getElementById('f-' + k);
-      sel.innerHTML = vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+      sel.innerHTML = vals.map(v => `<option value="${esc(v)}">${esc(k === 'clase' && v === 'SV' ? 'Sin venta' : v)}</option>`).join('');
       initMultiSelect(sel);
       sel.addEventListener('change', cargar);
     });

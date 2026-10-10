@@ -45,7 +45,8 @@ def _meta_unidades(clase, ciclo, vm, emb):
     return math.ceil(round(regla * vm, 6)) if vm > 0 else 0
 
 
-def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None):
+def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None):
+    clases_filtro = set(clase) if clase else None   # 'clase' se reusa abajo por sucursal
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
             cur.execute("""SELECT id, desde, hasta, calculado_en FROM clasificacion_calculo
@@ -136,6 +137,9 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None):
             detalle[s] = {"clase": clase, "envio": envio, "stock": st, "meta": meta}
         emp = por_alc.get("EMPRESA")
         clase_emp = ((emp["abc"] + emp["xyz"]) if emp["abc"] else "SV") if emp else None
+        # Filtro por clasificacion: la clase de la empresa (la columna Clase)
+        if clases_filtro and clase_emp not in clases_filtro:
+            continue
         oc_u, oc_v = oc.get(cod, (0.0, 0.0))
         # Antes de comprar se despacha desde San Isidro lo que le sobra
         desde_si = min(exceso_si, necesidad_otros)
