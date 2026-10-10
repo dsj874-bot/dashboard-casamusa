@@ -215,10 +215,10 @@ async function cargar(forzar) {
 function pintar(d) {
   const k = d.kpis;
   document.getElementById('kpis').innerHTML = `
-    <div class="lg-kpi"><div class="lg-kpi-label">Cumplimiento</div><div class="lg-kpi-valor ${tono(k.pct)}">${fmtP(k.pct)}</div><div class="lg-kpi-sub">${fmtN(k.cerrados)} movimientos cerrados · últimos 60 días ${fmtP(k.pct_60d)}</div></div>
-    <div class="lg-kpi"><div class="lg-kpi-label">Despachos</div><div class="lg-kpi-valor">${fmtN(k.despachos)}</div><div class="lg-kpi-sub">cumplimiento ${fmtP(k.pct_despachos)}</div></div>
-    <div class="lg-kpi"><div class="lg-kpi-label">Retiros</div><div class="lg-kpi-valor">${fmtN(k.retiros)}</div><div class="lg-kpi-sub">cumplimiento ${fmtP(k.pct_retiros)}</div></div>
-    <div class="lg-kpi"><div class="lg-kpi-label">Incumplidos</div><div class="lg-kpi-valor ${k.incumplidos ? 'bajo' : ''}">${fmtN(k.incumplidos)}</div><div class="lg-kpi-sub">promedio ${fmtN(k.promedio_diario)} movimientos por día</div></div>
+    <div class="lg-kpi"><div class="lg-kpi-label">Cumplimiento</div><div class="lg-kpi-valor ${tono(k.pct)}">${fmtP(k.pct)}</div><div class="lg-kpi-sub">${fmtN(k.cerrados)} movimientos en ${fmtN(k.dias_reparto)} días de reparto (${fmtN(k.promedio_diario)} por día) · últimos 60 días ${fmtP(k.pct_60d)}</div></div>
+    <div class="lg-kpi"><div class="lg-kpi-label">Despachos</div><div class="lg-kpi-valor">${fmtN(k.despachos)}</div><div class="lg-kpi-sub">${fmtN(k.despachos_dia)} por día · cumplimiento ${fmtP(k.pct_despachos)}</div></div>
+    <div class="lg-kpi"><div class="lg-kpi-label">Retiros</div><div class="lg-kpi-valor">${fmtN(k.retiros)}</div><div class="lg-kpi-sub">${fmtN(k.retiros_dia)} por día · cumplimiento ${fmtP(k.pct_retiros)}</div></div>
+    <div class="lg-kpi"><div class="lg-kpi-label">Incumplidos</div><div class="lg-kpi-valor ${k.incumplidos ? 'bajo' : ''}">${fmtN(k.incumplidos)}</div><div class="lg-kpi-sub">${fmtP(k.pct_incumplidos)} de los movimientos cerrados</div></div>
     <div class="lg-kpi"><div class="lg-kpi-label">Próximos 7 días</div><div class="lg-kpi-valor">${fmtN(k.proximos_7d)}</div><div class="lg-kpi-sub">${k.vencidos ? `<span class="t-bajo">${fmtN(k.vencidos)} vencidos sin cerrar</span>` : 'sin vencidos pendientes'}</div></div>`;
 
   // Comparativo por año: el año mas reciente en verde y linea solida

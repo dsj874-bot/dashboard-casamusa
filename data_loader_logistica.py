@@ -217,7 +217,12 @@ def get_panel_logistica(desde=None, hasta=None, sucursal=None, chofer=None, tipo
             "pct_despachos": _pct(cerr[cerr["tipo"] == "Despacho"]["ok"].sum(), (cerr["tipo"] == "Despacho").sum()),
             "pct_retiros": _pct(cerr[cerr["tipo"] == "Retiro"]["ok"].sum(), (cerr["tipo"] == "Retiro").sum()),
             "incumplidos": int(len(inc)),
+            # Promedios sobre los dias con reparto (dias con al menos un movimiento cerrado)
             "promedio_diario": round(len(cerr) / cerr["fecha"].nunique(), 1) if len(cerr) else None,
+            "despachos_dia": round((cerr["tipo"] == "Despacho").sum() / cerr["fecha"].nunique(), 1) if len(cerr) else None,
+            "retiros_dia": round((cerr["tipo"] == "Retiro").sum() / cerr["fecha"].nunique(), 1) if len(cerr) else None,
+            "dias_reparto": int(cerr["fecha"].nunique()),
+            "pct_incumplidos": _pct(len(inc), len(cerr)) if len(cerr) else None,
             "vencidos": int(len(vencidos)),
             "proximos_7d": int(len(proximos)),
         },
