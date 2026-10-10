@@ -74,8 +74,7 @@
 <div class="lg-barra">
   <div class="lg-rangos" id="rangos" role="group" aria-label="Período">
     <button type="button" class="lg-rango" data-r="mes">Este mes</button>
-    <button type="button" class="lg-rango" data-r="3">3 meses</button>
-    <button type="button" class="lg-rango activo" data-r="6">6 meses</button>
+    <span id="rangos-anos" style="display:contents"></span>
     <button type="button" class="lg-rango" data-r="todo">Todo</button>
   </div>
   <div class="lg-filtro"><label for="f-sucursal">Sucursal</label><select id="f-sucursal"></select></div>
@@ -91,8 +90,8 @@
 
 <div class="lg-grid">
   <div class="lg-card">
-    <div class="lg-card-titulo">Cumplimiento por mes</div>
-    <div class="lg-card-sub">Barras: despachos y retiros cerrados. Línea: % cumplido.</div>
+    <div class="lg-card-titulo">Comparativo por año</div>
+    <div class="lg-card-sub">Barras: movimientos cerrados de cada mes. Líneas: % cumplido. Compara los años completos (no depende del período elegido).</div>
     <canvas id="chart-mensual" height="120"></canvas>
   </div>
   <div class="lg-card">
@@ -161,14 +160,13 @@ const fmtP = v => v == null ? '—' : Number(v).toLocaleString('es-CL', { minimu
 const tono = v => v == null ? '' : v >= 95 ? 'alto' : v >= 90 ? 'medio' : 'bajo';
 const fmtF = iso => iso ? iso.split('-').reverse().join('-') : '—';
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-let rango = '6', filtrosListos = false, chart = null;
+let rango = String(new Date().getFullYear()), filtrosListos = false, chart = null;
 
 function fechasRango() {
   const hoy = new Date(); const iso = d => d.toISOString().slice(0, 10);
   if (rango === 'todo') return {};
   if (rango === 'mes') return { desde: iso(new Date(hoy.getFullYear(), hoy.getMonth(), 1)) };
-  const d = new Date(hoy.getFullYear(), hoy.getMonth() - (Number(rango) - 1), 1);
-  return { desde: iso(d) };
+  return { desde: rango + '-01-01', hasta: rango + '-12-31' };   // un año completo
 }
 
 function qs(forzar) {
@@ -201,6 +199,10 @@ async function cargar(forzar) {
         sel.innerHTML = vals.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
         initMultiSelect(sel); sel.addEventListener('change', () => cargar());
       });
+      // Botones de año, del mas reciente al mas antiguo
+      document.getElementById('rangos-anos').innerHTML = d.opciones.anos.map(a =>
+        `<button type="button" class="lg-rango${String(a) === rango ? ' activo' : ''}" data-r="${a}">${a}</button>`).join('');
+      enlazarRangos();
       filtrosListos = true;
     }
     document.getElementById('leido').innerHTML = `Planilla leída ${d.leido_en}<br>${fmtN(d.total_planilla)} registros · ${fmtF(d.opciones.min_fecha)} al ${fmtF(d.opciones.max_fecha)}`;
@@ -219,23 +221,27 @@ function pintar(d) {
     <div class="lg-kpi"><div class="lg-kpi-label">Incumplidos</div><div class="lg-kpi-valor ${k.incumplidos ? 'bajo' : ''}">${fmtN(k.incumplidos)}</div><div class="lg-kpi-sub">promedio ${fmtN(k.promedio_diario)} movimientos por día</div></div>
     <div class="lg-kpi"><div class="lg-kpi-label">Próximos 7 días</div><div class="lg-kpi-valor">${fmtN(k.proximos_7d)}</div><div class="lg-kpi-sub">${k.vencidos ? `<span class="t-bajo">${fmtN(k.vencidos)} vencidos sin cerrar</span>` : 'sin vencidos pendientes'}</div></div>`;
 
-  // Grafico mensual
+  // Comparativo por año: el año mas reciente en verde y linea solida
   if (chart) chart.destroy();
+  const colores = [css('--accent'), css('--blue'), css('--muted2')];
+  const anos = [...d.anual].reverse();
+  const datasets = [];
+  anos.forEach((a, i) => {
+    const c = colores[i] || css('--muted');
+    datasets.push({ type: 'bar', label: 'Movimientos ' + a.ano, data: a.meses.map(m => m ? m.total : null),
+      backgroundColor: c, yAxisID: 'y', borderRadius: 3, order: 2 });
+    datasets.push({ type: 'line', label: '% cumplido ' + a.ano + ' (' + fmtP(a.pct) + ')', data: a.meses.map(m => m ? m.pct : null),
+      borderColor: i ? css('--muted2') : css('--amber'), backgroundColor: i ? css('--muted2') : css('--amber'),
+      borderDash: i ? [5, 4] : [], yAxisID: 'y2', tension: .25, pointRadius: 3, order: 1 });
+  });
   chart = new Chart(document.getElementById('chart-mensual'), {
-    data: {
-      labels: d.mensual.map(m => m.mes),
-      datasets: [
-        { type: 'bar', label: 'Despachos', data: d.mensual.map(m => m.despachos), backgroundColor: css('--accent'), stack: 's', yAxisID: 'y', borderRadius: 3 },
-        { type: 'bar', label: 'Retiros', data: d.mensual.map(m => m.retiros), backgroundColor: css('--blue'), stack: 's', yAxisID: 'y', borderRadius: 3 },
-        { type: 'line', label: '% cumplido', data: d.mensual.map(m => m.pct), borderColor: css('--amber'), backgroundColor: css('--amber'), yAxisID: 'y2', tension: .25, pointRadius: 3 },
-      ],
-    },
+    data: { labels: d.meses_nombre, datasets },
     options: {
       responsive: true, interaction: { mode: 'index', intersect: false },
       plugins: { legend: { labels: { color: css('--muted2'), boxWidth: 12 } } },
       scales: {
-        x: { stacked: true, ticks: { color: css('--muted2') }, grid: { display: false } },
-        y: { stacked: true, ticks: { color: css('--muted2') }, grid: { color: css('--border') } },
+        x: { ticks: { color: css('--muted2') }, grid: { display: false } },
+        y: { ticks: { color: css('--muted2') }, grid: { color: css('--border') } },
         y2: { position: 'right', min: 70, max: 100, ticks: { color: css('--amber'), callback: v => v + '%' }, grid: { display: false } },
       },
     },
@@ -273,10 +279,13 @@ function pintar(d) {
   document.getElementById('avisos').innerHTML = av.length ? 'Para mejorar la planilla: ' + av.join(' · ') : '';
 }
 
-document.querySelectorAll('.lg-rango').forEach(b => b.onclick = () => {
-  document.querySelectorAll('.lg-rango').forEach(x => x.classList.remove('activo'));
-  b.classList.add('activo'); rango = b.dataset.r; cargar();
-});
+function enlazarRangos() {
+  document.querySelectorAll('.lg-rango').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.lg-rango').forEach(x => x.classList.remove('activo'));
+    b.classList.add('activo'); rango = b.dataset.r; cargar();
+  });
+}
+enlazarRangos();
 document.getElementById('btn-recarga').onclick = () => cargar(true);
 cargar();
 </script>

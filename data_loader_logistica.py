@@ -102,6 +102,28 @@ def get_panel_logistica(desde=None, hasta=None, sucursal=None, chofer=None, tipo
         "max_fecha": df["fecha"].max().date().isoformat() if len(df) else None,
     }
 
+    opciones["anos"] = sorted({int(a) for a in df["fecha"].dt.year.dropna().unique()}, reverse=True)
+
+    # Comparativo por año (enero a diciembre): respeta sucursal/chofer/tipo
+    # pero no el periodo, para comparar siempre los años completos.
+    base = df
+    if sucursal:
+        base = base[base["sucursal"].isin(sucursal)]
+    if chofer:
+        base = base[base["chofer"].isin(chofer)]
+    if tipo:
+        base = base[base["tipo"].isin(tipo)]
+    bc = base[base["cumplimiento"].isin(["Cumplido", "Incumplido"])]
+    por_ano = {}
+    for (a, m), g in bc.groupby([bc["fecha"].dt.year, bc["fecha"].dt.month]):
+        ok = int(g["cumplimiento"].eq("Cumplido").sum())
+        por_ano.setdefault(int(a), {})[int(m)] = {"total": int(len(g)), "ok": ok, "pct": _pct(ok, len(g))}
+    anual = []
+    for a in sorted(por_ano):
+        tot = sum(x["total"] for x in por_ano[a].values())
+        ok = sum(x["ok"] for x in por_ano[a].values())
+        anual.append({"ano": a, "meses": [por_ano[a].get(m) for m in range(1, 13)], "total": tot, "pct": _pct(ok, tot)})
+
     if desde:
         df = df[df["fecha"] >= pd.Timestamp(desde)]
     if hasta:
@@ -200,6 +222,8 @@ def get_panel_logistica(desde=None, hasta=None, sucursal=None, chofer=None, tipo
             "proximos_7d": int(len(proximos)),
         },
         "mensual": mensual,
+        "anual": anual,
+        "meses_nombre": [MESES_ES[m] for m in range(1, 13)],
         "capacidad": capacidad,
         "por_chofer_dia": por_chofer_dia,
         "choferes": agrupar("chofer"),
