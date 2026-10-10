@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+
+{% block title %}Clasificación de Productos{% endblock %}
+{% block page_title %}Clasificación de Productos{% endblock %}
+{% block page_subtitle %}ABC por aporte al margen × XYZ por regularidad de la venta — últimos 12 meses cerrados{% endblock %}
+
+{% block sidebar_nav %}{% include "_forecast_sidebar.html" %}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}?v={{ asset_v('css/multiselect.css') }}">
+<style>
+  .cl-barra { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 18px; }
+  .cl-alcances { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cl-alcance {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--muted2); font-size: 12.5px; font-weight: 600; padding: 7px 12px; cursor: pointer;
+  }
+  .cl-alcance.activo { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .cl-alcance:focus-visible, .cl-celda:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .cl-filtro { display: flex; flex-direction: column; gap: 4px; min-width: 170px; }
+  .cl-filtro label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .cl-filtro select { width: 100%; }
+  .cl-acciones { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .cl-periodo { font-size: 11.5px; color: var(--muted2); text-align: right; line-height: 1.4; }
+  .btn-recalc {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .btn-recalc:disabled { opacity: .5; cursor: wait; }
+
+  .cl-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .cl-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+  .cl-kpi-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 6px; }
+  .cl-kpi-valor { font-size: 22px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+  .cl-kpi-sub { font-size: 11.5px; color: var(--muted2); margin-top: 3px; }
+  .cl-kpi-valor.alerta { color: var(--red); }
+  @media (max-width: 900px) { .cl-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  .cl-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 18px; margin-bottom: 18px; }
+  @media (max-width: 1100px) { .cl-grid { grid-template-columns: 1fr; } }
+  .cl-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+  .cl-card-titulo { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+  .cl-card-sub { font-size: 12px; color: var(--muted2); margin-bottom: 14px; }
+
+  .cl-matriz { display: grid; grid-template-columns: 34px repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .cl-eje { font-size: 11px; font-weight: 700; color: var(--muted); display: flex; align-items: center; justify-content: center; }
+  .cl-eje-col { flex-direction: column; text-align: center; line-height: 1.2; padding-bottom: 2px; }
+  .cl-eje-col small, .cl-eje-fila small { font-weight: 500; font-size: 10px; color: var(--muted2); }
+  .cl-eje-fila { flex-direction: column; cursor: pointer; border-radius: 8px; }
+  .cl-eje-fila:hover { background: var(--surface2); }
+  .cl-celda {
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer;
+    background: var(--surface2); text-align: left; color: var(--text); font: inherit;
+    display: flex; flex-direction: column; gap: 2px; min-height: 92px;
+    transition: border-color .15s, transform .15s;
+  }
+  .cl-celda:hover { border-color: var(--muted2); }
+  .cl-celda.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .cl-celda .clase { font-size: 13px; font-weight: 800; letter-spacing: .5px; }
+  .cl-celda .n { font-size: 11px; color: var(--muted2); }
+  .cl-celda .inv { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: auto; }
+  .cl-celda .mg { font-size: 11px; color: var(--muted2); font-variant-numeric: tabular-nums; }
+  .cl-celda.t-sana .clase { color: var(--accent); }
+  .cl-celda.t-media .clase { color: var(--amber); }
+  .cl-celda.t-mala .clase { color: var(--red); }
+  .cl-sinventa {
+    margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    border: 1px dashed var(--red); border-radius: 10px; padding: 10px 14px; cursor: pointer;
+    background: transparent; color: var(--text); font: inherit; width: 100%; text-align: left;
+  }
+  .cl-sinventa.sel { box-shadow: 0 0 0 1px var(--red) inset; }
+  .cl-sinventa .clase { font-weight: 800; color: var(--red); font-size: 13px; }
+  .cl-sinventa .inv { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+
+  .cl-regla { font-size: 13px; line-height: 1.55; color: var(--text); }
+  .cl-regla .etiqueta { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; margin-bottom: 8px; }
+  .cl-regla ul { margin: 10px 0 0; padding-left: 18px; color: var(--muted2); font-size: 12.5px; }
+  .cl-leyenda { margin-top: 14px; font-size: 11.5px; color: var(--muted2); line-height: 1.6; border-top: 1px solid var(--border); padding-top: 12px; }
+
+  .cl-tabla-wrap { overflow-x: auto; }
+  .cl-tabla { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .cl-tabla th {
+    text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
+    padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; user-select: none;
+    position: sticky; top: 0; background: var(--surface);
+  }
+  .cl-tabla th:nth-child(-n+4), .cl-tabla td:nth-child(-n+4) { text-align: left; }
+  .cl-tabla td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  .cl-tabla td.desc { white-space: normal; min-width: 220px; max-width: 320px; }
+  .cl-tabla tr:hover td { background: var(--surface2); }
+  .pill { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
+  .pill.sana { background: rgba(34,163,71,.15); color: var(--accent); }
+  .pill.media { background: rgba(245,158,11,.15); color: var(--amber); }
+  .pill.mala { background: rgba(239,68,68,.14); color: var(--red); }
+  .pill.ciclo { background: var(--surface2); color: var(--muted2); font-weight: 600; }
+  .cob-alta { color: var(--red); font-weight: 700; }
+  .cl-lista-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .cl-vacio { text-align: center; padding: 40px; color: var(--muted2); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cl-barra">
+  <div class="cl-alcances" id="alcances" role="tablist" aria-label="Alcance"></div>
+  <div class="cl-filtro"><label for="f-marca">Marca</label><select id="f-marca"></select></div>
+  <div class="cl-filtro"><label for="f-familia">Familia</label><select id="f-familia"></select></div>
+  <div class="cl-filtro"><label for="f-proveedor">Proveedor</label><select id="f-proveedor"></select></div>
+  <div class="cl-acciones">
+    <div class="cl-periodo" id="periodo">Cargando…</div>
+    <button class="btn-recalc" id="btn-recalc" title="Vuelve a calcular la clasificación con los datos de hoy">↻ Recalcular</button>
+  </div>
+</div>
+
+<div class="cl-kpis" id="kpis"></div>
+
+<div class="cl-grid">
+  <div class="cl-card">
+    <div class="cl-card-titulo">Matriz ABC × XYZ</div>
+    <div class="cl-card-sub">Valor del inventario actual en cada clase · haz clic en una celda para ver sus productos</div>
+    <div class="cl-matriz" id="matriz"></div>
+    <button class="cl-sinventa" id="sin-venta" type="button"></button>
+  </div>
+  <div class="cl-card">
+    <div class="cl-card-titulo">Qué hacer con esta clase</div>
+    <div class="cl-regla" id="regla"></div>
+    <div class="cl-leyenda">
+      <strong>A</strong>: productos que suman el 80% del margen · <strong>B</strong>: el siguiente 15% · <strong>C</strong>: el último 5%.<br>
+      <strong>X</strong>: venta pareja todos los meses · <strong>Y</strong>: variable · <strong>Z</strong>: esporádica.<br>
+      Cobertura = stock / venta mensual (datos duros, igual que el Plan de Compra).
+    </div>
+  </div>
+</div>
+
+<div class="cl-card">
+  <div class="cl-lista-cab">
+    <div>
+      <div class="cl-card-titulo" id="lista-titulo">Productos</div>
+      <div class="cl-card-sub" id="lista-sub" style="margin-bottom:0"></div>
+    </div>
+  </div>
+  <div class="cl-tabla-wrap">
+    <table class="cl-tabla">
+      <thead>
+        <tr>
+          <th data-k="codigo">Código</th>
+          <th data-k="descripcion">Descripción</th>
+          <th data-k="marca">Marca</th>
+          <th data-k="clase">Clase</th>
+          <th data-k="ciclo" style="text-align:left">Ciclo</th>
+          <th data-k="margen">Margen 12m</th>
+          <th data-k="venta">Venta 12m</th>
+          <th data-k="meses_con_venta">Meses c/venta</th>
+          <th data-k="stock">Stock</th>
+          <th data-k="valor_inventario">Inventario $</th>
+          <th data-k="cobertura">Cobertura</th>
+          <th data-k="abastecimiento" style="text-align:left">Compra</th>
+          <th data-k="proveedor" style="text-align:left">Proveedor</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"><tr><td colspan="13" class="cl-vacio">Cargando…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/multiselect.js') }}?v={{ asset_v('js/multiselect.js') }}"></script>
+<script>
+if (typeof initMultiSelect !== 'function') {
+  window.initMultiSelect = function (sel) { if (sel) sel.multiple = true; };
+  window.mselValores = function (sel) { return sel ? Array.from(sel.selectedOptions).map(o => o.value) : []; };
+}
+
+const REGLAS = {
+  AX: ['sana', 'Nunca quebrar', 'Son los que más margen dejan y se venden parejo.', ['Nivel de servicio objetivo 98%.', 'Reposición frecuente con cobertura corta: 1 a 1,5 meses.', 'Un quiebre aquí cuesta margen directo: revisar cada semana.']],
+  AY: ['sana', 'Stock de seguridad', 'Mucho margen, venta variable.', ['Cobertura de 1,5 a 2 meses.', 'Stock de seguridad para los meses altos.', 'Seguir de cerca el Plan de Compra.']],
+  AZ: ['media', 'Comprar con información', 'Mucho margen pero venta esporádica (proyectos, clientes grandes).', ['Stock acotado; comprar según el Plan de Compra.', 'Confirmar con ventas qué proyectos vienen antes de reponer.']],
+  BX: ['sana', 'Reposición regular', 'Margen medio y venta pareja.', ['Cobertura de 1,5 a 2 meses.', 'Reposición automática según el Plan de Compra.']],
+  BY: ['media', 'Cobertura moderada', 'Margen medio y venta variable.', ['Cobertura de 2 meses como máximo.', 'Stock de seguridad moderado.']],
+  BZ: ['media', 'No acumular', 'Margen medio y venta esporádica.', ['Stock mínimo o compra a pedido según el cliente.', 'No reponer por inercia.']],
+  CX: ['media', 'Stock mínimo', 'Poco margen pero venta pareja.', ['Un embalaje o cobertura de hasta 2 meses.', 'Evaluar si conviene mantenerlo en todas las sucursales.']],
+  CY: ['mala', 'Revisar catálogo', 'Poco margen y venta variable.', ['Stock mínimo.', 'Evaluar si se mantiene en el catálogo.']],
+  CZ: ['mala', 'Solo a pedido', 'Poco margen y venta esporádica.', ['No comprar para stock: solo cuando un cliente lo pide.', 'El stock que hay: traspasar, liquidar o canjear.']],
+  SV: ['mala', 'Sacar del inventario', 'Tiene stock y no se vendió en 12 meses.', ['Devolver o canjear con el proveedor.', 'Traspasar a la sucursal donde sí se vende, o liquidar.', 'Bloquear nuevas compras de stock.']],
+};
+const TONO = c => (REGLAS[c] || ['media'])[0];
+const fmt$ = v => v == null ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
+const fmtM = v => v == null ? '—' : '$' + (v / 1e6).toLocaleString('es-CL', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + ' M';
+const fmtN = (v, d = 0) => v == null ? '—' : Number(v).toLocaleString('es-CL', { maximumFractionDigits: d });
+const fmtPct = v => v == null ? '—' : v.toLocaleString('es-CL', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + '%';
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+let estado = { alcance: 'EMPRESA', celda: null };
+let datos = null, filas = [], orden = { k: 'valor_inventario', dir: -1 }, filtrosListos = false;
+
+function qs() {
+  const p = new URLSearchParams({ alcance: estado.alcance });
+  if (estado.celda) p.set('celda', estado.celda);
+  ['marca', 'familia', 'proveedor'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
+  return p.toString();
+}
+
+async function cargar() {
+  document.getElementById('tbody').innerHTML = '<tr><td colspan="13" class="cl-vacio">Cargando…</td></tr>';
+  const d = await fetch('/api/forecast/clasificacion?' + qs()).then(r => r.json());
+  if (d.error) { document.getElementById('periodo').textContent = 'Error: ' + d.error; return; }
+  if (!d.calculo) {
+    document.getElementById('periodo').textContent = 'Todavía no hay clasificación calculada.';
+    document.getElementById('tbody').innerHTML = '<tr><td colspan="13" class="cl-vacio">Presiona "Recalcular" para generarla.</td></tr>';
+    return;
+  }
+  datos = d;
+  if (!filtrosListos) {
+    ['marca', 'familia', 'proveedor'].forEach(k => {
+      const sel = document.getElementById('f-' + k);
+      sel.innerHTML = d.filtros[k].map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+      initMultiSelect(sel);
+      sel.addEventListener('change', () => { estado.celda = null; cargar(); });
+    });
+    filtrosListos = true;
+  }
+  pintarAlcances(d);
+  pintarPeriodo(d);
+  pintarMatriz(d);
+  pintarRegla();
+  filas = d.productos.map(p => ({ ...p, clase: p.abc ? p.abc + p.xyz : 'SV' }));
+  pintarTabla();
+}
+
+function pintarAlcances(d) {
+  const cont = document.getElementById('alcances');
+  cont.innerHTML = d.alcances.map(a =>
+    `<button type="button" role="tab" class="cl-alcance${a.codigo === d.alcance ? ' activo' : ''}" data-a="${a.codigo}" aria-selected="${a.codigo === d.alcance}">${esc(a.nombre)}</button>`).join('');
+  cont.querySelectorAll('.cl-alcance').forEach(b => b.onclick = () => { estado.alcance = b.dataset.a; estado.celda = null; cargar(); });
+}
+
+function pintarPeriodo(d) {
+  const f = s => s.split('-').reverse().join('-');
+  const c = new Date(d.calculo.calculado_en);
+  document.getElementById('periodo').innerHTML =
+    `Período ${f(d.calculo.desde)} al ${f(d.calculo.hasta)}<br>Calculado ${c.toLocaleDateString('es-CL')} ${c.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function celdaDe(abc, xyz) {
+  return datos.celdas.find(c => c.abc === abc && c.xyz === xyz) || { codigos: 0, margen: 0, inventario: 0, venta: 0, nuevos: 0, declive: 0 };
+}
+
+function pintarMatriz(d) {
+  const tot = d.celdas.reduce((a, c) => ({ inv: a.inv + c.inventario, mg: a.mg + Math.max(c.margen, 0), n: a.n + c.codigos }), { inv: 0, mg: 0, n: 0 });
+  const sv = celdaDe('-', '-');
+  const malo = ['CZ', 'CY'].reduce((a, k) => a + celdaDe(k[0], k[1]).inventario, 0) + sv.inventario;
+  const mgA = ['X', 'Y', 'Z'].reduce((a, x) => a + celdaDe('A', x).margen, 0);
+  const nA = ['X', 'Y', 'Z'].reduce((a, x) => a + celdaDe('A', x).codigos, 0);
+  document.getElementById('kpis').innerHTML = `
+    <div class="cl-kpi"><div class="cl-kpi-label">Productos clasificados</div><div class="cl-kpi-valor">${fmtN(tot.n)}</div><div class="cl-kpi-sub">con venta en 12 meses o con stock</div></div>
+    <div class="cl-kpi"><div class="cl-kpi-label">Inventario</div><div class="cl-kpi-valor">${fmtM(tot.inv)}</div><div class="cl-kpi-sub">valorizado a CUP</div></div>
+    <div class="cl-kpi"><div class="cl-kpi-label">Clase A</div><div class="cl-kpi-valor">${fmtN(nA)}</div><div class="cl-kpi-sub">productos que dejan el 80% del margen</div></div>
+    <div class="cl-kpi"><div class="cl-kpi-label">Inventario en CY, CZ y sin venta</div><div class="cl-kpi-valor alerta">${fmtM(malo)}</div><div class="cl-kpi-sub">${fmtPct(tot.inv ? malo / tot.inv * 100 : 0)} del inventario</div></div>`;
+
+  const ejes = { A: 'Alto margen', B: 'Margen medio', C: 'Bajo margen' };
+  let h = '<div></div>' + [['X', 'Pareja'], ['Y', 'Variable'], ['Z', 'Esporádica']].map(([x, t]) => `<div class="cl-eje cl-eje-col">${x}<small>${t}</small></div>`).join('');
+  ['A', 'B', 'C'].forEach(a => {
+    h += `<div class="cl-eje cl-eje-fila" data-fila="${a}" title="Ver todos los ${a}">${a}<small>${ejes[a].split(' ')[0]}</small></div>`;
+    ['X', 'Y', 'Z'].forEach(x => {
+      const c = celdaDe(a, x), k = a + x;
+      h += `<button type="button" class="cl-celda t-${TONO(k)}${estado.celda === k ? ' sel' : ''}" data-celda="${k}">
+        <span class="clase">${k}</span>
+        <span class="n">${fmtN(c.codigos)} productos · ${fmtPct(tot.mg ? Math.max(c.margen, 0) / tot.mg * 100 : 0)} del margen</span>
+        <span class="inv">${fmtM(c.inventario)}</span>
+        <span class="mg">${fmtPct(tot.inv ? c.inventario / tot.inv * 100 : 0)} del inventario</span>
+      </button>`;
+    });
+  });
+  const m = document.getElementById('matriz');
+  m.innerHTML = h;
+  m.querySelectorAll('.cl-celda').forEach(b => b.onclick = () => elegir(b.dataset.celda));
+  m.querySelectorAll('.cl-eje-fila').forEach(b => b.onclick = () => elegir(b.dataset.fila));
+  const bsv = document.getElementById('sin-venta');
+  bsv.className = 'cl-sinventa' + (estado.celda === 'SV' ? ' sel' : '');
+  bsv.innerHTML = `<span><span class="clase">Sin venta en 12 meses</span> · ${fmtN(sv.codigos)} productos con stock</span>
+    <span class="inv">${fmtM(sv.inventario)} <small style="color:var(--muted2);font-weight:500">${fmtPct(tot.inv ? sv.inventario / tot.inv * 100 : 0)}</small></span>`;
+  bsv.onclick = () => elegir('SV');
+}
+
+function elegir(c) {
+  estado.celda = estado.celda === c ? null : c;
+  cargar();
+}
+
+function pintarRegla() {
+  const r = document.getElementById('regla');
+  const c = estado.celda;
+  if (!c || !REGLAS[c]) {
+    r.innerHTML = c && c.length === 1
+      ? `<span class="etiqueta pill ${c === 'A' ? 'sana' : c === 'B' ? 'media' : 'mala'}">Todos los ${c}</span><div>Elige una celda de la fila ${c} para ver la regla de gestión de esa clase.</div>`
+      : '<div style="color:var(--muted2)">Elige una celda de la matriz para ver cómo se gestiona esa clase y sus productos.</div>';
+    return;
+  }
+  const [tono, titulo, desc, puntos] = REGLAS[c];
+  r.innerHTML = `<span class="etiqueta pill ${tono}">${c === 'SV' ? 'Sin venta' : c} · ${titulo}</span>
+    <div>${desc}</div><ul>${puntos.map(p => `<li>${p}</li>`).join('')}</ul>`;
+}
+
+function pintarTabla() {
+  const nombre = datos.alcances.find(a => a.codigo === datos.alcance).nombre;
+  const c = estado.celda;
+  document.getElementById('lista-titulo').textContent = 'Productos' + (c ? ' · ' + (c === 'SV' ? 'Sin venta' : c.length === 1 ? 'Clase ' + c : c) : '') + ' · ' + nombre;
+  document.getElementById('lista-sub').textContent = datos.n_productos > filas.length
+    ? `Mostrando los ${fmtN(filas.length)} con más inventario de ${fmtN(datos.n_productos)} productos. Usa los filtros para acotar.`
+    : `${fmtN(datos.n_productos)} productos, ordenados por inventario.`;
+  const ord = [...filas].sort((a, b) => {
+    const x = a[orden.k], y = b[orden.k];
+    if (x == null) return 1; if (y == null) return -1;
+    return (typeof x === 'string' ? x.localeCompare(y, 'es') : x - y) * orden.dir;
+  });
+  document.getElementById('tbody').innerHTML = ord.length ? ord.map(p => `<tr>
+      <td>${esc(p.codigo)}</td>
+      <td class="desc">${esc(p.descripcion)}</td>
+      <td>${esc(p.marca)}</td>
+      <td><span class="pill ${TONO(p.clase)}">${p.clase === 'SV' ? 'Sin venta' : p.clase}</span></td>
+      <td style="text-align:left"><span class="pill ciclo">${esc(p.ciclo)}</span></td>
+      <td>${fmt$(p.margen)}</td>
+      <td>${fmt$(p.venta)}</td>
+      <td>${fmtN(p.meses_con_venta)}</td>
+      <td>${fmtN(p.stock)}</td>
+      <td>${fmt$(p.valor_inventario)}</td>
+      <td class="${p.cobertura != null && p.cobertura > 6 ? 'cob-alta' : ''}">${p.cobertura == null ? (p.stock > 0 ? 'sin venta' : '—') : fmtN(p.cobertura, 1) + ' m'}</td>
+      <td style="text-align:left">${esc(p.abastecimiento)}</td>
+      <td style="text-align:left">${esc(p.proveedor || '—')}</td>
+    </tr>`).join('') : '<tr><td colspan="13" class="cl-vacio">Sin productos para esta selección.</td></tr>';
+}
+
+document.querySelectorAll('.cl-tabla th').forEach(th => th.onclick = () => {
+  const k = th.dataset.k;
+  orden = { k, dir: orden.k === k ? -orden.dir : (['codigo', 'descripcion', 'marca', 'clase', 'ciclo', 'abastecimiento', 'proveedor'].includes(k) ? 1 : -1) };
+  pintarTabla();
+});
+
+document.getElementById('btn-recalc').onclick = async () => {
+  const b = document.getElementById('btn-recalc');
+  b.disabled = true; b.textContent = 'Recalculando…';
+  try {
+    const d = await fetch('/api/forecast/clasificacion/recalcular', { method: 'POST' }).then(r => r.json());
+    if (!d.ok) alert(d.msg || 'No se pudo recalcular.');
+    await cargar();
+  } catch (e) { alert('Error de conexión al recalcular.'); }
+  finally { b.disabled = false; b.textContent = '↻ Recalcular'; }
+};
+
+cargar();
+</script>
+{% endblock %}

@@ -68,6 +68,9 @@ USAR_POSTGRES_ADQUISICIONES = os.environ.get("USAR_POSTGRES_ADQUISICIONES", "1")
 if USAR_POSTGRES_ADQUISICIONES:
     import data_loader_adquisiciones_pg
 
+# Clasificacion de productos (Forecast), solo Postgres (ver migrations/016)
+import data_loader_clasificacion_pg
+
 # ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
 #  Para agregar un gerente: agregar una línea aquí
@@ -267,6 +270,7 @@ PREFIJOS_RESTRINGIDOS_ADQUISICIONES = (
 PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA = (
     "/forecast/plan_compra", "/api/forecast/plan_compras",
     "/forecast/nivel_servicio", "/api/forecast/nivel_servicio",
+    "/forecast/clasificacion", "/api/forecast/clasificacion",
 )
 
 
@@ -1307,9 +1311,18 @@ def api_cron_nivel_servicio_snapshot():
         if auth != f"Bearer {secreto_esperado}":
             return jsonify({"ok": False, "msg": "No autorizado."}), 401
     try:
-        return jsonify({"ok": True, **data_loader_nivel_servicio.guardar_snapshot_diario_pg()})
+        resultado = {"ok": True, **data_loader_nivel_servicio.guardar_snapshot_diario_pg()}
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)}), 500
+    # De paso, la clasificacion de productos: se recalcula sola cuando
+    # cerro un mes nuevo (si no, no hace nada). Si falla, el snapshot ya
+    # quedo guardado igual.
+    try:
+        resultado["clasificacion"] = data_loader_clasificacion_pg.recalcular_si_corresponde_pg()
+    except Exception as e:
+        app.logger.warning("clasificacion fallo dentro del cron: %s", e)
+        resultado["clasificacion"] = {"error": str(e)}
+    return jsonify(resultado)
 
 
 @app.route("/api/inventario/resumen")
@@ -1401,6 +1414,39 @@ def logistica():
 @login_requerido
 def bodega():
     return _area_en_construccion("bodega")
+
+
+@app.route("/forecast/clasificacion")
+@login_requerido
+def forecast_clasificacion():
+    return render_template("forecast_clasificacion.html",
+                           active="forecast_clasificacion",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/forecast/clasificacion")
+@login_requerido
+def api_forecast_clasificacion():
+    try:
+        return jsonify(data_loader_clasificacion_pg.get_clasificacion_pg(
+            alcance=request.args.get("alcance", "EMPRESA"),
+            marca=request.args.getlist("marca") or None,
+            familia=request.args.getlist("familia") or None,
+            proveedor=request.args.getlist("proveedor") or None,
+            celda=request.args.get("celda") or None,
+        ))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/forecast/clasificacion/recalcular", methods=["POST"])
+@login_requerido
+def api_forecast_clasificacion_recalcular():
+    try:
+        r = data_loader_clasificacion_pg.calcular_clasificacion_pg(calculado_por=session.get("usuario"))
+        return jsonify({"ok": True, **r})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"No se pudo recalcular: {e}"}), 500
 
 
 @app.route("/forecast")
