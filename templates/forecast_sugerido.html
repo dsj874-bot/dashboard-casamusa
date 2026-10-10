@@ -89,9 +89,9 @@
     <div class="sg-card-titulo">Cómo se calcula</div>
     <div class="sg-card-sub">
       En cada sucursal, la meta de stock es la venta mensual de la sucursal (promedio de los últimos 12 meses)
-      por los meses de la clase que tiene el producto <em>en esa sucursal</em>, con un máximo de 1,5 meses. Lo que falta se redondea a embalaje. Antes de comprar se despacha desde
-      San Isidro lo que tiene sobre su meta, y se descuentan las OC de stock por recibir. Si filtras por sucursal,
-      ves lo que le falta a esa sucursal, con la parte que le toca de lo que cubren San Isidro y las OC.
+      por los meses de la clase que tiene el producto <em>en esa sucursal</em>, con un máximo de 1,5 meses. Lo que falta se redondea a embalaje. Antes de comprar se
+      traspasa lo que les sobra a las otras sucursales (San Isidro incluida) sobre su meta, y se descuentan las OC de stock
+      por recibir. Si filtras por sucursal, ves lo que le falta a esa sucursal, con la parte que le toca de los traspasos y las OC.
     </div>
     <div class="metas" id="metas"></div>
     <div class="sobre" id="sobre"></div>
@@ -164,7 +164,7 @@ function pintarKpis(d) {
   const sobre = Object.values(d.exceso_traspasable).reduce((a, b) => a + b, 0);
   document.getElementById('kpis').innerHTML = `
     <div class="sg-kpi"><div class="sg-kpi-label">Compra sugerida</div><div class="sg-kpi-valor">${fmtM(d.total)}</div><div class="sg-kpi-sub">a CUP · ${fmtN(d.n_productos)} productos · ${fmtN(d.n_marcas)} marcas</div></div>
-    <div class="sg-kpi"><div class="sg-kpi-label">Se cubre desde San Isidro</div><div class="sg-kpi-valor verde">${fmtM(d.desde_san_isidro)}</div><div class="sg-kpi-sub">stock central sobre su meta, despachar antes de comprar</div></div>
+    <div class="sg-kpi"><div class="sg-kpi-label">Se cubre con traspasos</div><div class="sg-kpi-valor verde">${fmtM(d.desde_san_isidro)}</div><div class="sg-kpi-sub">sobrante de otras sucursales, traspasar antes de comprar</div></div>
     <div class="sg-kpi"><div class="sg-kpi-label">OC de stock ya en camino</div><div class="sg-kpi-valor">${fmtM(d.oc_descontada)}</div><div class="sg-kpi-sub">descontadas de la compra</div></div>
     <div class="sg-kpi"><div class="sg-kpi-label">Stock sobre la meta</div><div class="sg-kpi-valor">${fmtM(sobre)}</div><div class="sg-kpi-sub">${Object.keys(d.exceso_traspasable).length === 6 ? 'en las 6 sucursales' : 'en las sucursales elegidas'} (no se compra)</div></div>`;
 }
@@ -191,7 +191,7 @@ function pintarMetas(d) {
   document.getElementById('metas').innerHTML = ['AX', 'AY', 'AZ', 'BX', 'BY', 'BZ', 'CX', 'CY', 'CZ', 'SV'].map(c =>
     `<div class="meta ${TONO[c]}"><div class="c">${c === 'SV' ? 'Sin venta' : c}</div><div class="v">${txt(d.metas[c])}</div></div>`).join('');
   const nombres = Object.fromEntries(d.sucursales.map(s => [s.codigo, s.nombre]));
-  document.getElementById('sobre').innerHTML = '<strong>Stock sobre la meta</strong> (no se compra; revisar traspasos): ' +
+  document.getElementById('sobre').innerHTML = '<strong>Stock sobre la meta</strong> (de aquí salen los traspasos): ' +
     Object.entries(d.exceso_traspasable).map(([s, v]) => `${nombres[s]} <strong>${fmtM(v)}</strong>`).join(' · ') +
     `<br>Productos nuevos: ${String(d.meta_nuevo).replace('.', ',')} meses.`;
 }
@@ -200,7 +200,7 @@ function pintarDetalle() {
   const d = datos;
   const cols = [['codigo', 'Código', 1], ['descripcion', 'Descripción', 1], ['marca', 'Marca', 1], ['clase', 'Clase', 1]]
     .concat(d.sucursales.map(s => ['s_' + s.codigo, s.nombre, 0]))
-    .concat([['desde_si', 'Desde SI', 0], ['oc_en_camino', 'OC en camino', 0], ['compra', 'Comprar (u)', 0], ['cajas', 'Cajas', 0], ['valor', 'Compra $', 0]]);
+    .concat([['desde_si', 'Traspaso', 0], ['oc_en_camino', 'OC en camino', 0], ['compra', 'Comprar (u)', 0], ['cajas', 'Cajas', 0], ['valor', 'Compra $', 0]]);
   document.getElementById('thead-det').innerHTML = cols.map(([k, t, izq]) => `<th class="ord${izq ? ' izq' : ''}" data-k="${k}">${t}</th>`).join('');
   document.querySelectorAll('#thead-det th').forEach(th => th.onclick = () => {
     const k = th.dataset.k;

@@ -10,9 +10,9 @@ Por sucursal:  meta = meses de la clase (maximo 1,5) x venta mensual de la
                falta = meta - (stock + transito), redondeado a embalaje
                el exceso NO se mueve (se muestra como traspasable).
 Empresa:       compra = suma de lo que falta en las sucursales - lo que
-               San Isidro (bodega central) tiene sobre su propia meta -
-               OC de STOCK ya por recibir, redondeado a embalaje, a CUP.
-               El sobrante de las otras sucursales no se descuenta.
+               le sobra a cualquier sucursal sobre su meta (traspasos;
+               antes solo San Isidro) - OC de STOCK ya por recibir,
+               redondeado a embalaje, a CUP.
 
 Fuera del sugerido: importados, codigos que empiezan con 6 (se compran a
 pedido, indicado por el usuario), los marcados "no comprar"
@@ -37,14 +37,25 @@ META_NUEVO = 1.5
 # ($162,0 M con datos duros y metas de 2 meses -> $134,7 M).
 META_MAXIMA = 1.5
 BASE_DEMANDA = "12m"
+# Meses que se le restan a la meta de cada clase (0 = metas tal cual) y de
+# donde salen los traspasos antes de comprar: "san_isidro" (solo el
+# sobrante de la bodega central) o "todas" (el sobrante de cualquier
+# sucursal cubre lo que falta en las otras).
+META_MENOS = 0.0
+# Elegido por el usuario 2026-10-10: traspasos entre todas las sucursales,
+# metas de 1,5 meses ($134,7 M -> $103,7 M).
+TRASPASOS = "todas"
 SUCURSALES = list(dcl.SUCURSALES)   # CH, MP, MT, MR, LC, SI
 
 
-def _meta_unidades(clase, ciclo, vm, emb, meta_max=None):
+def _meta_unidades(clase, ciclo, vm, emb, meta_max=None, meta_menos=0.0):
     """Meta de stock en unidades para una clase en una sucursal."""
     if clase in ("CZ", "SV"):
         return 0
-    tope = (lambda m: min(m, meta_max)) if meta_max else (lambda m: m)
+
+    def tope(m):
+        m = min(m, meta_max) if meta_max else m
+        return max(m - meta_menos, 0.0)
     if ciclo == "Nuevo" and clase not in ("CZ", "SV"):
         return math.ceil(round(tope(META_NUEVO) * vm, 6)) if vm > 0 else emb
     regla = META_MESES.get(clase, 0)
@@ -99,7 +110,8 @@ def _demanda_12m_pg(cur, desde, hasta):
 
 
 def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None, sucursal=None,
-                           base=BASE_DEMANDA, meta_max=META_MAXIMA):
+                           base=BASE_DEMANDA, meta_max=META_MAXIMA, meta_menos=META_MENOS,
+                           traspasos=TRASPASOS):
     # Filtro por sucursal: lo que falta en esas sucursales, con la parte que les toca
     # de lo que cubre San Isidro y las OC en camino (ver mas abajo)
     sucs_filtro = [x for x in (sucursal or []) if x in dcl.SUCURSALES] or None
@@ -174,7 +186,7 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None,
         if clases_filtro and clase_emp not in clases_filtro:
             continue
         emb, cup = int(p["emb"]), float(p["cup"])
-        detalle, necesidad, exceso_si, necesidad_otros = {}, 0, 0.0, 0
+        detalle, necesidad, exceso_si, necesidad_otros, exceso_todas = {}, 0, 0.0, 0, 0.0
         for s in SUCURSALES:
             r = por_alc.get(s)
             st, tr, vm = inv.get((s, cod), (0.0, 0.0, 0.0))
@@ -194,12 +206,13 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None,
                 vm = u / meses
             elif vm <= 0 and r["unidades"]:
                 vm = max(float(r["unidades"]), 0.0) / 12.0
-            meta = _meta_unidades(clase, r["ciclo"], vm, emb, meta_max)
+            meta = _meta_unidades(clase, r["ciclo"], vm, emb, meta_max, meta_menos)
             disp = st + tr
             falta = max(0.0, meta - disp)
             cajas = math.ceil(round(falta / emb, 6)) if falta > 0 else 0
             envio = cajas * emb
             exceso = max(0.0, disp - meta) if meta > 0 or clase in ("CZ", "SV") else 0.0
+            exceso_todas += exceso
             if not sucs_filtro or s in sucs_filtro:
                 exceso_suc[s] += exceso * cup
             necesidad += envio
@@ -209,15 +222,21 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None,
                 necesidad_otros += envio
             detalle[s] = {"clase": clase, "envio": envio, "stock": st, "meta": meta}
         oc_u, oc_v = oc.get(cod, (0.0, 0.0))
-        # Antes de comprar se despacha desde San Isidro lo que le sobra
-        desde_si = min(exceso_si, necesidad_otros)
+        # Antes de comprar se despacha desde San Isidro lo que le sobra (o,
+        # con traspasos="todas", lo que le sobra a cualquier sucursal: una
+        # sucursal no se cubre a si misma porque si le sobra, no le falta)
+        if traspasos == "todas":
+            desde_si = min(exceso_todas, necesidad)
+            necesidad_otros = necesidad
+        else:
+            desde_si = min(exceso_si, necesidad_otros)
         oc_usada = min(oc_u, max(0.0, necesidad - desde_si))
         if sucs_filtro:
             # Lo que cubren San Isidro y las OC se reparte entre las
             # sucursales segun lo que le falta a cada una; sin filtro la
             # suma de todas da exactamente el calculo de la empresa.
             nec_sel = sum(detalle[s]["envio"] for s in sucs_filtro if s in detalle)
-            otros_sel = sum(detalle[s]["envio"] for s in sucs_filtro if s in detalle and s != "SI")
+            otros_sel = sum(detalle[s]["envio"] for s in sucs_filtro if s in detalle and (s != "SI" or traspasos == "todas"))
             desde_si = desde_si * otros_sel / necesidad_otros if necesidad_otros else 0.0
             oc_usada = oc_usada * nec_sel / necesidad if necesidad else 0.0
             necesidad = nec_sel
