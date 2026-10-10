@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+
+{% block title %}Margen ERP{% endblock %}
+{% block page_title %}Margen ERP{% endblock %}
+{% block page_subtitle %}Sube el reporte "Margen por vendedor" del ERP: pasa a ser el margen oficial por vendedor y mes{% endblock %}
+
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .subir-wrap { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+
+  .bloque-titulo { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .bloque-sub { font-size: 12px; color: var(--muted2); margin-bottom: 14px; line-height: 1.5; }
+
+  .fila-ano { display: flex; gap: 8px; margin-bottom: 12px; }
+  .btn-ano {
+    flex: 1; padding: 8px; text-align: center; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface2);
+    color: var(--muted2); font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .btn-ano.activo { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .drop-zone {
+    background: var(--surface); border: 2px dashed var(--border); border-radius: 14px;
+    padding: 36px 24px; text-align: center; cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .drop-zone.dragover { border-color: var(--accent); background: rgba(34,163,71,0.08); }
+  .drop-zone .icono { font-size: 32px; margin-bottom: 10px; }
+  .drop-zone .titulo { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .drop-zone .detalle { font-size: 12px; color: var(--muted2); }
+  .drop-zone input[type="file"] { display: none; }
+
+  .archivo-elegido {
+    display: none; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; font-size: 13px; margin-top: 10px;
+  }
+  .archivo-elegido.mostrar { display: flex; }
+  .archivo-elegido .nombre { color: var(--text); font-weight: 600; }
+  .archivo-elegido .quitar { color: var(--red); cursor: pointer; font-size: 12px; }
+
+  .btn-subir {
+    padding: 11px 20px; background: var(--accent); color: #fff; border: none;
+    border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+    width: 100%; margin-top: 10px;
+  }
+  .btn-subir:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .resultado { display: none; border-radius: 10px; padding: 12px 16px; font-size: 13px; line-height: 1.5; margin-top: 10px; }
+  .resultado.mostrar { display: block; }
+  .resultado.ok { background: rgba(34,163,71,0.12); border: 1px solid var(--accent); color: var(--text); }
+  .resultado.error { background: rgba(239,68,68,0.1); border: 1px solid var(--red); color: var(--red-light); }
+
+  .estado-carga { font-size: 12px; color: var(--muted2); margin-bottom: 12px; }
+  .estado-carga strong { color: var(--text); }
+  .tabla-estado { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .tabla-estado th {
+    text-align: right; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px;
+    color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .tabla-estado th:first-child, .tabla-estado td:first-child { text-align: left; }
+  .tabla-estado td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  .tabla-estado tr.total td { font-weight: 700; color: var(--amber); }
+  .pill { display: inline-block; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .pill.si { background: rgba(34,163,71,0.14); color: var(--accent); }
+  .pill.no { background: var(--surface2); color: var(--muted2); }
+  .dif-ok { color: var(--muted2); }
+  .dif-alta { color: var(--amber); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="subir-wrap">
+
+  <div class="chart-card">
+    <div class="bloque-titulo">📑 Reporte "Margen por vendedor"</div>
+    <div class="bloque-sub">
+      El Excel tal como sale del ERP: una fila por vendedor, "Total anual" y luego Importe de Ventas,
+      Ganancia bruta y % de ganancia bruta por mes. Al subirlo reemplaza el reporte anterior de ese año
+      y Musa360 ajusta el margen de cada vendedor en cada mes al % del ERP. La venta no cambia.
+    </div>
+
+    <div class="fila-ano" id="ano-margen">
+      {% for a in anos %}<div class="btn-ano{% if loop.last %} activo{% endif %}" data-ano="{{ a }}">{{ a }}</div>
+      {% endfor %}
+    </div>
+
+    <div class="drop-zone" id="drop-margen">
+      <input type="file" id="input-margen" accept=".xlsx">
+      <div class="icono">⬆️</div>
+      <div class="titulo">Arrastra aquí el reporte de margen</div>
+      <div class="detalle">o haz click para elegirlo (.xlsx)</div>
+    </div>
+    <div class="archivo-elegido" id="archivo-margen">
+      <span class="nombre" id="nombre-margen"></span>
+      <span class="quitar" id="quitar-margen">✕ quitar</span>
+    </div>
+    <button class="btn-subir" id="btn-subir-margen" disabled>Subir reporte</button>
+    <div class="resultado" id="resultado-margen"></div>
+  </div>
+
+  <div class="chart-card">
+    <div class="bloque-titulo" id="estado-titulo">Margen por mes</div>
+    <div class="estado-carga" id="estado-carga">Cargando…</div>
+    <div style="overflow-x:auto;">
+      <table class="tabla-estado">
+        <thead>
+          <tr>
+            <th>Mes</th>
+            <th>Venta ERP</th>
+            <th>Margen ERP</th>
+            <th>Venta Musa360</th>
+            <th>Margen Musa360</th>
+            <th>Diferencia margen</th>
+            <th>Ajuste</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-estado"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const fmt$ = v => v == null ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
+const fmtPct = v => v == null ? '—' : v.toFixed(1).replace('.', ',') + '%';
+const anoWrap = document.getElementById('ano-margen');
+let anoElegido = anoWrap.querySelector('.btn-ano.activo').dataset.ano;
+
+async function cargarEstado() {
+  const tbody = document.getElementById('tbody-estado');
+  document.getElementById('estado-titulo').textContent = 'Margen por mes — ' + anoElegido;
+  try {
+    const d = await fetch('/api/margen_erp/estado?ano=' + anoElegido).then(r => r.json());
+    if (!d.ok) throw new Error(d.msg);
+    const carga = document.getElementById('estado-carga');
+    if (d.cargado_en) {
+      const f = new Date(d.cargado_en);
+      carga.innerHTML = `Reporte cargado el <strong>${f.toLocaleDateString('es-CL')} ${f.toLocaleTimeString('es-CL', {hour: '2-digit', minute: '2-digit'})}</strong>`
+        + (d.cargado_por ? ` por <strong>${d.cargado_por}</strong>` : '')
+        + ` · ${d.vendedores} vendedores · ${d.ajustados} combinaciones de vendedor y mes ajustadas`;
+    } else {
+      carga.textContent = 'Todavía no hay reporte del ERP cargado para ' + anoElegido + ': el margen de este año es el del archivo de ventas, sin ajustar.';
+    }
+    let tv = 0, tg = 0, mv = 0, mg = 0, html = '';
+    d.meses.forEach(m => {
+      const dif = m.margen_erp == null ? null : m.margen_musa - m.margen_erp;
+      if (m.ajustado) { tv += m.venta_erp; tg += m.margen_erp; }
+      mv += m.venta_musa; mg += m.margen_musa;
+      const cls = dif == null ? '' : (Math.abs(dif) > 1000000 ? 'dif-alta' : 'dif-ok');
+      html += `<tr>
+        <td>${m.mes_nombre}</td>
+        <td>${fmt$(m.venta_erp)}</td>
+        <td>${m.margen_erp == null ? '—' : fmt$(m.margen_erp) + ' · ' + fmtPct(m.pct_erp)}</td>
+        <td>${fmt$(m.venta_musa)}</td>
+        <td>${fmt$(m.margen_musa)} · ${fmtPct(m.pct_musa)}</td>
+        <td class="${cls}">${dif == null ? '—' : (dif >= 0 ? '+' : '') + fmt$(dif).replace('$-', '-$')}</td>
+        <td><span class="pill ${m.ajustado ? 'si' : 'no'}">${m.ajustado ? 'Ajustado' : 'Sin reporte'}</span></td>
+      </tr>`;
+    });
+    if (d.meses.length) {
+      html += `<tr class="total">
+        <td>Total</td>
+        <td>${tv ? fmt$(tv) : '—'}</td>
+        <td>${tv ? fmt$(tg) + ' · ' + fmtPct(tg / tv * 100) : '—'}</td>
+        <td>${fmt$(mv)}</td>
+        <td>${fmt$(mg)} · ${fmtPct(mv ? mg / mv * 100 : null)}</td>
+        <td></td><td></td>
+      </tr>`;
+    }
+    tbody.innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:var(--muted2)">Sin ventas cargadas para este año.</td></tr>';
+  } catch (e) {
+    document.getElementById('estado-carga').textContent = 'No se pudo leer el estado: ' + e.message;
+  }
+}
+
+anoWrap.querySelectorAll('.btn-ano').forEach(b => {
+  b.addEventListener('click', () => {
+    anoWrap.querySelectorAll('.btn-ano').forEach(x => x.classList.remove('activo'));
+    b.classList.add('activo');
+    anoElegido = b.dataset.ano;
+    cargarEstado();
+  });
+});
+
+const dropZone = document.getElementById('drop-margen');
+const inputFile = document.getElementById('input-margen');
+const elegido = document.getElementById('archivo-margen');
+const nombreEl = document.getElementById('nombre-margen');
+const btnSubir = document.getElementById('btn-subir-margen');
+const resultadoEl = document.getElementById('resultado-margen');
+let archivoActual = null;
+
+function mostrarResultado(ok, msg) {
+  resultadoEl.textContent = msg;
+  resultadoEl.className = 'resultado mostrar ' + (ok ? 'ok' : 'error');
+}
+
+function elegirArchivo(file) {
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.xlsx')) { mostrarResultado(false, 'El archivo debe ser .xlsx.'); return; }
+  archivoActual = file;
+  nombreEl.textContent = file.name;
+  elegido.classList.add('mostrar');
+  btnSubir.disabled = false;
+  resultadoEl.classList.remove('mostrar');
+}
+
+dropZone.addEventListener('click', () => inputFile.click());
+inputFile.addEventListener('change', e => elegirArchivo(e.target.files[0]));
+['dragover', 'dragenter'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('dragover'); }));
+['dragleave', 'drop'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('dragover'); }));
+dropZone.addEventListener('drop', e => elegirArchivo(e.dataTransfer.files[0]));
+document.getElementById('quitar-margen').addEventListener('click', e => {
+  e.stopPropagation();
+  archivoActual = null; inputFile.value = '';
+  elegido.classList.remove('mostrar'); btnSubir.disabled = true;
+});
+
+btnSubir.addEventListener('click', async () => {
+  if (!archivoActual) return;
+  btnSubir.disabled = true;
+  btnSubir.textContent = 'Subiendo…';
+  resultadoEl.classList.remove('mostrar');
+  const fd = new FormData();
+  fd.append('archivo', archivoActual);
+  fd.append('ano', anoElegido);
+  try {
+    const d = await fetch('/api/subir_margen_erp', { method: 'POST', body: fd }).then(r => r.json());
+    mostrarResultado(d.ok, d.msg);
+    if (d.ok) {
+      archivoActual = null; inputFile.value = ''; elegido.classList.remove('mostrar');
+      cargarEstado();
+    }
+  } catch (e) {
+    mostrarResultado(false, 'Error de conexión al subir el archivo.');
+  } finally {
+    btnSubir.disabled = !archivoActual;
+    btnSubir.textContent = 'Subir reporte';
+  }
+});
+
+cargarEstado();
+</script>
+{% endblock %}

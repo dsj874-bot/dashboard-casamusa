@@ -1720,6 +1720,16 @@ def api_subir_ventas():
     except Exception as e:
         return jsonify({"ok": False, "msg": f"Error al procesar/subir el archivo: {e}"}), 500
 
+    # La venta recargada cambia el costo de esos meses: se recalcula el
+    # ajuste al reporte de margen del ERP (migracion 015) para que el
+    # margen siga cuadrando. Si falla, la venta ya quedo cargada igual.
+    aviso_margen = ""
+    try:
+        for ano in sorted({f.year for f in fechas}):
+            data_loader_pg.recalcular_ajuste_margen_erp_pg(ano)
+    except Exception as e:
+        aviso_margen = f" Ojo: no se pudo recalcular el ajuste de margen del ERP ({e})."
+
     n_filas   = len(df)
     vta_total = round(float(df["TOTAL"].sum()), 0)
     f_min, f_max = min(fechas), max(fechas)
@@ -1731,7 +1741,76 @@ def api_subir_ventas():
         "filas": n_filas,
         "vta": vta_total,
         "rango": rango,
-        "msg": f"OK: {filas_fmt} filas cargadas ({vta_fmt}), {rango}.",
+        "msg": f"OK: {filas_fmt} filas cargadas ({vta_fmt}), {rango}." + aviso_margen,
+    })
+
+
+# ══════════════════════════════════════════════════════
+#  MARGEN ERP — sube el reporte "Margen por vendedor" del ERP, que pasa a
+#  ser el margen oficial por vendedor y mes (ver migracion 015)
+# ══════════════════════════════════════════════════════
+def _anos_margen_erp():
+    hoy = date.today()
+    return [hoy.year - 1, hoy.year]
+
+
+@app.route("/subir_margen_erp")
+@admin_requerido
+def subir_margen_erp():
+    return render_template("subir_margen_erp.html",
+                           active="subir_margen_erp",
+                           anos=_anos_margen_erp(),
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/margen_erp/estado")
+@admin_requerido
+def api_margen_erp_estado():
+    try:
+        ano = int(request.args.get("ano") or date.today().year)
+        return jsonify({"ok": True, **data_loader_pg.estado_margen_erp_pg(ano)})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+@app.route("/api/subir_margen_erp", methods=["POST"])
+@admin_requerido
+def api_subir_margen_erp():
+    archivo = request.files.get("archivo")
+    ano = request.form.get("ano")
+    if not archivo or not archivo.filename:
+        return jsonify({"ok": False, "msg": "No se recibio ningun archivo."}), 400
+    if ano not in [str(a) for a in _anos_margen_erp()]:
+        return jsonify({"ok": False, "msg": "Elige el año del reporte."}), 400
+    if not archivo.filename.lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "msg": "El archivo debe ser .xlsx (el reporte tal como sale del ERP)."}), 400
+    ano = int(ano)
+
+    tmp_path = _leer_archivo_subido(archivo)
+    try:
+        filas = data_loader_pg.leer_margen_erp_excel(tmp_path)
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"No se pudo leer el Excel: {e}"}), 400
+    finally:
+        os.remove(tmp_path)
+    if not filas:
+        return jsonify({"ok": False, "msg": "El reporte no trae ningun mes con datos."}), 400
+
+    try:
+        r = data_loader_pg.cargar_margen_erp_pg(filas, ano, cargado_por=session.get("usuario"))
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error al cargar el reporte: {e}"}), 500
+
+    meses = sorted({f[0] for f in filas})
+    rango = data_loader.MESES.get(meses[0], meses[0]) if len(meses) == 1 else \
+        f"{data_loader.MESES.get(meses[0], meses[0])} a {data_loader.MESES.get(meses[-1], meses[-1])}"
+    vendedores = len({f[1] for f in filas})
+    return jsonify({
+        "ok": True,
+        "msg": f"OK: reporte {ano} cargado ({rango}, {vendedores} vendedores). "
+               f"Margen ajustado en {r['ajustados']} combinaciones de vendedor y mes.",
     })
 
 

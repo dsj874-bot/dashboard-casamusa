@@ -1770,8 +1770,21 @@ def leer_margen_erp_excel(ruta):
     y despues tres columnas por mes desde enero (Importe de Ventas,
     Ganancia bruta, % de ganancia bruta). Devuelve [(mes, vendedor,
     venta, ganancia)], solo los meses con dato."""
+    import io as _io
     import openpyxl
-    ws = openpyxl.load_workbook(ruta, data_only=True, read_only=True).worksheets[0]
+    # Se lee desde memoria: openpyxl en modo read_only deja el archivo
+    # abierto, y en Windows eso impide borrar el temporal si hay un error.
+    with open(ruta, "rb") as fh:
+        ws = openpyxl.load_workbook(_io.BytesIO(fh.read()), data_only=True, read_only=True).worksheets[0]
+    encabezado = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
+    textos = [str(c or "").strip().lower() for c in encabezado]
+    # Primera fila del reporte: "Nombre de empleado del departamento de
+    # ventas", "Total anual", y por mes "Importe de Ventas", "Ganancia
+    # bruta", "% de ganancia bruta".
+    if len(textos) < 4 or "total" not in textos[1] or "importe" not in textos[2] or "ganancia" not in textos[3]:
+        raise ValueError("No es el reporte \"Margen por vendedor\" del ERP: la primera fila debe traer "
+                         "el nombre del vendedor, 'Total anual' y luego 'Importe de Ventas', "
+                         "'Ganancia bruta' y '% de ganancia bruta' por mes.")
     filas = []
     for row in ws.iter_rows(min_row=2, values_only=True):
         if not row or not row[0] or not str(row[0]).strip():
@@ -1828,6 +1841,63 @@ def recalcular_ajuste_margen_erp_pg(ano):
             r = cur.fetchone()
         conn.commit()
     return {"ajustados": n, "factor_min": float(r["mn"] or 1), "factor_max": float(r["mx"] or 1)}
+
+
+def estado_margen_erp_pg(ano):
+    """Para la pantalla "Margen ERP": cuando se cargo el reporte de ese año,
+    quien lo cargo, y por mes la venta y el margen del ERP contra la venta
+    y el margen (ya ajustado) de Musa360."""
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT max(cargado_en) AS cargado_en, max(cargado_por) AS cargado_por,
+                          count(*) AS filas, count(DISTINCT vendedor) AS vendedores
+                     FROM margen_erp WHERE ano = %s""",
+                (ano,),
+            )
+            carga = cur.fetchone()
+            cur.execute("SELECT count(*) AS n FROM ajuste_costo_erp WHERE ano = %s", (ano,))
+            ajustados = cur.fetchone()["n"]
+            cur.execute(
+                """SELECT mes, sum(venta) AS venta, sum(ganancia) AS ganancia
+                     FROM margen_erp WHERE ano = %s GROUP BY mes""",
+                (ano,),
+            )
+            erp = {r["mes"]: r for r in cur.fetchall()}
+            cur.execute(
+                """SELECT mes, sum(total) AS venta, sum(utilidad_bruta) AS margen
+                     FROM v_ventas WHERE ano = %s GROUP BY mes""",
+                (ano,),
+            )
+            musa = {r["mes"]: r for r in cur.fetchall()}
+
+    meses = []
+    for mes in sorted(set(erp) | set(musa)):
+        e, m = erp.get(mes), musa.get(mes)
+        ev = float(e["venta"]) if e else None
+        eg = float(e["ganancia"]) if e else None
+        mv = float(m["venta"]) if m else 0.0
+        mg = float(m["margen"]) if m else 0.0
+        meses.append({
+            "mes": mes,
+            "mes_nombre": MESES.get(mes, str(mes)),
+            "venta_erp": round(ev, 0) if e else None,
+            "margen_erp": round(eg, 0) if e else None,
+            "pct_erp": round(eg / ev * 100, 2) if e and ev else None,
+            "venta_musa": round(mv, 0),
+            "margen_musa": round(mg, 0),
+            "pct_musa": round(mg / mv * 100, 2) if mv else None,
+            "ajustado": e is not None,
+        })
+    return {
+        "ano": ano,
+        "cargado_en": carga["cargado_en"].isoformat() if carga["cargado_en"] else None,
+        "cargado_por": carga["cargado_por"],
+        "filas": carga["filas"],
+        "vendedores": carga["vendedores"],
+        "ajustados": ajustados,
+        "meses": meses,
+    }
 
 
 def asignar_vendedor_home(vendedor, sucursal, vigente_desde=None, updated_by="admin"):
