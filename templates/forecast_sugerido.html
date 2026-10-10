@@ -88,8 +88,8 @@
   <div class="sg-card">
     <div class="sg-card-titulo">Cómo se calcula</div>
     <div class="sg-card-sub">
-      En cada sucursal, la meta de stock es la venta mensual de la sucursal por los meses de la clase que tiene
-      el producto <em>en esa sucursal</em>. Lo que falta se redondea a embalaje. Antes de comprar se despacha desde
+      En cada sucursal, la meta de stock es la venta mensual de la sucursal (promedio de los últimos 12 meses)
+      por los meses de la clase que tiene el producto <em>en esa sucursal</em>, con un máximo de 1,5 meses. Lo que falta se redondea a embalaje. Antes de comprar se despacha desde
       San Isidro lo que tiene sobre su meta, y se descuentan las OC de stock por recibir. Si filtras por sucursal,
       ves lo que le falta a esa sucursal, con la parte que le toca de lo que cubren San Isidro y las OC.
     </div>
@@ -156,7 +156,7 @@ async function cargar() {
     filtrosListos = true;
   }
   const f = s => s.split('-').reverse().join('-');
-  document.getElementById('periodo').innerHTML = `Clase según ventas del ${f(d.calculo.desde)} al ${f(d.calculo.hasta)}<br>Stock y venta mensual al día`;
+  document.getElementById('periodo').innerHTML = `Clase y venta mensual: ${f(d.calculo.desde)} al ${f(d.calculo.hasta)}<br>Stock al día`;
   pintarKpis(d); pintarMarcas(d); pintarMetas(d); pintarDetalle();
 }
 
@@ -187,7 +187,7 @@ function pintarMarcas(d) {
 }
 
 function pintarMetas(d) {
-  const txt = v => v === 'emb' ? '1 embalaje' : (v ? String(v).replace('.', ',') + ' meses' : 'no comprar');
+  const txt = v => v === 'emb' ? '1 embalaje' : (v ? String(v).replace('.', ',') + (v === 1 ? ' mes' : ' meses') : 'no comprar');
   document.getElementById('metas').innerHTML = ['AX', 'AY', 'AZ', 'BX', 'BY', 'BZ', 'CX', 'CY', 'CZ', 'SV'].map(c =>
     `<div class="meta ${TONO[c]}"><div class="c">${c === 'SV' ? 'Sin venta' : c}</div><div class="v">${txt(d.metas[c])}</div></div>`).join('');
   const nombres = Object.fromEntries(d.sucursales.map(s => [s.codigo, s.nombre]));

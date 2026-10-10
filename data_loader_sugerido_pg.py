@@ -5,7 +5,8 @@ ABC x XYZ en cada sucursal (ver data_loader_clasificacion_pg.py).
 Pedido del usuario 2026-10-10: "quiero la propuesta, pero solo para
 productos nacionales", con las metas estandar por clase (META_MESES).
 
-Por sucursal:  meta = meses de la clase x venta mensual de la sucursal
+Por sucursal:  meta = meses de la clase (maximo 1,5) x venta mensual de la
+               sucursal (promedio de los 12 meses del periodo)
                falta = meta - (stock + transito), redondeado a embalaje
                el exceso NO se mueve (se muestra como traspasable).
 Empresa:       compra = suma de lo que falta en las sucursales - lo que
@@ -25,27 +26,80 @@ import data_loader_clasificacion_pg as dcl
 import data_loader_exclusion_compra as dec
 
 # Meses de venta de la sucursal por clase; "emb" = 1 embalaje; 0 = no comprar
-META_MESES = {"AX": 1.5, "AY": 2.0, "AZ": 1.5, "BX": 1.5, "BY": 2.0, "BZ": 1.0,
+# AY y BY eran 2 meses; el usuario fijo 1,5 como maximo (2026-10-10)
+META_MESES = {"AX": 1.5, "AY": 1.5, "AZ": 1.5, "BX": 1.5, "BY": 1.5, "BZ": 1.0,
               "CX": 1.0, "CY": "emb", "CZ": 0, "SV": 0}
 META_NUEVO = 1.5
+# Tope de la meta en meses (None = sin tope) y base de la venta mensual:
+# "datos_duros" (venta_mensual de inventario_stock), "12m" (promedio de los
+# 12 meses del periodo) o "12m_sin_proyectos" (sin compras de proyecto).
+# Elegido por el usuario 2026-10-10: tope 1,5 meses y promedio de 12 meses
+# ($162,0 M con datos duros y metas de 2 meses -> $134,7 M).
+META_MAXIMA = 1.5
+BASE_DEMANDA = "12m"
 SUCURSALES = list(dcl.SUCURSALES)   # CH, MP, MT, MR, LC, SI
 
 
-def _meta_unidades(clase, ciclo, vm, emb):
+def _meta_unidades(clase, ciclo, vm, emb, meta_max=None):
     """Meta de stock en unidades para una clase en una sucursal."""
     if clase in ("CZ", "SV"):
         return 0
+    tope = (lambda m: min(m, meta_max)) if meta_max else (lambda m: m)
     if ciclo == "Nuevo" and clase not in ("CZ", "SV"):
-        return math.ceil(round(META_NUEVO * vm, 6)) if vm > 0 else emb
+        return math.ceil(round(tope(META_NUEVO) * vm, 6)) if vm > 0 else emb
     regla = META_MESES.get(clase, 0)
     if regla == "emb":
         return emb
     if not regla:
         return 0
-    return math.ceil(round(regla * vm, 6)) if vm > 0 else 0
+    return math.ceil(round(tope(regla) * vm, 6)) if vm > 0 else 0
 
 
-def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None, sucursal=None):
+def _demanda_12m_pg(cur, desde, hasta):
+    """Venta mensual por sucursal y producto con los 12 meses del periodo,
+    con y sin las compras de "proyecto": un cliente que compro el producto
+    en esa sucursal en 4 meses o menos, y en alguno de esos meses se llevo
+    mas que el promedio mensual de toda la sucursal. Esas compras puntuales
+    se atienden a pedido, no con stock (caso real 2026-10-10: el cable
+    125520 en Chicureo, 57% de la venta del año en dos clientes).
+    Las ventas a "CLIENTE BOLETA" nunca cuentan como proyecto.
+    Devuelve {(alcance, codigo): (total_12m, total_sin_proyectos)}."""
+    suc_a_alc = {x: alc for alc, (sucs, _) in dcl.SUCURSALES.items() for x in sucs}
+    cur.execute(
+        """SELECT sucursal_logica AS suc, codigo_cm AS cod, coalesce(nombre_cliente, '') AS cli,
+                  ano * 12 + mes AS am, sum(cantidad) AS q
+             FROM v_ventas
+            WHERE fecha_conta BETWEEN %(desde)s AND %(hasta)s AND codigo_cm IS NOT NULL
+              AND left(codigo_cm::text, 1) <> '6'
+            GROUP BY 1, 2, 3, 4""",
+        {"desde": desde, "hasta": hasta},
+    )
+    por = {}
+    for r in cur.fetchall():
+        alc = suc_a_alc.get(r["suc"])
+        if not alc:
+            continue
+        q = float(r["q"] or 0)
+        d = por.setdefault((alc, r["cod"]), {})
+        c = d.setdefault(r["cli"], {})
+        c[r["am"]] = c.get(r["am"], 0.0) + q
+    res = {}
+    for k, clientes in por.items():
+        total = sum(sum(m.values()) for m in clientes.values())
+        promedio = max(total, 0.0) / 12.0
+        proyectos = 0.0
+        for cli, meses in clientes.items():
+            if cli.upper().startswith("CLIENTE BOLETA"):
+                continue
+            con_compra = [q for q in meses.values() if q > 0]
+            if 0 < len(con_compra) <= 4 and max(con_compra) > promedio:
+                proyectos += sum(meses.values())
+        res[k] = (max(total, 0.0), max(total - proyectos, 0.0))
+    return res
+
+
+def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None, sucursal=None,
+                           base=BASE_DEMANDA, meta_max=META_MAXIMA):
     # Filtro por sucursal: lo que falta en esas sucursales, con la parte que les toca
     # de lo que cubre San Isidro y las OC en camino (ver mas abajo)
     sucs_filtro = [x for x in (sucursal or []) if x in dcl.SUCURSALES] or None
@@ -58,7 +112,7 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None,
             if not calc:
                 return {"calculo": None}
             cur.execute(
-                """SELECT c.alcance, c.codigo, c.abc, c.xyz, c.ciclo, c.unidades, c.proveedor
+                """SELECT c.alcance, c.codigo, c.abc, c.xyz, c.ciclo, c.unidades, c.proveedor, c.primera_venta
                      FROM clasificacion_producto c
                      JOIN productos p ON p.codigo = c.codigo
                     WHERE c.calculo_id = %s AND p.procedencia = 'Nacional'
@@ -98,6 +152,7 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None,
                 (codigos,),
             )
             oc = {r["codigo"]: (float(r["u"] or 0), float(r["v"] or 0)) for r in cur.fetchall()}
+            demanda = _demanda_12m_pg(cur, calc["desde"], calc["hasta"]) if base != "datos_duros" else {}
     excluidos = dec.codigos_excluidos_compra()
 
     productos = []
@@ -128,9 +183,18 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None,
                     detalle[s] = {"clase": None, "envio": 0, "stock": st}
                 continue
             clase = (r["abc"] + r["xyz"]) if r["abc"] else "SV"
-            if vm <= 0 and r["unidades"]:
+            if base != "datos_duros":
+                tot, sin_proy = demanda.get((s, cod), (0.0, 0.0))
+                u = sin_proy if base == "12m_sin_proyectos" else tot
+                # Producto nuevo: promedio sobre los meses desde su primera venta
+                meses = 12
+                pv = r["primera_venta"]
+                if pv and pv > calc["desde"]:
+                    meses = max(1, (calc["hasta"].year - pv.year) * 12 + calc["hasta"].month - pv.month + 1)
+                vm = u / meses
+            elif vm <= 0 and r["unidades"]:
                 vm = max(float(r["unidades"]), 0.0) / 12.0
-            meta = _meta_unidades(clase, r["ciclo"], vm, emb)
+            meta = _meta_unidades(clase, r["ciclo"], vm, emb, meta_max)
             disp = st + tr
             falta = max(0.0, meta - disp)
             cajas = math.ceil(round(falta / emb, 6)) if falta > 0 else 0
