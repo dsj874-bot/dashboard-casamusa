@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+
+{% block title %}Logística{% endblock %}
+{% block page_title %}Despachos y Retiros{% endblock %}
+{% block page_subtitle %}Leído en vivo desde la planilla de logística{% endblock %}
+
+{% block sidebar_nav %}{% include "_logistica_sidebar.html" %}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}?v={{ asset_v('css/multiselect.css') }}">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  .lg-barra { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 18px; }
+  .lg-rangos { display: flex; gap: 6px; }
+  .lg-rango {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--muted2); font-size: 12.5px; font-weight: 600; padding: 7px 12px; cursor: pointer;
+  }
+  .lg-rango.activo { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .lg-rango:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .lg-filtro { display: flex; flex-direction: column; gap: 4px; min-width: 160px; }
+  .lg-filtro label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .lg-acciones { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .lg-leido { font-size: 11.5px; color: var(--muted2); text-align: right; line-height: 1.4; }
+  .btn-recarga {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .btn-recarga:disabled { opacity: .5; cursor: wait; }
+
+  .lg-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+  @media (max-width: 1100px) { .lg-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .lg-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+  .lg-kpi-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 6px; }
+  .lg-kpi-valor { font-size: 24px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+  .lg-kpi-valor.alto { color: var(--accent); } .lg-kpi-valor.medio { color: var(--amber); } .lg-kpi-valor.bajo { color: var(--red); }
+  .lg-kpi-sub { font-size: 11.5px; color: var(--muted2); margin-top: 3px; }
+
+  .lg-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 18px; margin-bottom: 18px; }
+  .lg-grid.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @media (max-width: 1100px) { .lg-grid, .lg-grid.tres { grid-template-columns: 1fr; } }
+  .lg-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; min-width: 0; }
+  .lg-card-titulo { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+  .lg-card-sub { font-size: 12px; color: var(--muted2); margin-bottom: 12px; line-height: 1.5; }
+
+  .lg-tabla { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .lg-tabla th {
+    text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
+    padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .lg-tabla td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  .lg-tabla .izq { text-align: left; }
+  .lg-tabla td.izq { white-space: normal; }
+  .lg-wrap { overflow-x: auto; }
+  .lg-wrap.alto { max-height: 340px; overflow-y: auto; }
+  .lg-wrap.alto th { position: sticky; top: 0; background: var(--surface); }
+
+  .barra-pct { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .barra-pct .bg { width: 70px; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+  .barra-pct .fg { height: 6px; border-radius: 3px; }
+  .t-alto { color: var(--accent); } .t-medio { color: var(--amber); } .t-bajo { color: var(--red); }
+  .bg-alto { background: var(--accent); } .bg-medio { background: var(--amber); } .bg-bajo { background: var(--red); }
+
+  .motivo { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+  .motivo span:last-child { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .avisos { font-size: 12px; color: var(--muted2); line-height: 1.7; }
+  .avisos strong { color: var(--amber); }
+  .vacio { text-align: center; padding: 30px; color: var(--muted2); }
+  .pill { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: var(--surface2); color: var(--muted2); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="lg-barra">
+  <div class="lg-rangos" id="rangos" role="group" aria-label="Período">
+    <button type="button" class="lg-rango" data-r="mes">Este mes</button>
+    <button type="button" class="lg-rango" data-r="3">3 meses</button>
+    <button type="button" class="lg-rango activo" data-r="6">6 meses</button>
+    <button type="button" class="lg-rango" data-r="todo">Todo</button>
+  </div>
+  <div class="lg-filtro"><label for="f-sucursal">Sucursal</label><select id="f-sucursal"></select></div>
+  <div class="lg-filtro"><label for="f-chofer">Chofer</label><select id="f-chofer"></select></div>
+  <div class="lg-filtro"><label for="f-tipo">Tipo</label><select id="f-tipo"></select></div>
+  <div class="lg-acciones">
+    <div class="lg-leido" id="leido">Leyendo la planilla…</div>
+    <button class="btn-recarga" id="btn-recarga" title="Vuelve a leer la planilla de Google ahora">↻ Actualizar</button>
+  </div>
+</div>
+
+<div class="lg-kpis" id="kpis"></div>
+
+<div class="lg-grid">
+  <div class="lg-card">
+    <div class="lg-card-titulo">Cumplimiento por mes</div>
+    <div class="lg-card-sub">Barras: despachos y retiros cerrados. Línea: % cumplido.</div>
+    <canvas id="chart-mensual" height="120"></canvas>
+  </div>
+  <div class="lg-card">
+    <div class="lg-card-titulo">Capacidad de reparto</div>
+    <div class="lg-card-sub">Cumplimiento según cuántos movimientos tuvo el día y cuántos le tocaron a cada chofer.</div>
+    <div class="lg-wrap"><table class="lg-tabla" id="tabla-capacidad"></table></div>
+  </div>
+</div>
+
+<div class="lg-grid tres">
+  <div class="lg-card">
+    <div class="lg-card-titulo">Por chofer</div>
+    <div class="lg-wrap"><table class="lg-tabla" id="tabla-choferes"></table></div>
+  </div>
+  <div class="lg-card">
+    <div class="lg-card-titulo">Por sucursal de origen</div>
+    <div class="lg-wrap"><table class="lg-tabla" id="tabla-sucursales"></table></div>
+    <div class="lg-card-titulo" style="margin-top:16px">Por día de la semana</div>
+    <div class="lg-wrap"><table class="lg-tabla" id="tabla-dias"></table></div>
+  </div>
+  <div class="lg-card">
+    <div class="lg-card-titulo">Por qué no se cumple</div>
+    <div class="lg-card-sub" id="motivos-sub"></div>
+    <div id="motivos"></div>
+    <div class="lg-card-titulo" style="margin-top:16px">Comentarios más frecuentes</div>
+    <div id="comentarios"></div>
+  </div>
+</div>
+
+<div class="lg-grid">
+  <div class="lg-card">
+    <div class="lg-card-titulo">Clientes con más movimientos</div>
+    <div class="lg-wrap alto"><table class="lg-tabla" id="tabla-clientes"></table></div>
+  </div>
+  <div class="lg-card">
+    <div class="lg-card-titulo">Comunas de destino</div>
+    <div class="lg-wrap alto"><table class="lg-tabla" id="tabla-comunas"></table></div>
+  </div>
+</div>
+
+<div class="lg-grid">
+  <div class="lg-card">
+    <div class="lg-card-titulo">Próximos 7 días</div>
+    <div class="lg-card-sub">Despachos y retiros programados desde hoy.</div>
+    <div class="lg-wrap alto"><table class="lg-tabla" id="tabla-proximos"></table></div>
+  </div>
+  <div class="lg-card">
+    <div class="lg-card-titulo">Vencidos sin cerrar</div>
+    <div class="lg-card-sub">Con fecha pasada y sin marcar Cumplido o Incumplido en la planilla.</div>
+    <div class="lg-wrap alto"><table class="lg-tabla" id="tabla-vencidos"></table></div>
+    <div class="avisos" id="avisos" style="margin-top:12px"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/multiselect.js') }}?v={{ asset_v('js/multiselect.js') }}"></script>
+<script>
+if (typeof initMultiSelect !== 'function') {
+  window.initMultiSelect = function (sel) { if (sel) sel.multiple = true; };
+  window.mselValores = function (sel) { return sel ? Array.from(sel.selectedOptions).map(o => o.value) : []; };
+}
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmtN = v => v == null ? '—' : Number(v).toLocaleString('es-CL');
+const fmtP = v => v == null ? '—' : Number(v).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+const tono = v => v == null ? '' : v >= 95 ? 'alto' : v >= 90 ? 'medio' : 'bajo';
+const fmtF = iso => iso ? iso.split('-').reverse().join('-') : '—';
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+let rango = '6', filtrosListos = false, chart = null;
+
+function fechasRango() {
+  const hoy = new Date(); const iso = d => d.toISOString().slice(0, 10);
+  if (rango === 'todo') return {};
+  if (rango === 'mes') return { desde: iso(new Date(hoy.getFullYear(), hoy.getMonth(), 1)) };
+  const d = new Date(hoy.getFullYear(), hoy.getMonth() - (Number(rango) - 1), 1);
+  return { desde: iso(d) };
+}
+
+function qs(forzar) {
+  const p = new URLSearchParams(fechasRango());
+  ['sucursal', 'chofer', 'tipo'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
+  if (forzar) p.set('forzar', '1');
+  return p.toString();
+}
+
+function barra(p) {
+  const t = tono(p);
+  return `<div class="barra-pct"><span class="t-${t}">${fmtP(p)}</span><div class="bg"><div class="fg bg-${t}" style="width:${Math.max(0, Math.min(100, (p - 70) / 30 * 100))}%"></div></div></div>`;
+}
+
+function tabla(id, cab, filas, vacio) {
+  const el = document.getElementById(id);
+  el.innerHTML = `<thead><tr>${cab.map(([t, izq]) => `<th class="${izq ? 'izq' : ''}">${t}</th>`).join('')}</tr></thead>` +
+    `<tbody>${filas.length ? filas.join('') : `<tr><td class="vacio" colspan="${cab.length}">${vacio || 'Sin datos'}</td></tr>`}</tbody>`;
+}
+
+async function cargar(forzar) {
+  const b = document.getElementById('btn-recarga'); b.disabled = true;
+  try {
+    const d = await fetch('/api/logistica?' + qs(forzar)).then(r => r.json());
+    if (d.error) { document.getElementById('leido').textContent = d.error; return; }
+    if (!filtrosListos) {
+      const ops = { sucursal: d.opciones.sucursal.map(s => [s.codigo, s.nombre]), chofer: d.opciones.chofer.map(c => [c, c]), tipo: d.opciones.tipo.map(t => [t, t]) };
+      Object.entries(ops).forEach(([k, vals]) => {
+        const sel = document.getElementById('f-' + k);
+        sel.innerHTML = vals.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
+        initMultiSelect(sel); sel.addEventListener('change', () => cargar());
+      });
+      filtrosListos = true;
+    }
+    document.getElementById('leido').innerHTML = `Planilla leída ${d.leido_en}<br>${fmtN(d.total_planilla)} registros · ${fmtF(d.opciones.min_fecha)} al ${fmtF(d.opciones.max_fecha)}`;
+    pintar(d);
+  } catch (e) {
+    document.getElementById('leido').textContent = 'No se pudo leer la planilla de logística.';
+  } finally { b.disabled = false; }
+}
+
+function pintar(d) {
+  const k = d.kpis;
+  document.getElementById('kpis').innerHTML = `
+    <div class="lg-kpi"><div class="lg-kpi-label">Cumplimiento</div><div class="lg-kpi-valor ${tono(k.pct)}">${fmtP(k.pct)}</div><div class="lg-kpi-sub">${fmtN(k.cerrados)} movimientos cerrados · últimos 60 días ${fmtP(k.pct_60d)}</div></div>
+    <div class="lg-kpi"><div class="lg-kpi-label">Despachos</div><div class="lg-kpi-valor">${fmtN(k.despachos)}</div><div class="lg-kpi-sub">cumplimiento ${fmtP(k.pct_despachos)}</div></div>
+    <div class="lg-kpi"><div class="lg-kpi-label">Retiros</div><div class="lg-kpi-valor">${fmtN(k.retiros)}</div><div class="lg-kpi-sub">cumplimiento ${fmtP(k.pct_retiros)}</div></div>
+    <div class="lg-kpi"><div class="lg-kpi-label">Incumplidos</div><div class="lg-kpi-valor ${k.incumplidos ? 'bajo' : ''}">${fmtN(k.incumplidos)}</div><div class="lg-kpi-sub">promedio ${fmtN(k.promedio_diario)} movimientos por día</div></div>
+    <div class="lg-kpi"><div class="lg-kpi-label">Próximos 7 días</div><div class="lg-kpi-valor">${fmtN(k.proximos_7d)}</div><div class="lg-kpi-sub">${k.vencidos ? `<span class="t-bajo">${fmtN(k.vencidos)} vencidos sin cerrar</span>` : 'sin vencidos pendientes'}</div></div>`;
+
+  // Grafico mensual
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById('chart-mensual'), {
+    data: {
+      labels: d.mensual.map(m => m.mes),
+      datasets: [
+        { type: 'bar', label: 'Despachos', data: d.mensual.map(m => m.despachos), backgroundColor: css('--accent'), stack: 's', yAxisID: 'y', borderRadius: 3 },
+        { type: 'bar', label: 'Retiros', data: d.mensual.map(m => m.retiros), backgroundColor: css('--blue'), stack: 's', yAxisID: 'y', borderRadius: 3 },
+        { type: 'line', label: '% cumplido', data: d.mensual.map(m => m.pct), borderColor: css('--amber'), backgroundColor: css('--amber'), yAxisID: 'y2', tension: .25, pointRadius: 3 },
+      ],
+    },
+    options: {
+      responsive: true, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { color: css('--muted2'), boxWidth: 12 } } },
+      scales: {
+        x: { stacked: true, ticks: { color: css('--muted2') }, grid: { display: false } },
+        y: { stacked: true, ticks: { color: css('--muted2') }, grid: { color: css('--border') } },
+        y2: { position: 'right', min: 70, max: 100, ticks: { color: css('--amber'), callback: v => v + '%' }, grid: { display: false } },
+      },
+    },
+  });
+
+  tabla('tabla-capacidad', [['Movimientos en el día', 1], ['Días'], ['Movimientos'], ['Cumplimiento']],
+    d.capacidad.map(f => `<tr><td class="izq">${f.tramo}</td><td>${fmtN(f.dias)}</td><td>${fmtN(f.movimientos)}</td><td>${barra(f.pct)}</td></tr>`)
+    .concat([`<tr><td class="izq" colspan="4" style="padding-top:14px;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.4px">Movimientos por chofer en el día</td></tr>`])
+    .concat(d.por_chofer_dia.map(f => `<tr><td class="izq">${f.tramo}</td><td>${fmtN(f.dias)}</td><td>${fmtN(f.movimientos)}</td><td>${barra(f.pct)}</td></tr>`)));
+
+  const filaCump = f => `<tr><td class="izq">${esc(f.nombre)}</td><td>${fmtN(f.total)}</td><td>${fmtN(f.incumplidos)}</td><td>${barra(f.pct)}</td></tr>`;
+  tabla('tabla-choferes', [['Chofer', 1], ['Movimientos'], ['Incumplidos'], ['Cumplimiento']], d.choferes.map(filaCump));
+  tabla('tabla-sucursales', [['Sucursal', 1], ['Movimientos'], ['Incumplidos'], ['Cumplimiento']], d.sucursales.map(filaCump));
+  tabla('tabla-dias', [['Día', 1], ['Movimientos'], ['Cumplimiento']], d.dias.map(f => `<tr><td class="izq">${f.nombre}</td><td>${fmtN(f.total)}</td><td>${barra(f.pct)}</td></tr>`));
+  tabla('tabla-clientes', [['Cliente', 1], ['Movimientos'], ['Incumplidos'], ['Cumplimiento']], d.clientes.map(filaCump));
+  tabla('tabla-comunas', [['Comuna', 1], ['Movimientos'], ['Incumplidos'], ['Cumplimiento']], d.comunas.map(filaCump));
+
+  const totInc = d.motivos.reduce((a, m) => a + m.n, 0);
+  document.getElementById('motivos-sub').textContent = `${fmtN(totInc)} incumplidos en el período`;
+  document.getElementById('motivos').innerHTML = d.motivos.length
+    ? d.motivos.map(m => `<div class="motivo"><span>${esc(m.motivo)}</span><span>${fmtN(m.n)} · ${fmtP(totInc ? m.n / totInc * 100 : 0)}</span></div>`).join('')
+    : '<div class="vacio">Sin incumplidos</div>';
+  document.getElementById('comentarios').innerHTML = d.comentarios.length
+    ? d.comentarios.map(c => `<div class="motivo"><span>${esc(c.comentario)}</span><span>${fmtN(c.n)}</span></div>`).join('')
+    : '<div class="vacio">Sin comentarios</div>';
+
+  const filaMov = m => `<tr><td class="izq">${fmtF(m.fecha)}</td><td class="izq">${esc(m.tipo)}</td><td class="izq">${esc(m.cliente)}</td><td class="izq">${esc(m.comuna)}</td><td class="izq">${esc(m.chofer || '—')}</td><td class="izq"><span class="pill">${esc(m.status || '—')}</span></td></tr>`;
+  const cabMov = [['Fecha', 1], ['Tipo', 1], ['Cliente', 1], ['Comuna', 1], ['Chofer', 1], ['Estado', 1]];
+  tabla('tabla-proximos', cabMov, d.proximos.map(filaMov), 'Nada programado');
+  tabla('tabla-vencidos', cabMov, d.vencidos.map(filaMov), 'Todo cerrado');
+
+  const c = d.calidad, av = [];
+  if (c.incumplidos_sin_motivo) av.push(`<strong>${fmtN(c.incumplidos_sin_motivo)}</strong> incumplidos sin clasificación de motivo`);
+  if (c.sin_chofer) av.push(`<strong>${fmtN(c.sin_chofer)}</strong> movimientos sin chofer asignado`);
+  document.getElementById('avisos').innerHTML = av.length ? 'Para mejorar la planilla: ' + av.join(' · ') : '';
+}
+
+document.querySelectorAll('.lg-rango').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.lg-rango').forEach(x => x.classList.remove('activo'));
+  b.classList.add('activo'); rango = b.dataset.r; cargar();
+});
+document.getElementById('btn-recarga').onclick = () => cargar(true);
+cargar();
+</script>
+{% endblock %}

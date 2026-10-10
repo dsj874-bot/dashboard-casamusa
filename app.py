@@ -71,6 +71,8 @@ if USAR_POSTGRES_ADQUISICIONES:
 # Clasificacion de productos y Sugerido de Compra (Forecast), solo Postgres (ver migrations/016)
 import data_loader_clasificacion_pg
 import data_loader_sugerido_pg
+# Logistica: lee en vivo la planilla de despachos de Google Sheets
+import data_loader_logistica
 
 # ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
@@ -330,7 +332,7 @@ USUARIOS_GERENCIA = {
     "malvarado@casamusa.cl", "jsantana@casamusa.cl",
 }
 
-PREFIJOS_SOLO_GERENCIA = ("/finanzas", "/logistica", "/bodega", "/forecast", "/api/forecast", "/tareas")
+PREFIJOS_SOLO_GERENCIA = ("/finanzas", "/logistica", "/api/logistica", "/bodega", "/forecast", "/api/forecast", "/tareas")
 
 
 # Cuenta de vendedor: solo estas rutas, todo lo demas redirige a su Vta
@@ -536,7 +538,7 @@ AREAS = [
     {"slug": "adquisiciones", "nombre": "Adquisiciones", "icono": "📦", "url": "/adquisiciones", "activo": True},
     {"slug": "finanzas",      "nombre": "Finanzas",      "icono": "💰", "url": "/finanzas",      "activo": False},
     {"slug": "inventario",    "nombre": "Inventario",    "icono": "🗄️", "url": "/inventario",    "activo": True},
-    {"slug": "logistica",     "nombre": "Logística",     "icono": "🚚", "url": "/logistica",     "activo": False},
+    {"slug": "logistica",     "nombre": "Logística",     "icono": "🚚", "url": "/logistica",     "activo": True},
     {"slug": "bodega",        "nombre": "Bodega",        "icono": "🏭", "url": "/bodega",        "activo": False},
     {"slug": "forecast",      "nombre": "Forecast",      "icono": "🔮", "url": "/forecast",      "activo": True},
     {"slug": "tareas",        "nombre": "Tareas Pendientes de Gerencia", "icono": "📋", "url": "/tareas", "activo": False},
@@ -1409,7 +1411,27 @@ def api_inventario_marca_subfamilia():
 @app.route("/logistica")
 @login_requerido
 def logistica():
-    return _area_en_construccion("logistica")
+    return render_template("logistica.html",
+                           active="logistica_panel",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/logistica")
+@login_requerido
+def api_logistica():
+    """Panel de despachos y retiros, leido en vivo desde la planilla de
+    Google Sheets del equipo de logistica (ver data_loader_logistica.py)."""
+    try:
+        return jsonify(data_loader_logistica.get_panel_logistica(
+            desde=request.args.get("desde") or None,
+            hasta=request.args.get("hasta") or None,
+            sucursal=request.args.getlist("sucursal") or None,
+            chofer=request.args.getlist("chofer") or None,
+            tipo=request.args.getlist("tipo") or None,
+            forzar=request.args.get("forzar") == "1",
+        ))
+    except Exception as e:
+        return jsonify({"error": f"No se pudo leer la planilla de logística: {e}"}), 500
 
 
 @app.route("/bodega")
