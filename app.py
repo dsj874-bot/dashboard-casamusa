@@ -1469,6 +1469,7 @@ def api_forecast_sugerido():
             familia=request.args.getlist("familia") or None,
             clase=request.args.getlist("clase") or None,
             sucursal=request.args.getlist("sucursal") or None,
+            solo_prioritarios=request.args.get("prioritarios") == "1",
         ))
     except Exception as e:
         return jsonify({"error": str(e)}), 500

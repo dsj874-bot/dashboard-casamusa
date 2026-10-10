@@ -7,12 +7,23 @@ productos nacionales", con las metas estandar por clase (META_MESES).
 
 Por sucursal:  meta = meses de la clase (maximo 1,5) x venta mensual de la
                sucursal (promedio de los 12 meses del periodo)
-               falta = meta - (stock + transito), redondeado a embalaje
+               falta = meta - (stock + transito), en unidades (San Isidro despacha
+               por unidad; el embalaje se redondea en la compra de la empresa)
                el exceso NO se mueve (se muestra como traspasable).
 Empresa:       compra = suma de lo que falta en las sucursales - lo que
                le sobra a cualquier sucursal sobre su meta (traspasos;
                antes solo San Isidro) - OC de STOCK ya por recibir,
                redondeado a embalaje, a CUP.
+
+Lo que sabe del negocio, tomado de la lista de Prioritarios (pedido del
+usuario 2026-10-10: "el sugerido no entiende el negocio"):
+  - complemento de linea: si una linea prioritaria (familia > serie > color)
+    se vende en una sucursal -- alguno de sus productos es A o B ahi --,
+    cada prioritario de esa linea queda con al menos 1 embalaje en esa
+    sucursal aunque por si solo sea CZ o sin venta.
+  - complemento con importados: para un nacional que tiene un equivalente
+    en la lista (codigo_equivalente), la venta y el stock del otro codigo
+    se suman: el nacional solo se compra por lo que el otro no cubre.
 
 Fuera del sugerido: importados, codigos que empiezan con 6 (se compran a
 pedido, indicado por el usuario), los marcados "no comprar"
@@ -51,6 +62,14 @@ META_MENOS = 0.0
 # Elegido por el usuario 2026-10-10: traspasos entre todas las sucursales,
 # metas de 1,5 meses ($134,7 M -> $103,7 M).
 TRASPASOS = "todas"
+# Piso del complemento de linea en cada sucursal: "embalaje" (1 embalaje
+# completo) o "unidad" (1 unidad; la compra igual se redondea a embalaje
+# a nivel empresa y se reparte desde San Isidro).
+# El usuario confirmo 2026-10-10 que San Isidro despacha por unidad (abre
+# cajas): cada sucursal recibe lo que le falta y el embalaje se redondea una
+# sola vez en la compra de la empresa. $70,6 M -> $49,3 M con complemento
+# de linea e importados.
+PISO_LINEA = "unidad"
 SUCURSALES = list(dcl.SUCURSALES)   # CH, MP, MT, MR, LC, SI
 
 
@@ -117,7 +136,8 @@ def _demanda_12m_pg(cur, desde, hasta):
 
 def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None, sucursal=None,
                            base=BASE_DEMANDA, meta_max=META_MAXIMA, meta_menos=META_MENOS,
-                           traspasos=TRASPASOS):
+                           traspasos=TRASPASOS, solo_prioritarios=False,
+                           complemento_linea=True, complemento_importado=True, piso_linea=PISO_LINEA):
     # Filtro por sucursal: lo que falta en esas sucursales, con la parte que les toca
     # de lo que cubre San Isidro y las OC en camino (ver mas abajo)
     sucs_filtro = [x for x in (sucursal or []) if x in dcl.SUCURSALES] or None
@@ -146,6 +166,30 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None,
                 else:
                     clases.setdefault(r["codigo"], {})[r["alcance"]] = r
             codigos = list(clases)
+
+            # Lista de Prioritarios: lineas y equivalencias
+            cur.execute("""SELECT codigo_obligatorio, codigo_equivalente, familia, subfamilia, grupo
+                             FROM productos_obligatorios""")
+            linea_de, complemento_de, miembros_linea = {}, {}, {}
+            for r in cur.fetchall():
+                o, e = r["codigo_obligatorio"], r["codigo_equivalente"]
+                comprar = e or o
+                clave = " · ".join(x for x in (r["familia"], r["subfamilia"], r["grupo"]) if x)
+                miembros_linea.setdefault(clave, set()).update({o} | ({e} if e else set()))
+                linea_de[comprar] = clave
+                if e and e != o:
+                    complemento_de[e] = o
+            extra = sorted({c for m in miembros_linea.values() for c in m} - set(clases))
+            clases_extra = {}
+            if extra:
+                cur.execute(
+                    """SELECT alcance, codigo, abc, xyz, ciclo, unidades, primera_venta
+                         FROM clasificacion_producto WHERE calculo_id = %s AND codigo = ANY(%s)""",
+                    (calc["id"], extra),
+                )
+                for r in cur.fetchall():
+                    clases_extra.setdefault(r["codigo"], {})[r["alcance"]] = r
+
             cur.execute(
                 """SELECT codigo, descripcion, marca, familia, coalesce(nullif(embalaje, 0), 1) AS emb, coalesce(cup, 0) AS cup
                      FROM productos WHERE codigo = ANY(%s)""",
@@ -157,7 +201,7 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None,
                 """SELECT codigo, bodega, coalesce(stock, 0) AS st, coalesce(transito, 0) AS tr,
                           coalesce(venta_mensual, 0) AS vm
                      FROM inventario_stock WHERE codigo = ANY(%s) AND bodega = ANY(%s)""",
-                (codigos, list(bodegas)),
+                (codigos + extra, list(bodegas)),
             )
             inv = {}
             for r in cur.fetchall():
@@ -172,6 +216,20 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None,
             oc = {r["codigo"]: (float(r["u"] or 0), float(r["v"] or 0)) for r in cur.fetchall()}
             demanda = _demanda_12m_pg(cur, calc["desde"], calc["hasta"]) if base != "datos_duros" else {}
     excluidos = dec.codigos_excluidos_compra()
+
+    def clase_de(fila):
+        return (fila["abc"] + fila["xyz"]) if fila and fila["abc"] else ("SV" if fila else None)
+
+    def fila_clase(cod, alc):
+        return (clases.get(cod) or clases_extra.get(cod) or {}).get(alc)
+
+    # Una linea esta activa en una sucursal si alguno de sus productos es A o B ahi
+    linea_activa = set()
+    for clave, cods in miembros_linea.items():
+        for alc in SUCURSALES:
+            if any((clase_de(fila_clase(c, alc)) or "S")[0] in "AB" for c in cods):
+                linea_activa.add((alc, clave))
+    ORDEN = ["AX", "AY", "AZ", "BX", "BY", "BZ", "CX", "CY", "CZ", "SV"]
 
     productos = []
     exceso_suc = {s: 0.0 for s in SUCURSALES}
@@ -191,32 +249,58 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None,
         # Filtro por clasificacion: la clase de la empresa (la columna Clase)
         if clases_filtro and clase_emp not in clases_filtro:
             continue
+        prioritario = cod in linea_de
+        if solo_prioritarios and not prioritario:
+            continue
+        comp = complemento_de.get(cod) if complemento_importado else None
         emb, cup = int(p["emb"]), float(p["cup"])
         detalle, necesidad, exceso_si, necesidad_otros, exceso_todas = {}, 0, 0.0, 0, 0.0
         for s in SUCURSALES:
             r = por_alc.get(s)
+            rc = fila_clase(comp, s) if comp else None
             st, tr, vm = inv.get((s, cod), (0.0, 0.0, 0.0))
-            if r is None:
+            st_c, tr_c, vm_c = inv.get((s, comp), (0.0, 0.0, 0.0)) if comp else (0.0, 0.0, 0.0)
+            en_linea = complemento_linea and prioritario and (s, linea_de[cod]) in linea_activa
+            if r is None and rc is None and not en_linea:
                 if st > 0:
                     detalle[s] = {"clase": None, "envio": 0, "stock": st}
                 continue
-            clase = (r["abc"] + r["xyz"]) if r["abc"] else "SV"
+            # Con equivalente, manda la mejor clase de los dos codigos
+            clases_suc = [c for c in (clase_de(r), clase_de(rc)) if c]
+            clase = min(clases_suc, key=ORDEN.index) if clases_suc else "SV"
+            ref = r or rc
             if base != "datos_duros":
-                tot, sin_proy = demanda.get((s, cod), (0.0, 0.0))
-                u = sin_proy if base == "12m_sin_proyectos" else tot
+                u = 0.0
+                for cc in (cod, comp):
+                    if cc is None:
+                        continue
+                    tot, sin_proy = demanda.get((s, cc), (0.0, 0.0))
+                    u += sin_proy if base == "12m_sin_proyectos" else tot
                 # Producto nuevo: promedio sobre los meses desde su primera venta
                 meses = 12
-                pv = r["primera_venta"]
+                pvs = [x["primera_venta"] for x in (r, rc) if x and x["primera_venta"]]
+                pv = min(pvs) if pvs else None
                 if pv and pv > calc["desde"]:
                     meses = max(1, (calc["hasta"].year - pv.year) * 12 + calc["hasta"].month - pv.month + 1)
                 vm = u / meses
-            elif vm <= 0 and r["unidades"]:
-                vm = max(float(r["unidades"]), 0.0) / 12.0
-            meta = _meta_unidades(clase, r["ciclo"], vm, emb, meta_max, meta_menos)
-            disp = st + tr
+            else:
+                vm += vm_c
+                if vm <= 0 and ref and ref["unidades"]:
+                    vm = max(float(ref["unidades"]), 0.0) / 12.0
+            meta = _meta_unidades(clase, ref["ciclo"] if ref else "Sin venta", vm, emb, meta_max, meta_menos)
+            por_linea = False
+            piso = emb if piso_linea == "embalaje" else 1
+            if en_linea and meta < piso:
+                meta, por_linea = piso, True
+            disp = st + tr + st_c + tr_c
             falta = max(0.0, meta - disp)
-            cajas = math.ceil(round(falta / emb, 6)) if falta > 0 else 0
-            envio = cajas * emb
+            if piso_linea == "unidad":
+                # Se reparte por unidad desde San Isidro; el embalaje se
+                # redondea una sola vez en la compra de la empresa
+                envio = math.ceil(round(falta, 6)) if falta > 0 else 0
+            else:
+                cajas = math.ceil(round(falta / emb, 6)) if falta > 0 else 0
+                envio = cajas * emb
             exceso = max(0.0, disp - meta) if meta > 0 or clase in ("CZ", "SV") else 0.0
             exceso_todas += exceso
             if not sucs_filtro or s in sucs_filtro:
@@ -226,7 +310,8 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None,
                 exceso_si = exceso
             else:
                 necesidad_otros += envio
-            detalle[s] = {"clase": clase, "envio": envio, "stock": st, "meta": meta}
+            detalle[s] = {"clase": clase, "envio": envio, "stock": st, "meta": meta,
+                          "por_linea": por_linea, "stock_equivalente": st_c + tr_c}
         oc_u, oc_v = oc.get(cod, (0.0, 0.0))
         # Antes de comprar se despacha desde San Isidro lo que le sobra (o,
         # con traspasos="todas", lo que le sobra a cualquier sucursal: una
@@ -257,7 +342,9 @@ def get_sugerido_compra_pg(proveedor=None, marca=None, familia=None, clase=None,
             "codigo": cod, "descripcion": p["descripcion"], "marca": p["marca"], "familia": p["familia"],
             "proveedor": nombre_prov, "clase": clase_emp, "ciclo": emp["ciclo"] if emp else None,
             "embalaje": emb, "cup": cup, "sucursales": detalle, "necesidad": necesidad,
-            "desde_si": desde_si, "oc_en_camino": oc_u, "compra": compra, "cajas": compra // emb if emb else compra,
+            "desde_si": desde_si, "oc_en_camino": oc_u,
+            "prioritario": prioritario, "linea": linea_de.get(cod), "equivalente": comp,
+            "por_linea": any(v.get("por_linea") for v in detalle.values()), "compra": compra, "cajas": compra // emb if emb else compra,
             "valor": round(compra * cup, 0), "excluido": cod in excluidos,
         })
 

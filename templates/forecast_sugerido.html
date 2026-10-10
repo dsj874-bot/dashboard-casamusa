@@ -12,6 +12,9 @@
   .sg-barra { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 18px; }
   .sg-filtro { display: flex; flex-direction: column; gap: 4px; min-width: 190px; }
   .sg-filtro label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .sg-check { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text); padding-bottom: 8px; cursor: pointer; }
+  .estrella { color: var(--amber); margin-left: 4px; }
+  .suc small.linea { color: var(--amber); }
   .sg-periodo { margin-left: auto; font-size: 11.5px; color: var(--muted2); text-align: right; line-height: 1.4; }
 
   .sg-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
@@ -69,6 +72,7 @@
   <div class="sg-filtro"><label for="f-marca">Marca</label><select id="f-marca"></select></div>
   <div class="sg-filtro"><label for="f-familia">Familia</label><select id="f-familia"></select></div>
   <div class="sg-filtro"><label for="f-clase">Clasificación</label><select id="f-clase"></select></div>
+  <label class="sg-check"><input type="checkbox" id="f-prioritarios"> Solo prioritarios</label>
   <div class="sg-periodo" id="periodo">Cargando…</div>
 </div>
 
@@ -89,7 +93,10 @@
     <div class="sg-card-titulo">Cómo se calcula</div>
     <div class="sg-card-sub">
       En cada sucursal, la meta de stock es la venta mensual de la sucursal (promedio de los últimos 12 meses)
-      por los meses de la clase que tiene el producto <em>en esa sucursal</em>, con un máximo de 1,5 meses. Lo que falta se redondea a embalaje. Antes de comprar se
+      por los meses de la clase que tiene el producto <em>en esa sucursal</em>, con un máximo de 1,5 meses. San Isidro reparte por unidad
+      y la compra se redondea a embalaje. <strong>Complemento de línea:</strong> si una línea prioritaria se vende en la sucursal,
+      cada prioritario de esa línea queda con al menos 1 unidad. <strong>Importados:</strong> si el nacional tiene un equivalente en la
+      lista de prioritarios, se suman su venta y su stock. Antes de comprar se
       traspasa lo que les sobra a las otras sucursales (San Isidro incluida) sobre su meta, y se descuentan las OC de stock
       por recibir. Si filtras por sucursal, ves lo que le falta a esa sucursal, con la parte que le toca de los traspasos y las OC.
     </div>
@@ -129,6 +136,7 @@ let datos = null, filtrosListos = false, orden = { k: 'valor', dir: -1 };
 function qs() {
   const p = new URLSearchParams();
   ['sucursal', 'marca', 'familia', 'clase'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
+  if (document.getElementById('f-prioritarios').checked) p.set('prioritarios', '1');
   return p.toString();
 }
 
@@ -216,13 +224,14 @@ function pintarDetalle() {
   document.getElementById('det-titulo').textContent = `Detalle por producto · ${fmtN(filas.length)} productos`;
   document.getElementById('tbody-det').innerHTML = filas.length ? filas.map(p => `<tr>
       <td class="izq">${esc(p.codigo)}</td>
-      <td class="izq desc">${esc(p.descripcion)}</td>
+      <td class="izq desc">${esc(p.descripcion)}${p.prioritario ? `<span class="estrella" title="Prioritario · ${esc(p.linea || '')}">★</span>` : ''}${p.equivalente ? `<small style="display:block;color:var(--muted2)">equivalente ${esc(p.equivalente)}</small>` : ''}</td>
       <td class="izq">${esc(p.marca || '—')}</td>
       <td class="izq">${p.clase ? `<span class="pill ${TONO[p.clase] || 'media'}">${p.clase === 'SV' ? 'Sin venta' : p.clase}</span>` : '—'}</td>
       ${d.sucursales.map(s => {
         const x = p.sucursales[s.codigo];
         if (!x || !x.clase) return '<td class="cero">—</td>';
-        return `<td class="suc ${x.envio ? '' : 'cero'}">${x.envio ? fmtN(x.envio) : '0'}<small>${x.clase === 'SV' ? 'sin venta' : x.clase} · stock ${fmtN(x.stock)}</small></td>`;
+        const nota = x.por_linea ? '<small class="linea">complemento de línea</small>' : '';
+        return `<td class="suc ${x.envio ? '' : 'cero'}">${x.envio ? fmtN(x.envio) : '0'}<small>${x.clase === 'SV' ? 'sin venta' : x.clase} · stock ${fmtN(x.stock)}</small>${nota}</td>`;
       }).join('')}
       <td class="${p.desde_si ? '' : 'cero'}">${fmtN(p.desde_si)}</td>
       <td class="${p.oc_en_camino ? '' : 'cero'}">${fmtN(p.oc_en_camino)}</td>
@@ -232,6 +241,7 @@ function pintarDetalle() {
     </tr>`).join('') : '<tr><td class="vacio" colspan="14">Nada que comprar con estos filtros.</td></tr>';
 }
 
+document.getElementById('f-prioritarios').addEventListener('change', cargar);
 cargar();
 </script>
 {% endblock %}
