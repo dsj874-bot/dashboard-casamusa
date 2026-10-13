@@ -103,12 +103,12 @@
   <div class="ct-grid ancho-izq">
     <div class="ct-card">
       <div class="ct-card-titulo">Por tamaño de la cotización</div>
-      <div class="ct-card-sub">Mientras más grande la cotización, menos se cierra. Las de más de $20 MM son proyectos en licitación.</div>
+      <div class="ct-card-sub">Mientras más grande la cotización, menos convierte. Las de más de $20 MM son proyectos en licitación.</div>
       <div class="ct-wrap"><table class="ct-tabla" id="emb-tramos"></table></div>
     </div>
     <div class="ct-card">
       <div class="ct-card-titulo">Mes a mes</div>
-      <div class="ct-card-sub">Barras: facturado desde cotización. Línea: % de cotizaciones que se cierran.</div>
+      <div class="ct-card-sub">Barras: facturado desde cotización. Línea: conversión (facturado ÷ cotizado).</div>
       <div style="position:relative;height:230px"><canvas id="emb-chart"></canvas></div>
     </div>
   </div>
@@ -129,7 +129,7 @@
   <div class="ct-kpis cuatro" id="seg-kpis"></div>
   <div class="ct-card">
     <div class="ct-card-titulo">Cotizaciones abiertas de la última semana</div>
-    <div class="ct-card-sub" id="seg-sub">Clientes con nombre, sin pedido ni factura. Después del día 7 solo se cierra el 5%: este es el momento de llamar. Haz click en una fila para ver sus líneas y el stock.</div>
+    <div class="ct-card-sub" id="seg-sub">Clientes con nombre, sin pedido ni factura. Después del día 7 solo el 5% termina en factura: este es el momento de llamar. Haz click en una fila para ver sus líneas y el stock.</div>
     <div class="ct-wrap alto"><table class="ct-tabla" id="seg-tabla"></table></div>
   </div>
 </div>
@@ -138,7 +138,7 @@
 <div class="ct-panel" id="panel-perdidas">
   <div class="ct-kpis cuatro" id="per-kpis"></div>
   <div class="ct-card">
-    <div class="ct-card-titulo">Productos con más monto cotizado sin cerrar</div>
+    <div class="ct-card-titulo">Productos con más monto cotizado sin facturar</div>
     <div class="ct-card-sub">Líneas sin pedido ni factura, en cotizaciones de hasta $20 MM. El stock es el de hoy.</div>
     <div class="ct-wrap alto"><table class="ct-tabla" id="per-productos"></table></div>
   </div>
@@ -241,24 +241,24 @@ async function cargarEmbudo() {
     return;
   }
   kpis('emb-kpis', [
-    ['Cotizaciones', fmtN(t.cot), `${fmtN(t.cerradas)} terminaron en factura`],
-    ['Se cierran', fmtP(t.pct_cierre), 'de las cotizaciones', t.pct_cierre >= 60 ? 'bien' : 'medio'],
+    ['Cotizaciones', fmtN(t.cot), 'en el período'],
     ['Cotizado', fmtMM(t.cotizado), `${fmtP(t.pct_proyectos)} en proyectos de más de $20 MM`],
-    ['Facturado', fmtMM(t.facturado), `${fmtP(t.conv_monto)} del monto cotizado`],
-    ['Conversión catálogo', fmtP(t.conv_catalogo), 'sin no creados ni proyectos'],
-    ['Mismo día', fmtP(t.pct_mismo_dia), 'de las cerradas se factura el día que se cotiza'],
+    ['Facturado', fmtMM(t.facturado), 'de lo cotizado'],
+    ['Conversión', fmtP(t.conv_monto), 'facturado ÷ cotizado', 'bien'],
+    ['Conversión catálogo', fmtP(t.conv_catalogo), 'sin no creados ni proyectos de más de $20 MM'],
+    ['Mismo día', fmtP(t.pct_mismo_dia), 'de lo vendido se factura el día que se cotiza'],
   ]);
-  tabla('emb-tramos', [['Monto', 1], ['Cotiz.'], ['Se cierran'], ['Cotizado'], ['Facturado'], ['Conv. $']],
-    d.tramos.map(r => `<tr><td class="izq">${r.nombre}</td><td>${fmtN(r.cot)}</td><td>${barra(r.pct_cierre)}</td>
-      <td>${fmtMM(r.cotizado)}</td><td class="fuerte">${fmtMM(r.facturado)}</td><td>${fmtP(r.conv_monto)}</td></tr>`));
-  tabla('emb-sucursales', [['Sucursal', 1], ['Cotiz.'], ['Se cierran'], ['Cotizado'], ['Facturado'], ['Conv. $'], ['Conv. catálogo'], ['% en cotiz. con no creados'], ['Pedido sin factura']],
-    d.sucursales.map(r => `<tr><td class="izq">${esc(r.nombre)}</td><td>${fmtN(r.cot)}</td><td>${barra(r.pct_cierre)}</td>
-      <td>${fmtMM(r.cotizado)}</td><td>${fmtMM(r.facturado)}</td><td>${fmtP(r.conv_monto)}</td>
+  tabla('emb-tramos', [['Monto', 1], ['Cotiz.'], ['Cotizado'], ['Facturado'], ['Conversión']],
+    d.tramos.map(r => `<tr><td class="izq">${r.nombre}</td><td>${fmtN(r.cot)}</td>
+      <td>${fmtMM(r.cotizado)}</td><td class="fuerte">${fmtMM(r.facturado)}</td><td>${barra(r.conv_monto)}</td></tr>`));
+  tabla('emb-sucursales', [['Sucursal', 1], ['Cotiz.'], ['Cotizado'], ['Facturado'], ['Conversión'], ['Conv. catálogo'], ['% en cotiz. con no creados'], ['Pedido sin factura']],
+    d.sucursales.map(r => `<tr><td class="izq">${esc(r.nombre)}</td><td>${fmtN(r.cot)}</td>
+      <td>${fmtMM(r.cotizado)}</td><td>${fmtMM(r.facturado)}</td><td>${barra(r.conv_monto)}</td>
       <td class="fuerte">${fmtP(r.conv_catalogo)}</td><td>${fmtP(r.pct_nocre)}</td><td>${fmtN(r.pedido_sin_factura)}</td></tr>`));
-  tabla('emb-vendedores', [['Vendedor', 1], ['Sucursal', 1], ['Cotiz.'], ['Se cierran'], ['Cotizado'], ['Facturado'], ['Conv. $'], ['Conv. catálogo'], ['% en cotiz. con no creados']],
+  tabla('emb-vendedores', [['Vendedor', 1], ['Sucursal', 1], ['Cotiz.'], ['Cotizado'], ['Facturado'], ['Conversión'], ['Conv. catálogo'], ['% en cotiz. con no creados']],
     d.vendedores.filter(r => r.cot >= 10).map(r => `<tr><td class="izq">${esc(titulo(r.nombre))}</td><td class="izq muted">${esc(r.sucursal)}</td>
-      <td>${fmtN(r.cot)}</td><td>${barra(r.pct_cierre)}</td><td>${fmtMM(r.cotizado)}</td><td>${fmtMM(r.facturado)}</td>
-      <td>${fmtP(r.conv_monto)}</td><td class="fuerte">${fmtP(r.conv_catalogo)}</td><td>${fmtP(r.pct_nocre)}</td></tr>`));
+      <td>${fmtN(r.cot)}</td><td>${fmtMM(r.cotizado)}</td><td>${fmtMM(r.facturado)}</td>
+      <td>${barra(r.conv_monto)}</td><td class="fuerte">${fmtP(r.conv_catalogo)}</td><td>${fmtP(r.pct_nocre)}</td></tr>`));
 
   const etiquetas = d.meses.map(m => MESES[Number(m.mes.slice(5, 7))] + ' ' + m.mes.slice(2, 4));
   if (chart) chart.destroy();
@@ -267,17 +267,17 @@ async function cargarEmbudo() {
       labels: etiquetas,
       datasets: [
         { type: 'bar', label: 'Facturado (MM)', data: d.meses.map(m => m.facturado / 1e6), backgroundColor: css('--accent') + 'aa', yAxisID: 'y' },
-        { type: 'line', label: '% se cierran', data: d.meses.map(m => m.pct_cierre), borderColor: css('--amber'), backgroundColor: css('--amber'), yAxisID: 'y1', tension: .3 },
+        { type: 'line', label: 'Conversión', data: d.meses.map(m => m.conv_monto), borderColor: css('--amber'), backgroundColor: css('--amber'), yAxisID: 'y1', tension: .3 },
       ],
     },
     options: {
       maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       plugins: { legend: { labels: { color: css('--muted2'), boxWidth: 12 } },
-                 tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'y1' ? ` ${fmtP(c.raw)} se cierran` : ` $${fmtN(c.raw)} MM facturado` } } },
+                 tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'y1' ? ` ${fmtP(c.raw)} de conversión` : ` $${fmtN(c.raw)} MM facturado` } } },
       scales: {
         x: { ticks: { color: css('--muted2') }, grid: { display: false } },
         y: { ticks: { color: css('--muted2'), callback: v => '$' + v }, grid: { color: css('--border') } },
-        y1: { position: 'right', min: 0, max: 100, ticks: { color: css('--muted2'), callback: v => v + '%' }, grid: { display: false } },
+        y1: { position: 'right', min: 0, suggestedMax: 40, ticks: { color: css('--muted2'), callback: v => v + '%' }, grid: { display: false } },
       },
     },
   });
@@ -336,18 +336,19 @@ async function cargarPerdidas() {
   const s = d.stock;
   const pct = (a, b) => b ? 100 * a / b : null;
   kpis('per-kpis', [
-    ['Cotizado sin cerrar', fmtMM(s.monto), `${fmtN(s.lineas)} líneas sin pedido ni factura`],
+    ['Cotizado sin facturar', fmtMM(s.monto), `${fmtN(s.lineas)} líneas sin pedido ni factura`],
     ['Había stock en la sucursal', fmtP(pct(s.monto_con_stock, s.monto)), `${fmtMM(s.monto_con_stock)}: se perdió por otra razón`],
     ['Estaba en San Isidro', fmtP(pct(s.monto_en_si, s.monto)), `${fmtMM(s.monto_en_si)} que no llegó a la sucursal`, 'medio'],
     ['Sin stock en la empresa', fmtP(pct(s.monto_sin_stock, s.monto)), `${fmtMM(s.monto_sin_stock)}: falta compra`, 'alerta'],
   ]);
-  tabla('per-productos', [['Código', 1], ['Producto', 1], ['Marca', 1], ['Clientes'], ['Perdido'], ['% sin cerrar'], ['Stock empresa'], ['Stock San Isidro'], ['Venta mensual']],
+  tabla('per-productos', [['Código', 1], ['Producto', 1], ['Marca', 1], ['Clientes'], ['Sin facturar'], ['% sin facturar'], ['Stock empresa'], ['Stock San Isidro'], ['Venta mensual']],
     d.productos.map(r => `<tr><td class="izq">${r.codigo}</td><td class="izq desc">${esc(r.descripcion)}</td><td class="izq muted">${esc(r.marca)}</td>
       <td>${fmtN(r.clientes)}</td><td>${fmt$(r.perdido)}</td><td>${fmtP(r.pct_perdido)}</td>
       <td>${r.stock <= 0 ? '<span class="pill rojo">sin stock</span>' : fmtN(r.stock)}</td><td>${fmtN(r.stock_si)}</td><td>${fmtN(r.venta_mensual)}</td></tr>`));
-  tabla('per-clientes', [['Cliente', 1], ['Cotiz.'], ['Se cierran'], ['Cotizado'], ['Facturado'], ['Sin cerrar'], ['Con no creados']],
-    d.clientes.map(r => `<tr><td class="izq desc">${esc(titulo(r.nombre))}</td><td>${fmtN(r.cot)}</td><td>${barra(r.pct_cierre)}</td>
-      <td>${fmtMM(r.cotizado)}</td><td>${fmtMM(r.facturado)}</td><td>${fmtMM(r.perdido)}</td><td>${fmtN(r.con_nocre)}</td></tr>`));
+  tabla('per-clientes', [['Cliente', 1], ['Cotiz.'], ['Cotizado'], ['Facturado'], ['Conversión'], ['Sin facturar'], ['Con no creados']],
+    d.clientes.map(r => `<tr><td class="izq desc">${esc(titulo(r.nombre))}</td><td>${fmtN(r.cot)}</td>
+      <td>${fmtMM(r.cotizado)}</td><td>${fmtMM(r.facturado)}</td><td>${barra(r.cotizado ? 100 * r.facturado / r.cotizado : null)}</td>
+      <td>${fmtMM(r.perdido)}</td><td>${fmtN(r.con_nocre)}</td></tr>`));
 }
 
 // ══════════ NO CREADOS ══════════

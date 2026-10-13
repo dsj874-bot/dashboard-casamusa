@@ -1122,6 +1122,9 @@ una fila por línea cotizada (`COLUMNAS_ERP`).
 - **Proyecto:** cotización de más de $20 MM.
 - **Catálogo:** hasta $20 MM y sin no creados. Es la conversión
   comparable entre sucursales.
+- **En pantalla solo se muestra la conversión en $** (facturado ÷ cotizado).
+  El usuario pidió sacar "Se cierran" (% de cotizaciones con factura) porque
+  confundía tener dos porcentajes (2026-10-13). `pct_cierre` sigue en la API.
 
 **Seguimiento:** usa los últimos 7 días DEL REPORTE (no de hoy), solo
 clientes con nombre (excluye `CB-*` y `C9999999-3`). Pasado el día 7 solo
