@@ -275,7 +275,17 @@ PREFIJOS_RESTRINGIDOS_ADQUISICIONES = (
 # Solicitudes de Control de Inventario: por ahora solo dsepulveda las prueba
 # en musa360.cl (decision del usuario 2026-10-10). Para abrirlas, sumar aqui
 # a C. Aliaga (ECI) y a los jefes de sucursal.
-USUARIOS_SOLICITUDES = {"dsepulveda@casamusa.cl"}
+# 2026-10-13: se suma Catalina Aliaga (ECI), pedido del usuario.
+USUARIOS_SOLICITUDES = {"dsepulveda@casamusa.cl", "caliaga@casamusa.cl"}
+
+# Logistica: la gerencia y Catalina Aliaga (pedido del usuario 2026-10-13).
+# Antes estaba en PREFIJOS_SOLO_GERENCIA; ahora tiene su propio set, igual
+# que Inventario/Adquisiciones.
+USUARIOS_LOGISTICA = {
+    "dsepulveda@casamusa.cl", "emusa@casamusa.cl", "fmusa@casamusa.cl",
+    "malvarado@casamusa.cl", "jsantana@casamusa.cl", "caliaga@casamusa.cl",
+}
+PREFIJOS_RESTRINGIDOS_LOGISTICA = ("/logistica", "/api/logistica")
 PREFIJOS_RESTRINGIDOS_SOLICITUDES = ("/solicitudes", "/api/solicitudes")
 
 PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA = (
@@ -297,6 +307,8 @@ def _restringir_inventario_adquisiciones():
         permitidos = USUARIOS_FORECAST
     elif path.startswith(PREFIJOS_RESTRINGIDOS_SOLICITUDES):
         permitidos = USUARIOS_SOLICITUDES
+    elif path.startswith(PREFIJOS_RESTRINGIDOS_LOGISTICA):
+        permitidos = USUARIOS_LOGISTICA
     else:
         return None
     if "usuario" not in session:
@@ -342,7 +354,7 @@ USUARIOS_GERENCIA = {
     "malvarado@casamusa.cl", "jsantana@casamusa.cl",
 }
 
-PREFIJOS_SOLO_GERENCIA = ("/finanzas", "/logistica", "/api/logistica", "/bodega", "/forecast", "/api/forecast", "/tareas")
+PREFIJOS_SOLO_GERENCIA = ("/finanzas", "/bodega", "/forecast", "/api/forecast")
 
 
 # Cuenta de vendedor: solo estas rutas, todo lo demas redirige a su Vta
@@ -407,7 +419,7 @@ def inject_es_admin():
         # que NO caiga en esos prefijos ya restringidos es Comercial.
         "es_pantalla_comercial": not request.path.startswith(
             PREFIJOS_RESTRINGIDOS_INVENTARIO + PREFIJOS_RESTRINGIDOS_ADQUISICIONES + PREFIJOS_SOLO_GERENCIA
-            + PREFIJOS_RESTRINGIDOS_SOLICITUDES
+            + PREFIJOS_RESTRINGIDOS_SOLICITUDES + PREFIJOS_RESTRINGIDOS_LOGISTICA
         ),
         # Resumen de Adquisiciones tiene su propio "Datos al", separado
         # del de Ventas (ver _fecha_corte_adq_sesion()).
@@ -552,7 +564,6 @@ AREAS = [
     {"slug": "logistica",     "nombre": "Logística",     "icono": "🚚", "url": "/logistica",     "activo": True},
     {"slug": "bodega",        "nombre": "Bodega",        "icono": "🏭", "url": "/bodega",        "activo": False},
     {"slug": "forecast",      "nombre": "Forecast",      "icono": "🔮", "url": "/forecast",      "activo": True},
-    {"slug": "tareas",        "nombre": "Tareas Pendientes de Gerencia", "icono": "📋", "url": "/tareas", "activo": False},
     {"slug": "solicitudes",   "nombre": "Solicitudes de Inventario", "icono": "📝", "url": "/solicitudes",   "activo": True},
 ]
 
@@ -571,14 +582,16 @@ def inicio():
             a for a in AREAS
             if a["slug"] == "comercial"
             or (a["slug"] == "solicitudes" and usuario in USUARIOS_SOLICITUDES)
+            or (a["slug"] == "logistica" and usuario in USUARIOS_LOGISTICA)
             or (a["slug"] == "inventario" and usuario in USUARIOS_INVENTARIO)
             or (a["slug"] == "adquisiciones" and usuario in USUARIOS_ADQUISICIONES)
         ]
     else:
         areas_visibles = [
             a for a in AREAS
-            if a["slug"] not in ("inventario", "adquisiciones", "forecast", "solicitudes")
+            if a["slug"] not in ("inventario", "adquisiciones", "forecast", "solicitudes", "logistica")
             or (a["slug"] == "solicitudes" and usuario in USUARIOS_SOLICITUDES)
+            or (a["slug"] == "logistica" and usuario in USUARIOS_LOGISTICA)
             or (a["slug"] == "inventario" and usuario in USUARIOS_INVENTARIO)
             or (a["slug"] == "adquisiciones" and usuario in USUARIOS_ADQUISICIONES)
             or (a["slug"] == "forecast" and usuario in USUARIOS_FORECAST)
@@ -1644,10 +1657,6 @@ def forecast():
     return redirect(url_for("forecast_nivel_servicio"))
 
 
-@app.route("/tareas")
-@login_requerido
-def tareas():
-    return _area_en_construccion("tareas")
 
 
 @app.route("/logout")
