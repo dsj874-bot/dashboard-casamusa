@@ -39,7 +39,8 @@
   .ct-kpi-valor.alerta { color: var(--red); } .ct-kpi-valor.medio { color: var(--amber); } .ct-kpi-valor.bien { color: var(--accent); }
 
   .ct-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; margin-bottom: 18px; }
-  @media (max-width: 1100px) { .ct-grid { grid-template-columns: 1fr; } }
+  .ct-grid.ancho-izq { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+  @media (max-width: 1100px) { .ct-grid, .ct-grid.ancho-izq { grid-template-columns: 1fr; } }
   .ct-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; min-width: 0; margin-bottom: 18px; }
   .ct-grid .ct-card { margin-bottom: 0; }
   .ct-card-titulo { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
@@ -65,6 +66,7 @@
   .barra { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
   .barra .bg { width: 60px; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
   .barra .fg { height: 6px; border-radius: 3px; background: var(--accent); }
+  #emb-tramos .barra .bg { width: 36px; }
   .pill { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; margin-left: 4px; }
   .pill.rojo { background: rgba(239,68,68,.14); color: var(--red); }
   .pill.ambar { background: rgba(245,158,11,.16); color: var(--amber); }
@@ -98,7 +100,7 @@
 <!-- ══════════ EMBUDO ══════════ -->
 <div class="ct-panel activo" id="panel-embudo">
   <div class="ct-kpis" id="emb-kpis"></div>
-  <div class="ct-grid">
+  <div class="ct-grid ancho-izq">
     <div class="ct-card">
       <div class="ct-card-titulo">Por tamaño de la cotización</div>
       <div class="ct-card-sub">Mientras más grande la cotización, menos se cierra. Las de más de $20 MM son proyectos en licitación.</div>
@@ -246,9 +248,9 @@ async function cargarEmbudo() {
     ['Conversión catálogo', fmtP(t.conv_catalogo), 'sin no creados ni proyectos'],
     ['Mismo día', fmtP(t.pct_mismo_dia), 'de las cerradas se factura el día que se cotiza'],
   ]);
-  tabla('emb-tramos', [['Monto', 1], ['Cotiz.'], ['Se cierran'], ['Cotizado'], ['Conv. $']],
+  tabla('emb-tramos', [['Monto', 1], ['Cotiz.'], ['Se cierran'], ['Cotizado'], ['Facturado'], ['Conv. $']],
     d.tramos.map(r => `<tr><td class="izq">${r.nombre}</td><td>${fmtN(r.cot)}</td><td>${barra(r.pct_cierre)}</td>
-      <td>${fmtMM(r.cotizado)}</td><td>${fmtP(r.conv_monto)}</td></tr>`));
+      <td>${fmtMM(r.cotizado)}</td><td class="fuerte">${fmtMM(r.facturado)}</td><td>${fmtP(r.conv_monto)}</td></tr>`));
   tabla('emb-sucursales', [['Sucursal', 1], ['Cotiz.'], ['Se cierran'], ['Cotizado'], ['Facturado'], ['Conv. $'], ['Conv. catálogo'], ['% en cotiz. con no creados'], ['Pedido sin factura']],
     d.sucursales.map(r => `<tr><td class="izq">${esc(r.nombre)}</td><td>${fmtN(r.cot)}</td><td>${barra(r.pct_cierre)}</td>
       <td>${fmtMM(r.cotizado)}</td><td>${fmtMM(r.facturado)}</td><td>${fmtP(r.conv_monto)}</td>
