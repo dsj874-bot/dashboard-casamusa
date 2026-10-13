@@ -1089,6 +1089,49 @@ que las documenta a todas.
 | /clientes | clientes.html | get_ventas_por_cliente() (top 15) |
 | /productos | productos.html | get_ventas_por_producto() (top 15) |
 
+## Cotizaciones (2026-10-13, migración 018)
+Pantalla `/cotizaciones` (Comercial → Análisis, solo `USUARIOS_COTIZACIONES`
+= gerencia) con 4 pestañas: Embudo, Seguimiento, Perdidas y No creados.
+Datos en `data_loader_cotizaciones_pg.py`, tablas `cotizacion_linea` y
+`cotizacion_carga`. Nació de un análisis previo: el informe está en
+`data/comercial/Cotizaciones/Informe_Cotizaciones_2026.pdf`.
+
+**Fuente:** el reporte de cotizaciones del ERP, un `.xlsx` por mes con
+una fila por línea cotizada (`COLUMNAS_ERP`).
+- `Nro_Factura_Boleta` = `v_ventas.doc_sap`, NO el folio. Cruza al 100%,
+  así que la conversión sale de la propia cotización, sin aproximar.
+
+**Carga:** `/subir_cotizaciones` (admin + gerencia).
+- El Excel se lee en el navegador (SheetJS) y se manda en partes de
+  ~4000 filas a `/api/subir_cotizaciones`.
+- Motivo: Vercel corta cuerpos sobre 4,5 MB y el reporte de enero 2026
+  pesa 4,7 MB.
+- Cada parte trae cotizaciones completas y `cargar_parte()` borra y
+  reinserta por N° de cotización. Volver a subir un mes lo actualiza sin
+  duplicar.
+- Carga masiva local: `python scripts/cargar_cotizaciones.py` (lee
+  `data/comercial/Cotizaciones/*_Cotizaciones.xlsx`).
+
+**Definiciones**, mismas del análisis:
+- **Cerrada:** al menos una línea con factura.
+- **Facturado:** total cotizado de las líneas con factura. El precio
+  facturado = cotizado en el 99,8% de las líneas.
+- **No creado:** códigos 100000/100005 (marca SERV). Si el cliente
+  acepta, se crea un código especial 6xxxxx y se factura con ese código,
+  por eso el 100000 nunca aparece facturado.
+- **Proyecto:** cotización de más de $20 MM.
+- **Catálogo:** hasta $20 MM y sin no creados. Es la conversión
+  comparable entre sucursales.
+
+**Seguimiento:** usa los últimos 7 días DEL REPORTE (no de hoy), solo
+clientes con nombre (excluye `CB-*` y `C9999999-3`). Pasado el día 7 solo
+se cierra el 5%. Sirve de verdad solo si el mes en curso se sube a diario.
+
+**Stock:** `inventario_stock` trae solo la foto de hoy, sin histórico.
+- "Perdidas" mide con ese stock, así que sirve para períodos recientes.
+- La bodega "Todas" viene en 0/NaN: el total de la empresa es la suma de
+  las 6 sucursales.
+
 ## Páginas en construcción (pendiente)
 - /datos — Vista de Datos (explorador de transacciones crudas, con
   filtros + búsqueda; diseño aún no definido con el usuario). La ruta

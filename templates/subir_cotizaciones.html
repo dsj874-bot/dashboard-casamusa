@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block title %}Subir Cotizaciones{% endblock %}
+{% block page_title %}Subir Cotizaciones{% endblock %}
+{% block page_subtitle %}Reporte de cotizaciones del ERP: alimenta la pantalla Cotizaciones{% endblock %}
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .subir-wrap { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+  .bloque-titulo { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .bloque-sub { font-size: 12px; color: var(--muted2); margin-bottom: 14px; line-height: 1.5; }
+  .drop-zone {
+    background: var(--surface); border: 2px dashed var(--border); border-radius: 14px;
+    padding: 36px 24px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;
+  }
+  .drop-zone.dragover { border-color: var(--accent); background: rgba(34,163,71,0.08); }
+  .drop-zone:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .drop-zone .icono { font-size: 32px; margin-bottom: 10px; }
+  .drop-zone .titulo { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .drop-zone .detalle { font-size: 12px; color: var(--muted2); }
+  .drop-zone input[type="file"] { display: none; }
+  .archivos { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .archivo {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 14px; font-size: 13px;
+  }
+  .archivo .nombre { color: var(--text); font-weight: 600; }
+  .archivo .estado { color: var(--muted2); font-size: 12px; text-align: right; }
+  .archivo .estado.ok { color: var(--accent); }
+  .archivo .estado.error { color: var(--red); }
+  .progreso { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; margin-top: 6px; }
+  .progreso div { height: 6px; background: var(--accent); width: 0; transition: width .2s; }
+  .btn-subir {
+    padding: 11px 20px; background: var(--accent); color: #fff; border: none;
+    border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 10px;
+  }
+  .btn-subir:disabled { opacity: 0.5; cursor: not-allowed; }
+  .tabla-estado { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .tabla-estado th {
+    text-align: right; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px;
+    color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .tabla-estado th:first-child, .tabla-estado td:first-child { text-align: left; }
+  .tabla-estado td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="subir-wrap">
+  <div class="chart-card">
+    <div class="bloque-titulo">📝 Reporte de cotizaciones del ERP</div>
+    <div class="bloque-sub">
+      El Excel tal como sale del ERP (una fila por línea cotizada, con su pedido, entrega y factura).
+      Puedes subir uno o varios meses a la vez. Volver a subir un mes lo actualiza: las cotizaciones del
+      archivo se reemplazan, así que los pedidos y facturas nuevos quedan al día sin duplicar.
+      Para el seguimiento diario conviene subir el mes en curso todos los días.
+    </div>
+    <div class="drop-zone" id="drop" tabindex="0" role="button" aria-label="Elegir archivos de cotizaciones">
+      <input type="file" id="input" accept=".xlsx" multiple>
+      <div class="icono">⬆️</div>
+      <div class="titulo">Arrastra aquí los reportes de cotizaciones</div>
+      <div class="detalle">o haz click para elegirlos (.xlsx)</div>
+    </div>
+    <div class="archivos" id="archivos"></div>
+    <button class="btn-subir" id="btn-subir" disabled>Subir</button>
+  </div>
+
+  <div class="chart-card">
+    <div class="bloque-titulo">Meses cargados</div>
+    <div class="bloque-sub" id="ultima-carga">Cargando…</div>
+    <div style="overflow-x:auto;">
+      <table class="tabla-estado">
+        <thead><tr><th>Mes</th><th>Cotizaciones</th><th>Líneas</th><th>Cotizado</th><th>Hasta</th></tr></thead>
+        <tbody id="tbody-meses"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const COLUMNAS = {{ columnas | tojson }};
+const COLS_FECHA = new Set(['Fecha_Cotizacion', 'Fecha_Pedido', 'Fecha_Entrega', 'Fecha_Factura_Boleta']);
+const FILAS_POR_PARTE = 4000;
+const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmtN = v => Number(v || 0).toLocaleString('es-CL');
+const fmtMM = v => '$' + Math.round((v || 0) / 1e6).toLocaleString('es-CL') + ' MM';
+const fmtF = iso => iso ? iso.slice(0, 10).split('-').reverse().join('-') : '—';
+let elegidos = [];
+
+// Fecha de Excel (numero de serie) o texto -> 'AAAA-MM-DD', sin corrimiento por zona horaria
+function aFecha(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') {
+    const d = new Date(Math.round((v - 25569) * 86400000));
+    return d.toISOString().slice(0, 10);
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return s;
+}
+
+async function leerExcel(archivo) {
+  const wb = XLSX.read(await archivo.arrayBuffer(), { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const filas = XLSX.utils.sheet_to_json(ws, { defval: null, raw: true });
+  if (!filas.length) throw new Error('El archivo no trae filas.');
+  const faltan = COLUMNAS.filter(c => !(c in filas[0]));
+  if (faltan.length) throw new Error('No es el reporte de cotizaciones del ERP. Faltan columnas: ' + faltan.join(', '));
+  const salida = filas.map(f => COLUMNAS.map(c => COLS_FECHA.has(c) ? aFecha(f[c]) : f[c]));
+  salida.sort((a, b) => a[0] - b[0]);
+  return salida;
+}
+
+// Partes de ~4000 filas sin cortar una cotizacion por la mitad
+function partir(filas) {
+  const partes = [];
+  let i = 0;
+  while (i < filas.length) {
+    let j = Math.min(i + FILAS_POR_PARTE, filas.length);
+    while (j < filas.length && filas[j][0] === filas[j - 1][0]) j++;
+    partes.push(filas.slice(i, j));
+    i = j;
+  }
+  return partes;
+}
+
+function pintarArchivos() {
+  document.getElementById('archivos').innerHTML = elegidos.map((a, k) => `
+    <div class="archivo"><div style="flex:1;min-width:0">
+      <div class="nombre">${esc(a.file.name)}</div>
+      <div class="progreso"><div id="prog-${k}" style="width:${a.pct || 0}%"></div></div></div>
+      <div class="estado ${a.clase || ''}" id="est-${k}">${esc(a.estado || 'Listo para subir')}</div></div>`).join('');
+  document.getElementById('btn-subir').disabled = !elegidos.length;
+}
+
+function elegir(lista) {
+  elegidos = Array.from(lista).filter(f => f.name.toLowerCase().endsWith('.xlsx')).map(f => ({ file: f }));
+  pintarArchivos();
+}
+
+function estado(k, texto, clase, pct) {
+  Object.assign(elegidos[k], { estado: texto, clase, pct: pct ?? elegidos[k].pct });
+  document.getElementById('est-' + k).textContent = texto;
+  document.getElementById('est-' + k).className = 'estado ' + (clase || '');
+  if (pct != null) document.getElementById('prog-' + k).style.width = pct + '%';
+}
+
+async function subirArchivo(k) {
+  const a = elegidos[k];
+  estado(k, 'Leyendo el Excel…', '', 3);
+  const filas = await leerExcel(a.file);
+  const partes = partir(filas);
+  let tot = { filas: 0, cotizaciones: 0, fecha_min: null, fecha_max: null };
+  for (let p = 0; p < partes.length; p++) {
+    estado(k, `Subiendo parte ${p + 1} de ${partes.length}…`, '', 5 + 95 * p / partes.length);
+    const r = await fetch('/api/subir_cotizaciones', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filas: partes[p] }),
+    });
+    const d = await r.json().catch(() => ({ ok: false, msg: `Error ${r.status} del servidor` }));
+    if (!d.ok) throw new Error(d.msg || 'Error al subir');
+    tot.filas += d.filas; tot.cotizaciones += d.cotizaciones;
+    if (!tot.fecha_min || d.fecha_min < tot.fecha_min) tot.fecha_min = d.fecha_min;
+    if (!tot.fecha_max || d.fecha_max > tot.fecha_max) tot.fecha_max = d.fecha_max;
+  }
+  await fetch('/api/subir_cotizaciones/fin', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ archivo: a.file.name, ...tot }),
+  });
+  estado(k, `${fmtN(tot.cotizaciones)} cotizaciones, ${fmtF(tot.fecha_min)} a ${fmtF(tot.fecha_max)}`, 'ok', 100);
+}
+
+document.getElementById('btn-subir').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-subir');
+  btn.disabled = true; btn.textContent = 'Subiendo…';
+  for (let k = 0; k < elegidos.length; k++) {
+    if (elegidos[k].clase === 'ok') continue;
+    try { await subirArchivo(k); }
+    catch (e) { estado(k, e.message, 'error'); }
+  }
+  btn.textContent = 'Subir'; btn.disabled = false;
+  cargarEstado();
+});
+
+const drop = document.getElementById('drop'), input = document.getElementById('input');
+drop.addEventListener('click', () => input.click());
+drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+input.addEventListener('change', () => elegir(input.files));
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('dragover'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('dragover'); }));
+drop.addEventListener('drop', e => elegir(e.dataTransfer.files));
+
+async function cargarEstado() {
+  try {
+    const d = await fetch('/api/cotizaciones/estado_cargas').then(r => r.json());
+    if (!d.ok) throw new Error(d.msg);
+    const u = d.cargas[0];
+    document.getElementById('ultima-carga').innerHTML = u
+      ? `Última carga: <strong>${esc(u.archivo)}</strong> el ${new Date(u.cargado_en).toLocaleString('es-CL')} por ${esc(u.cargado_por || '—')}`
+      : 'Todavía no hay cotizaciones cargadas.';
+    document.getElementById('tbody-meses').innerHTML = d.meses.map(m => {
+      const [y, mm] = m.mes.split('-');
+      return `<tr><td>${MESES[Number(mm)]} ${y}</td><td>${fmtN(m.cotizaciones)}</td><td>${fmtN(m.lineas)}</td>
+        <td>${fmtMM(m.cotizado)}</td><td>${fmtF(m.hasta)}</td></tr>`;
+    }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted2)">Sin datos</td></tr>';
+  } catch (e) {
+    document.getElementById('ultima-carga').textContent = 'No se pudo leer el estado: ' + e.message;
+  }
+}
+cargarEstado();
+</script>
+{% endblock %}

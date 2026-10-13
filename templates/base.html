@@ -805,6 +805,11 @@
     <a href="/productos" class="nav-item {% if active == 'productos' %}active{% endif %}">
       <span class="nav-icon">🔩</span><span class="nav-label"> Por Producto</span>
     </a>
+    {% if puede_ver_cotizaciones %}
+    <a href="/cotizaciones" class="nav-item {% if active == 'cotizaciones' %}active{% endif %}">
+      <span class="nav-icon">📝</span><span class="nav-label"> Cotizaciones</span>
+    </a>
+    {% endif %}
 
     {% if es_admin %}
     <div class="nav-section-title">Administración</div>
@@ -826,6 +831,11 @@
     <a href="/subir_margen_erp" class="nav-item {% if active == 'subir_margen_erp' %}active{% endif %}">
       <span class="nav-icon">📑</span><span class="nav-label"> Margen ERP</span>
     </a>
+    {% if puede_ver_cotizaciones %}
+    <a href="/subir_cotizaciones" class="nav-item {% if active == 'subir_cotizaciones' %}active{% endif %}">
+      <span class="nav-icon">⬆️</span><span class="nav-label"> Subir Cotizaciones</span>
+    </a>
+    {% endif %}
     {% elif puede_cargar_ne %}
     <div class="nav-section-title">Administración</div>
     <a href="/cargar_ne" class="nav-item {% if active == 'cargar_ne' %}active{% endif %}">

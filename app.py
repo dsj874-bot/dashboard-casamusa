@@ -75,6 +75,8 @@ import data_loader_sugerido_pg
 import data_loader_logistica
 # Solicitudes de Control de Inventario (migracion 017)
 import data_loader_solicitudes_pg
+# Cotizaciones del ERP: embudo, seguimiento, perdidas y no creados (migracion 018)
+import data_loader_cotizaciones_pg
 
 # ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
@@ -288,6 +290,16 @@ USUARIOS_LOGISTICA = {
 PREFIJOS_RESTRINGIDOS_LOGISTICA = ("/logistica", "/api/logistica")
 PREFIJOS_RESTRINGIDOS_SOLICITUDES = ("/solicitudes", "/api/solicitudes")
 
+# Cotizaciones (2026-10-13): por ahora solo la gerencia. Despues se abre a
+# los vendedores (cada uno ve las suyas en Seguimiento).
+USUARIOS_COTIZACIONES = {
+    "dsepulveda@casamusa.cl", "emusa@casamusa.cl", "fmusa@casamusa.cl",
+    "malvarado@casamusa.cl", "jsantana@casamusa.cl",
+}
+PREFIJOS_RESTRINGIDOS_COTIZACIONES = (
+    "/cotizaciones", "/api/cotizaciones", "/subir_cotizaciones", "/api/subir_cotizaciones",
+)
+
 PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA = (
     "/forecast/plan_compra", "/api/forecast/plan_compras",
     "/forecast/nivel_servicio", "/api/forecast/nivel_servicio",
@@ -309,6 +321,8 @@ def _restringir_inventario_adquisiciones():
         permitidos = USUARIOS_SOLICITUDES
     elif path.startswith(PREFIJOS_RESTRINGIDOS_LOGISTICA):
         permitidos = USUARIOS_LOGISTICA
+    elif path.startswith(PREFIJOS_RESTRINGIDOS_COTIZACIONES):
+        permitidos = USUARIOS_COTIZACIONES
     else:
         return None
     if "usuario" not in session:
@@ -420,6 +434,7 @@ def inject_es_admin():
         "es_pantalla_comercial": not request.path.startswith(
             PREFIJOS_RESTRINGIDOS_INVENTARIO + PREFIJOS_RESTRINGIDOS_ADQUISICIONES + PREFIJOS_SOLO_GERENCIA
             + PREFIJOS_RESTRINGIDOS_SOLICITUDES + PREFIJOS_RESTRINGIDOS_LOGISTICA
+            + PREFIJOS_RESTRINGIDOS_COTIZACIONES
         ),
         # Resumen de Adquisiciones tiene su propio "Datos al", separado
         # del de Ventas (ver _fecha_corte_adq_sesion()).
@@ -440,6 +455,7 @@ def inject_es_admin():
         # Cuenta de vendedor: menu con solo sus dos pantallas, sin
         # filtros de sucursal/vendedor y sin columnas de margen.
         "es_vendedor": bool(session.get("vendedor")),
+        "puede_ver_cotizaciones": session.get("usuario") in USUARIOS_COTIZACIONES,
     }
 
 
@@ -2056,6 +2072,124 @@ def api_subir_margen_erp():
         "msg": f"OK: reporte {ano} cargado ({rango}, {vendedores} vendedores). "
                f"Margen ajustado en {r['ajustados']} combinaciones de vendedor y mes.",
     })
+
+
+# ══════════════════════════════════════════════════════
+#  COTIZACIONES — reporte de cotizaciones del ERP (migracion 018): embudo,
+#  seguimiento de las recientes, perdidas y productos no creados
+# ══════════════════════════════════════════════════════
+def _periodo_cotizaciones():
+    hasta = request.args.get("hasta")
+    desde = request.args.get("desde")
+    hasta = date.fromisoformat(hasta) if hasta else date.today()
+    desde = date.fromisoformat(desde) if desde else date(hasta.year, 1, 1)
+    return desde, hasta
+
+
+def _json_cotizaciones(funcion, *args, **kwargs):
+    try:
+        return jsonify({"ok": True, **data_loader_cotizaciones_pg.a_json(funcion(*args, **kwargs))})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+@app.route("/cotizaciones")
+@login_requerido
+def cotizaciones():
+    return render_template("cotizaciones.html", active="cotizaciones",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/cotizaciones/opciones")
+@login_requerido
+def api_cotizaciones_opciones():
+    return _json_cotizaciones(data_loader_cotizaciones_pg.opciones)
+
+
+@app.route("/api/cotizaciones/embudo")
+@login_requerido
+def api_cotizaciones_embudo():
+    desde, hasta = _periodo_cotizaciones()
+    return _json_cotizaciones(data_loader_cotizaciones_pg.get_embudo, desde, hasta,
+                              request.args.getlist("sucursal"), request.args.getlist("vendedor"))
+
+
+@app.route("/api/cotizaciones/seguimiento")
+@login_requerido
+def api_cotizaciones_seguimiento():
+    return _json_cotizaciones(data_loader_cotizaciones_pg.get_seguimiento,
+                              request.args.getlist("sucursal"), request.args.getlist("vendedor"))
+
+
+@app.route("/api/cotizaciones/detalle/<int:nro>")
+@login_requerido
+def api_cotizaciones_detalle(nro):
+    return _json_cotizaciones(lambda: {"lineas": data_loader_cotizaciones_pg.get_detalle(nro)})
+
+
+@app.route("/api/cotizaciones/perdidas")
+@login_requerido
+def api_cotizaciones_perdidas():
+    desde, hasta = _periodo_cotizaciones()
+    return _json_cotizaciones(data_loader_cotizaciones_pg.get_perdidas, desde, hasta,
+                              request.args.getlist("sucursal"), request.args.getlist("vendedor"))
+
+
+@app.route("/api/cotizaciones/no_creados")
+@login_requerido
+def api_cotizaciones_no_creados():
+    desde, hasta = _periodo_cotizaciones()
+    return _json_cotizaciones(data_loader_cotizaciones_pg.get_no_creados, desde, hasta,
+                              request.args.getlist("sucursal"), request.args.getlist("vendedor"))
+
+
+@app.route("/subir_cotizaciones")
+@admin_requerido
+def subir_cotizaciones():
+    return render_template("subir_cotizaciones.html", active="subir_cotizaciones",
+                           columnas=data_loader_cotizaciones_pg.COLUMNAS_ERP,
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/cotizaciones/estado_cargas")
+@admin_requerido
+def api_cotizaciones_estado_cargas():
+    return _json_cotizaciones(data_loader_cotizaciones_pg.estado_cargas)
+
+
+@app.route("/api/subir_cotizaciones", methods=["POST"])
+@admin_requerido
+def api_subir_cotizaciones():
+    """Recibe UNA parte del reporte (el navegador lee el Excel y lo manda en
+    partes de cotizaciones completas: Vercel corta los cuerpos sobre 4,5 MB)."""
+    datos = request.get_json(silent=True) or {}
+    filas = datos.get("filas") or []
+    if not filas:
+        return jsonify({"ok": False, "msg": "La parte no trae filas."}), 400
+    try:
+        filas = data_loader_cotizaciones_pg.normalizar_filas(filas)
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    try:
+        n = data_loader_cotizaciones_pg.cargar_parte(filas)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error al guardar: {e}"}), 500
+    fechas = [f[1] for f in filas]
+    return jsonify({"ok": True, "filas": len(filas), "cotizaciones": n,
+                    "fecha_min": min(fechas).isoformat(), "fecha_max": max(fechas).isoformat()})
+
+
+@app.route("/api/subir_cotizaciones/fin", methods=["POST"])
+@admin_requerido
+def api_subir_cotizaciones_fin():
+    d = request.get_json(silent=True) or {}
+    try:
+        data_loader_cotizaciones_pg.registrar_carga(
+            (d.get("archivo") or "")[:200], int(d.get("filas") or 0), int(d.get("cotizaciones") or 0),
+            d.get("fecha_min"), d.get("fecha_max"), session.get("usuario"))
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+    return jsonify({"ok": True})
 
 
 # ══════════════════════════════════════════════════════

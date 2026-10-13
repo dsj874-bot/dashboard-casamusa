@@ -1,0 +1,424 @@
+{% extends "base.html" %}
+
+{% block title %}Cotizaciones{% endblock %}
+{% block page_title %}Cotizaciones{% endblock %}
+{% block page_subtitle %}Del reporte de cotizaciones del ERP, cruzado con facturas y stock{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/multiselect.css') }}?v={{ asset_v('css/multiselect.css') }}">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  .ct-barra { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 14px; }
+  .ct-grupo { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ct-btn {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--muted2); font-size: 12.5px; font-weight: 600; padding: 7px 12px; cursor: pointer;
+  }
+  .ct-btn.activo { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ct-btn:focus-visible, .ct-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ct-filtro { display: flex; flex-direction: column; gap: 4px; min-width: 170px; }
+  .ct-filtro label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .ct-datos { margin-left: auto; font-size: 11.5px; color: var(--muted2); text-align: right; line-height: 1.4; }
+
+  .ct-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; overflow-x: auto; }
+  .ct-tab {
+    background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted2);
+    font-size: 13.5px; font-weight: 700; padding: 10px 14px; cursor: pointer; white-space: nowrap;
+  }
+  .ct-tab.activo { color: var(--text); border-bottom-color: var(--accent); }
+  .ct-panel { display: none; }
+  .ct-panel.activo { display: block; }
+
+  .ct-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .ct-kpis.cuatro { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 1200px) { .ct-kpis, .ct-kpis.cuatro { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .ct-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+  .ct-kpi-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 6px; }
+  .ct-kpi-valor { font-size: clamp(18px, 1.6vw, 23px); font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ct-kpi-sub { font-size: 11.5px; color: var(--muted2); margin-top: 3px; line-height: 1.35; }
+  .ct-kpi-valor.alerta { color: var(--red); } .ct-kpi-valor.medio { color: var(--amber); } .ct-kpi-valor.bien { color: var(--accent); }
+
+  .ct-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; margin-bottom: 18px; }
+  @media (max-width: 1100px) { .ct-grid { grid-template-columns: 1fr; } }
+  .ct-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; min-width: 0; margin-bottom: 18px; }
+  .ct-grid .ct-card { margin-bottom: 0; }
+  .ct-card-titulo { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+  .ct-card-sub { font-size: 12px; color: var(--muted2); margin-bottom: 12px; line-height: 1.5; }
+
+  .ct-wrap { overflow-x: auto; }
+  .ct-wrap.alto { max-height: 460px; overflow-y: auto; }
+  .ct-wrap.alto th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+  .ct-tabla { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .ct-tabla th {
+    text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
+    padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .ct-tabla td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  .ct-tabla .izq { text-align: left; }
+  .ct-tabla td.desc { white-space: normal; min-width: 220px; }
+  .ct-tabla td.fuerte { font-weight: 700; color: var(--accent); }
+  .ct-tabla tr.clic { cursor: pointer; }
+  .ct-tabla tr.clic:hover td { background: var(--surface2); }
+  .ct-tabla tr.detalle td { background: var(--surface2); padding: 10px 12px; }
+  .ct-tabla .muted { color: var(--muted2); }
+
+  .barra { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .barra .bg { width: 60px; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+  .barra .fg { height: 6px; border-radius: 3px; background: var(--accent); }
+  .pill { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; margin-left: 4px; }
+  .pill.rojo { background: rgba(239,68,68,.14); color: var(--red); }
+  .pill.ambar { background: rgba(245,158,11,.16); color: var(--amber); }
+  .pill.gris { background: var(--surface2); color: var(--muted2); }
+  .pill.verde { background: rgba(34,163,71,.14); color: var(--accent); }
+  .vacio { text-align: center !important; padding: 26px !important; color: var(--muted2) !important; }
+  .cargando { opacity: .55; transition: opacity .15s; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ct-barra">
+  <div class="ct-grupo" id="rangos" role="group" aria-label="Período">
+    <button type="button" class="ct-btn" data-r="mes">Este mes</button>
+    <button type="button" class="ct-btn" data-r="3">3 meses</button>
+    <button type="button" class="ct-btn" data-r="6">6 meses</button>
+    <span id="rangos-anos" style="display:contents"></span>
+  </div>
+  <div class="ct-filtro"><label for="f-sucursal">Sucursal</label><select id="f-sucursal"></select></div>
+  <div class="ct-filtro"><label for="f-vendedor">Vendedor</label><select id="f-vendedor"></select></div>
+  <div class="ct-datos" id="datos-al">Cargando…</div>
+</div>
+
+<div class="ct-tabs" role="tablist">
+  <button type="button" class="ct-tab activo" data-tab="embudo" role="tab">Embudo</button>
+  <button type="button" class="ct-tab" data-tab="seguimiento" role="tab">Seguimiento</button>
+  <button type="button" class="ct-tab" data-tab="perdidas" role="tab">Perdidas</button>
+  <button type="button" class="ct-tab" data-tab="no_creados" role="tab">No creados</button>
+</div>
+
+<!-- ══════════ EMBUDO ══════════ -->
+<div class="ct-panel activo" id="panel-embudo">
+  <div class="ct-kpis" id="emb-kpis"></div>
+  <div class="ct-grid">
+    <div class="ct-card">
+      <div class="ct-card-titulo">Por tamaño de la cotización</div>
+      <div class="ct-card-sub">Mientras más grande la cotización, menos se cierra. Las de más de $20 MM son proyectos en licitación.</div>
+      <div class="ct-wrap"><table class="ct-tabla" id="emb-tramos"></table></div>
+    </div>
+    <div class="ct-card">
+      <div class="ct-card-titulo">Mes a mes</div>
+      <div class="ct-card-sub">Barras: facturado desde cotización. Línea: % de cotizaciones que se cierran.</div>
+      <div style="position:relative;height:230px"><canvas id="emb-chart"></canvas></div>
+    </div>
+  </div>
+  <div class="ct-card">
+    <div class="ct-card-titulo">Por sucursal</div>
+    <div class="ct-card-sub">"Catálogo" deja fuera las cotizaciones con productos no creados y las de más de $20 MM: es la conversión comparable entre sucursales.</div>
+    <div class="ct-wrap"><table class="ct-tabla" id="emb-sucursales"></table></div>
+  </div>
+  <div class="ct-card">
+    <div class="ct-card-titulo">Por vendedor</div>
+    <div class="ct-card-sub">Ordenados por lo facturado desde cotización. Las cotizaciones de la última semana todavía pueden cerrarse.</div>
+    <div class="ct-wrap alto"><table class="ct-tabla" id="emb-vendedores"></table></div>
+  </div>
+</div>
+
+<!-- ══════════ SEGUIMIENTO ══════════ -->
+<div class="ct-panel" id="panel-seguimiento">
+  <div class="ct-kpis cuatro" id="seg-kpis"></div>
+  <div class="ct-card">
+    <div class="ct-card-titulo">Cotizaciones abiertas de la última semana</div>
+    <div class="ct-card-sub" id="seg-sub">Clientes con nombre, sin pedido ni factura. Después del día 7 solo se cierra el 5%: este es el momento de llamar. Haz click en una fila para ver sus líneas y el stock.</div>
+    <div class="ct-wrap alto"><table class="ct-tabla" id="seg-tabla"></table></div>
+  </div>
+</div>
+
+<!-- ══════════ PERDIDAS ══════════ -->
+<div class="ct-panel" id="panel-perdidas">
+  <div class="ct-kpis cuatro" id="per-kpis"></div>
+  <div class="ct-card">
+    <div class="ct-card-titulo">Productos con más monto cotizado sin cerrar</div>
+    <div class="ct-card-sub">Líneas sin pedido ni factura, en cotizaciones de hasta $20 MM. El stock es el de hoy.</div>
+    <div class="ct-wrap alto"><table class="ct-tabla" id="per-productos"></table></div>
+  </div>
+  <div class="ct-card">
+    <div class="ct-card-titulo">Clientes que más cotizan sin comprar</div>
+    <div class="ct-card-sub">Clientes con nombre y 5 o más cotizaciones en el período.</div>
+    <div class="ct-wrap alto"><table class="ct-tabla" id="per-clientes"></table></div>
+  </div>
+</div>
+
+<!-- ══════════ NO CREADOS ══════════ -->
+<div class="ct-panel" id="panel-no_creados">
+  <div class="ct-kpis cuatro" id="nc-kpis"></div>
+  <div class="ct-grid">
+    <div class="ct-card">
+      <div class="ct-card-titulo">Lo que más piden sin código</div>
+      <div class="ct-card-sub">Líneas con código 100000/100005 agrupadas por las dos primeras palabras de la descripción.</div>
+      <div class="ct-wrap alto"><table class="ct-tabla" id="nc-conceptos"></table></div>
+    </div>
+    <div class="ct-card">
+      <div class="ct-card-titulo">Especiales que ya se venden como catálogo</div>
+      <div class="ct-card-sub">Códigos 6xxxxx vendidos a 3 o más clientes en el período: candidatos a crear con stock y precio de lista.</div>
+      <div class="ct-wrap alto"><table class="ct-tabla" id="nc-especiales"></table></div>
+    </div>
+  </div>
+  <div class="ct-card">
+    <div class="ct-card-titulo">Últimas líneas cotizadas sin código</div>
+    <div class="ct-card-sub">Las más recientes primero (hasta 300).</div>
+    <div class="ct-wrap alto"><table class="ct-tabla" id="nc-lineas"></table></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/multiselect.js') }}?v={{ asset_v('js/multiselect.js') }}"></script>
+<script>
+if (typeof initMultiSelect !== 'function') {
+  window.initMultiSelect = function (sel) { if (sel) sel.multiple = true; };
+  window.mselValores = function (sel) { return sel ? Array.from(sel.selectedOptions).map(o => o.value) : []; };
+}
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmtN = v => v == null ? '—' : Number(v).toLocaleString('es-CL', { maximumFractionDigits: 0 });
+const fmtP = v => v == null ? '—' : Number(v).toLocaleString('es-CL', { maximumFractionDigits: 0 }) + '%';
+const fmt$ = v => v == null ? '—' : '$' + Math.round(v).toLocaleString('es-CL');
+const fmtMM = v => {
+  if (v == null) return '—';
+  const mm = v / 1e6;
+  return '$' + mm.toLocaleString('es-CL', { maximumFractionDigits: mm < 10 ? 1 : 0 }) + ' MM';
+};
+const fmtF = iso => iso ? iso.slice(0, 10).split('-').reverse().join('-') : '—';
+const titulo = s => String(s || '').toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+let rango = String(new Date().getFullYear()), tab = 'embudo', opciones = null, chart = null;
+const cargados = {};
+
+function periodo() {
+  const hasta = opciones && opciones.hasta ? new Date(opciones.hasta + 'T00:00:00') : new Date();
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  if (rango === 'mes') return { desde: iso(new Date(hasta.getFullYear(), hasta.getMonth(), 1)), hasta: iso(hasta) };
+  if (rango === '3' || rango === '6')
+    return { desde: iso(new Date(hasta.getFullYear(), hasta.getMonth() - (Number(rango) - 1), 1)), hasta: iso(hasta) };
+  return { desde: rango + '-01-01', hasta: rango + '-12-31' };
+}
+
+function qs() {
+  const p = new URLSearchParams(periodo());
+  ['sucursal', 'vendedor'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
+  return p.toString();
+}
+
+function tabla(id, cab, filas, vacio) {
+  document.getElementById(id).innerHTML =
+    `<thead><tr>${cab.map(([t, izq]) => `<th class="${izq ? 'izq' : ''}">${t}</th>`).join('')}</tr></thead>` +
+    `<tbody>${filas.length ? filas.join('') : `<tr><td class="vacio" colspan="${cab.length}">${vacio || 'Sin datos en el período'}</td></tr>`}</tbody>`;
+}
+
+function kpis(id, items) {
+  document.getElementById(id).innerHTML = items.map(k =>
+    `<div class="ct-kpi"><div class="ct-kpi-label">${k[0]}</div><div class="ct-kpi-valor ${k[3] || ''}">${k[1]}</div><div class="ct-kpi-sub">${k[2] || ''}</div></div>`).join('');
+}
+
+const barra = (p, max) => p == null ? '—' :
+  `<div class="barra"><span>${fmtP(p)}</span><div class="bg"><div class="fg" style="width:${Math.max(0, Math.min(100, p / (max || 100) * 100))}%"></div></div></div>`;
+
+async function api(ruta) {
+  const d = await fetch(ruta).then(r => r.json());
+  if (!d.ok) throw new Error(d.msg || 'Error');
+  return d;
+}
+
+// ══════════ EMBUDO ══════════
+async function cargarEmbudo() {
+  const d = await api('/api/cotizaciones/embudo?' + qs());
+  const t = d.total;
+  if (!t) {
+    kpis('emb-kpis', [['Cotizaciones', '0', 'Sin cotizaciones en el período']]);
+    ['emb-tramos', 'emb-sucursales', 'emb-vendedores'].forEach(id => tabla(id, [['']], []));
+    return;
+  }
+  kpis('emb-kpis', [
+    ['Cotizaciones', fmtN(t.cot), `${fmtN(t.cerradas)} terminaron en factura`],
+    ['Se cierran', fmtP(t.pct_cierre), 'de las cotizaciones', t.pct_cierre >= 60 ? 'bien' : 'medio'],
+    ['Cotizado', fmtMM(t.cotizado), `${fmtP(t.pct_proyectos)} en proyectos de más de $20 MM`],
+    ['Facturado', fmtMM(t.facturado), `${fmtP(t.conv_monto)} del monto cotizado`],
+    ['Conversión catálogo', fmtP(t.conv_catalogo), 'sin no creados ni proyectos'],
+    ['Mismo día', fmtP(t.pct_mismo_dia), 'de las cerradas se factura el día que se cotiza'],
+  ]);
+  tabla('emb-tramos', [['Monto', 1], ['Cotiz.'], ['Se cierran'], ['Cotizado'], ['Conv. $']],
+    d.tramos.map(r => `<tr><td class="izq">${r.nombre}</td><td>${fmtN(r.cot)}</td><td>${barra(r.pct_cierre)}</td>
+      <td>${fmtMM(r.cotizado)}</td><td>${fmtP(r.conv_monto)}</td></tr>`));
+  tabla('emb-sucursales', [['Sucursal', 1], ['Cotiz.'], ['Se cierran'], ['Cotizado'], ['Facturado'], ['Conv. $'], ['Conv. catálogo'], ['% en cotiz. con no creados'], ['Pedido sin factura']],
+    d.sucursales.map(r => `<tr><td class="izq">${esc(r.nombre)}</td><td>${fmtN(r.cot)}</td><td>${barra(r.pct_cierre)}</td>
+      <td>${fmtMM(r.cotizado)}</td><td>${fmtMM(r.facturado)}</td><td>${fmtP(r.conv_monto)}</td>
+      <td class="fuerte">${fmtP(r.conv_catalogo)}</td><td>${fmtP(r.pct_nocre)}</td><td>${fmtN(r.pedido_sin_factura)}</td></tr>`));
+  tabla('emb-vendedores', [['Vendedor', 1], ['Sucursal', 1], ['Cotiz.'], ['Se cierran'], ['Cotizado'], ['Facturado'], ['Conv. $'], ['Conv. catálogo'], ['% en cotiz. con no creados']],
+    d.vendedores.filter(r => r.cot >= 10).map(r => `<tr><td class="izq">${esc(titulo(r.nombre))}</td><td class="izq muted">${esc(r.sucursal)}</td>
+      <td>${fmtN(r.cot)}</td><td>${barra(r.pct_cierre)}</td><td>${fmtMM(r.cotizado)}</td><td>${fmtMM(r.facturado)}</td>
+      <td>${fmtP(r.conv_monto)}</td><td class="fuerte">${fmtP(r.conv_catalogo)}</td><td>${fmtP(r.pct_nocre)}</td></tr>`));
+
+  const etiquetas = d.meses.map(m => MESES[Number(m.mes.slice(5, 7))] + ' ' + m.mes.slice(2, 4));
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById('emb-chart'), {
+    data: {
+      labels: etiquetas,
+      datasets: [
+        { type: 'bar', label: 'Facturado (MM)', data: d.meses.map(m => m.facturado / 1e6), backgroundColor: css('--accent') + 'aa', yAxisID: 'y' },
+        { type: 'line', label: '% se cierran', data: d.meses.map(m => m.pct_cierre), borderColor: css('--amber'), backgroundColor: css('--amber'), yAxisID: 'y1', tension: .3 },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { color: css('--muted2'), boxWidth: 12 } },
+                 tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'y1' ? ` ${fmtP(c.raw)} se cierran` : ` $${fmtN(c.raw)} MM facturado` } } },
+      scales: {
+        x: { ticks: { color: css('--muted2') }, grid: { display: false } },
+        y: { ticks: { color: css('--muted2'), callback: v => '$' + v }, grid: { color: css('--border') } },
+        y1: { position: 'right', min: 0, max: 100, ticks: { color: css('--muted2'), callback: v => v + '%' }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+// ══════════ SEGUIMIENTO ══════════
+async function cargarSeguimiento() {
+  const p = new URLSearchParams();
+  ['sucursal', 'vendedor'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
+  const d = await api('/api/cotizaciones/seguimiento?' + p);
+  const c = d.cotizaciones;
+  const monto = c.reduce((a, x) => a + x.total, 0);
+  kpis('seg-kpis', [
+    ['Abiertas', fmtN(c.length), `del ${fmtF(d.desde)} al ${fmtF(d.hasta)}`],
+    ['Monto abierto', fmtMM(monto), 'cotizado sin pedido ni factura'],
+    ['Con faltante de stock', fmtN(c.filter(x => x.sin_stock > 0).length), `${fmtN(c.filter(x => x.en_si > 0).length)} se pueden cubrir desde San Isidro`, c.some(x => x.sin_stock > 0) ? 'medio' : ''],
+    ['Con productos no creados', fmtN(c.filter(x => x.no_creados > 0).length), 'hay que crear el código para venderlas', c.some(x => x.no_creados > 0) ? 'alerta' : ''],
+  ]);
+  tabla('seg-tabla', [['N°', 1], ['Fecha', 1], ['Días'], ['Cliente', 1], ['Vendedor', 1], ['Sucursal', 1], ['Líneas'], ['Total'], ['Alertas', 1]],
+    c.map(x => `<tr class="clic" data-nro="${x.nro_cotizacion}" tabindex="0">
+      <td class="izq">${x.nro_cotizacion}</td><td class="izq">${fmtF(x.fecha)}</td><td>${x.dias}</td>
+      <td class="izq desc">${esc(titulo(x.cliente))}</td><td class="izq">${esc(titulo(x.vendedor))}</td><td class="izq muted">${esc(x.sucursal)}</td>
+      <td>${x.lineas}</td><td>${fmt$(x.total)}</td>
+      <td class="izq">${x.sin_stock ? `<span class="pill ambar">${x.sin_stock} sin stock</span>` : ''}${x.en_si ? `<span class="pill verde">${x.en_si} en San Isidro</span>` : ''}${x.no_creados ? `<span class="pill rojo">${x.no_creados} no creado${x.no_creados > 1 ? 's' : ''}</span>` : ''}</td></tr>`),
+    'No hay cotizaciones abiertas en la última semana del reporte.');
+  document.querySelectorAll('#seg-tabla tr.clic').forEach(tr => {
+    const abrir = () => verDetalle(tr);
+    tr.addEventListener('click', abrir);
+    tr.addEventListener('keydown', e => { if (e.key === 'Enter') abrir(); });
+  });
+}
+
+async function verDetalle(tr) {
+  const sig = tr.nextElementSibling;
+  if (sig && sig.classList.contains('detalle')) { sig.remove(); return; }
+  const fila = document.createElement('tr');
+  fila.className = 'detalle';
+  fila.innerHTML = `<td colspan="9" class="izq">Cargando líneas…</td>`;
+  tr.after(fila);
+  try {
+    const d = await api('/api/cotizaciones/detalle/' + tr.dataset.nro);
+    fila.firstElementChild.innerHTML = `<table class="ct-tabla"><thead><tr><th class="izq">Código</th><th class="izq">Producto</th>
+      <th>Cantidad</th><th>Precio</th><th>Total</th><th>Stock sucursal</th><th>Stock San Isidro</th></tr></thead><tbody>` +
+      d.lineas.map(l => `<tr><td class="izq">${l.codigo}</td><td class="izq desc">${esc(l.descripcion)}${l.no_creado ? '<span class="pill rojo">no creado</span>' : ''}</td>
+        <td>${fmtN(l.cantidad)}</td><td>${fmt$(l.precio_unitario)}</td><td>${fmt$(l.total)}</td>
+        <td>${l.no_creado ? '—' : `<span class="${l.st_suc < l.cantidad ? 'pill ambar' : ''}">${fmtN(l.st_suc)}</span>`}</td>
+        <td>${l.no_creado || l.bodega === 'San Isidro' ? '—' : fmtN(l.st_si)}</td></tr>`).join('') + '</tbody></table>';
+  } catch (e) {
+    fila.firstElementChild.textContent = 'No se pudieron leer las líneas: ' + e.message;
+  }
+}
+
+// ══════════ PERDIDAS ══════════
+async function cargarPerdidas() {
+  const d = await api('/api/cotizaciones/perdidas?' + qs());
+  const s = d.stock;
+  const pct = (a, b) => b ? 100 * a / b : null;
+  kpis('per-kpis', [
+    ['Cotizado sin cerrar', fmtMM(s.monto), `${fmtN(s.lineas)} líneas sin pedido ni factura`],
+    ['Había stock en la sucursal', fmtP(pct(s.monto_con_stock, s.monto)), `${fmtMM(s.monto_con_stock)}: se perdió por otra razón`],
+    ['Estaba en San Isidro', fmtP(pct(s.monto_en_si, s.monto)), `${fmtMM(s.monto_en_si)} que no llegó a la sucursal`, 'medio'],
+    ['Sin stock en la empresa', fmtP(pct(s.monto_sin_stock, s.monto)), `${fmtMM(s.monto_sin_stock)}: falta compra`, 'alerta'],
+  ]);
+  tabla('per-productos', [['Código', 1], ['Producto', 1], ['Marca', 1], ['Clientes'], ['Perdido'], ['% sin cerrar'], ['Stock empresa'], ['Stock San Isidro'], ['Venta mensual']],
+    d.productos.map(r => `<tr><td class="izq">${r.codigo}</td><td class="izq desc">${esc(r.descripcion)}</td><td class="izq muted">${esc(r.marca)}</td>
+      <td>${fmtN(r.clientes)}</td><td>${fmt$(r.perdido)}</td><td>${fmtP(r.pct_perdido)}</td>
+      <td>${r.stock <= 0 ? '<span class="pill rojo">sin stock</span>' : fmtN(r.stock)}</td><td>${fmtN(r.stock_si)}</td><td>${fmtN(r.venta_mensual)}</td></tr>`));
+  tabla('per-clientes', [['Cliente', 1], ['Cotiz.'], ['Se cierran'], ['Cotizado'], ['Facturado'], ['Sin cerrar'], ['Con no creados']],
+    d.clientes.map(r => `<tr><td class="izq desc">${esc(titulo(r.nombre))}</td><td>${fmtN(r.cot)}</td><td>${barra(r.pct_cierre)}</td>
+      <td>${fmtMM(r.cotizado)}</td><td>${fmtMM(r.facturado)}</td><td>${fmtMM(r.perdido)}</td><td>${fmtN(r.con_nocre)}</td></tr>`));
+}
+
+// ══════════ NO CREADOS ══════════
+async function cargarNoCreados() {
+  const d = await api('/api/cotizaciones/no_creados?' + qs());
+  const k = d.kpis;
+  kpis('nc-kpis', [
+    ['Líneas sin código', fmtN(k.lineas), `en ${fmtN(k.cotizaciones)} cotizaciones`],
+    ['Clientes que los piden', fmtN(k.clientes), ''],
+    ['Cotizado sin código', fmtMM(k.monto), `${fmtP(k.pct_cotizado)} de todo lo cotizado`, 'alerta'],
+    ['Venta de especiales', fmtMM(k.venta_especiales), `${fmtP(k.pct_venta_especiales)} de la venta · margen ${fmtP(k.mg_especiales)} (catálogo ${fmtP(k.mg_catalogo)})`, 'medio'],
+  ]);
+  tabla('nc-conceptos', [['Concepto', 1], ['Clientes'], ['Cotiz.'], ['Vendedores'], ['Ejemplo', 1]],
+    d.conceptos.map(r => `<tr><td class="izq">${esc(r.concepto)}</td><td>${fmtN(r.clientes)}</td><td>${fmtN(r.cotizaciones)}</td>
+      <td>${fmtN(r.vendedores)}</td><td class="izq desc muted">${esc(r.ejemplo)}</td></tr>`));
+  tabla('nc-especiales', [['Código', 1], ['Producto', 1], ['Marca', 1], ['Clientes'], ['Meses'], ['Venta'], ['Margen']],
+    d.especiales.map(r => `<tr><td class="izq">${r.codigo}</td><td class="izq desc">${esc(r.descripcion)}</td><td class="izq muted">${esc(r.marca)}</td>
+      <td>${fmtN(r.clientes)}</td><td>${fmtN(r.meses)}</td><td>${fmt$(r.venta)}</td><td>${fmtP(r.pct_mg)}</td></tr>`),
+    'Ningún código especial vendido a 3 o más clientes en el período.');
+  tabla('nc-lineas', [['Fecha', 1], ['N°', 1], ['Cliente', 1], ['Vendedor', 1], ['Sucursal', 1], ['Descripción', 1], ['Cantidad'], ['Total']],
+    d.lineas.map(r => `<tr><td class="izq">${fmtF(r.fecha)}</td><td class="izq">${r.nro_cotizacion}</td><td class="izq desc">${esc(titulo(r.nombre_cliente))}</td>
+      <td class="izq">${esc(titulo(r.vendedor))}</td><td class="izq muted">${esc(r.sucursal)}</td><td class="izq desc">${esc(r.descripcion)}</td>
+      <td>${fmtN(r.cantidad)}</td><td>${fmt$(r.total)}</td></tr>`));
+}
+
+const CARGADORES = { embudo: cargarEmbudo, seguimiento: cargarSeguimiento, perdidas: cargarPerdidas, no_creados: cargarNoCreados };
+
+async function cargar(forzar) {
+  if (forzar) Object.keys(cargados).forEach(k => delete cargados[k]);
+  if (cargados[tab]) return;
+  const panel = document.getElementById('panel-' + tab);
+  panel.classList.add('cargando');
+  try { await CARGADORES[tab](); cargados[tab] = true; }
+  catch (e) { panel.querySelector('.ct-kpis').innerHTML = `<div class="ct-kpi" style="grid-column:1/-1">No se pudo cargar: ${esc(e.message)}</div>`; }
+  finally { panel.classList.remove('cargando'); }
+}
+
+document.querySelectorAll('.ct-tab').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.ct-tab').forEach(x => x.classList.toggle('activo', x === b));
+  tab = b.dataset.tab;
+  document.querySelectorAll('.ct-panel').forEach(p => p.classList.toggle('activo', p.id === 'panel-' + tab));
+  // Seguimiento no usa el periodo: siempre la ultima semana del reporte
+  document.getElementById('rangos').style.visibility = tab === 'seguimiento' ? 'hidden' : '';
+  cargar();
+}));
+
+function enlazarRangos() {
+  document.querySelectorAll('#rangos .ct-btn').forEach(b => {
+    b.classList.toggle('activo', b.dataset.r === rango);
+    b.onclick = () => { rango = b.dataset.r; enlazarRangos(); cargar(true); };
+  });
+}
+
+(async function init() {
+  try {
+    opciones = await api('/api/cotizaciones/opciones');
+  } catch (e) {
+    document.getElementById('datos-al').textContent = 'No se pudieron leer las opciones: ' + e.message;
+    return;
+  }
+  if (!opciones.hasta) {
+    document.getElementById('datos-al').innerHTML = 'Todavía no hay cotizaciones cargadas.';
+    return;
+  }
+  document.getElementById('datos-al').innerHTML = `Reporte cargado hasta el <strong>${fmtF(opciones.hasta)}</strong>`;
+  rango = String(opciones.anos[0]);
+  document.getElementById('rangos-anos').innerHTML = opciones.anos.map(a => `<button type="button" class="ct-btn" data-r="${a}">${a}</button>`).join('');
+  enlazarRangos();
+  const sSuc = document.getElementById('f-sucursal'), sVen = document.getElementById('f-vendedor');
+  sSuc.innerHTML = opciones.sucursales.map(s => `<option value="${esc(s.codigo)}">${esc(s.nombre)}</option>`).join('');
+  sVen.innerHTML = opciones.vendedores.map(v => `<option value="${esc(v.nombre)}">${esc(titulo(v.nombre))} · ${esc(v.sucursal)}</option>`).join('');
+  [sSuc, sVen].forEach(s => { initMultiSelect(s); s.addEventListener('change', () => cargar(true)); });
+  cargar();
+})();
+</script>
+{% endblock %}
