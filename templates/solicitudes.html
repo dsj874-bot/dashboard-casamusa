@@ -28,9 +28,38 @@
   .sl-tabla tbody tr:hover td { background: var(--surface2); }
   .sl-sub { display: block; font-size: 11px; color: var(--muted2); }
   .pill { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
-  .e-abierta { background: rgba(59,130,246,.15); color: var(--blue); }
+  .e-abierta, .e-pend_aprobacion_1, .e-pend_aprobacion_2 { background: rgba(59,130,246,.15); color: var(--blue); }
   .e-en_analisis { background: rgba(245,158,11,.15); color: var(--amber); }
-  .e-aprobada, .e-ejecutada, .e-cerrada { background: rgba(34,163,71,.15); color: var(--accent); }
+  .e-aprobada { background: rgba(34,163,71,.10); color: var(--accent); border: 1px dashed var(--accent); }
+  .e-ejecutada, .e-cerrada { background: rgba(34,163,71,.15); color: var(--accent); }
+  .te-toca { background: var(--amber); color: #111; margin-left: 6px; }
+  .sl-kpi.clic { cursor: pointer; }
+  .sl-kpi.clic:hover, .sl-kpi.activo { border-color: var(--amber); }
+  .sl-kpi:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  tr.toca td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+
+  /* Etapas de aprobacion en la ficha */
+  .sl-pasos { display: flex; flex-direction: column; gap: 0; }
+  .sl-paso { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 6px 0; font-size: 13px; }
+  .sl-paso .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); margin-top: 1px;
+                  display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; }
+  .sl-paso.hecho .dot { background: var(--accent); border-color: var(--accent); }
+  .sl-paso.actual .dot { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245,158,11,.25); }
+  .sl-paso.rech .dot { background: var(--red); border-color: var(--red); }
+  .sl-paso small { display: block; color: var(--muted2); font-size: 11.5px; }
+  .sl-accion { margin-top: 16px; background: var(--surface2); border: 1px solid var(--amber); border-radius: 12px; padding: 14px; }
+  .sl-accion h3 { margin: 0 0 8px; font-size: 14px; color: var(--text); }
+  .sl-accion textarea, .sl-accion select, .sl-accion input {
+    width: 100%; box-sizing: border-box; background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13px; margin-bottom: 8px; }
+  .sl-accion label { font-size: 11px; color: var(--muted2); display: block; margin-bottom: 4px; }
+  .sl-botones { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sl-btn { border: none; border-radius: 8px; padding: 9px 14px; font-weight: 700; font-size: 13px; cursor: pointer; }
+  .sl-btn.si { background: var(--accent); color: #fff; }
+  .sl-btn.no { background: transparent; color: var(--red); border: 1px solid var(--red); }
+  .sl-btn:disabled { opacity: .5; cursor: wait; }
+  .sl-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .sl-msg { font-size: 12.5px; margin-top: 8px; color: var(--red); }
   .e-rechazada, .e-anulada { background: rgba(239,68,68,.14); color: var(--red); }
   .vacio { text-align: center; padding: 40px; color: var(--muted2); }
 
@@ -91,12 +120,13 @@ const fmt$ = v => '$' + Math.round(v || 0).toLocaleString('es-CL');
 const fmtN = v => Number(v || 0).toLocaleString('es-CL', { maximumFractionDigits: 2 });
 const fFecha = iso => { const d = new Date(iso); return d.toLocaleDateString('es-CL') + ' ' + d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }); };
 const dias = iso => Math.floor((Date.now() - new Date(iso)) / 86400000);
-let cfg = null;
+let cfg = null, soloMias = false;
+const EN_PROCESO = ['en_analisis', 'pend_aprobacion_1', 'pend_aprobacion_2', 'aprobada'];
 
 async function iniciar() {
   cfg = await fetch('/api/solicitudes/config').then(r => r.json());
   const llenar = (id, pares) => { const s = document.getElementById(id); s.innerHTML = pares.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join(''); initMultiSelect(s); s.addEventListener('change', cargar); };
-  llenar('f-estado', Object.entries(cfg.estados));
+  llenar('f-estado', cfg.orden_estados.map(k => [k, cfg.estados[k]]));
   llenar('f-tipo', cfg.orden_tipos.map(k => [k, cfg.tipos[k].nombre]));
   llenar('f-sucursal', cfg.todas_sucursales.map(s => [s.codigo, s.nombre]));
   await cargar();
@@ -107,15 +137,22 @@ async function iniciar() {
 async function cargar() {
   const p = new URLSearchParams();
   ['estado', 'tipo', 'sucursal'].forEach(k => mselValores(document.getElementById('f-' + k)).forEach(v => p.append(k, v)));
-  const lista = await fetch('/api/solicitudes?' + p).then(r => r.json());
+  let lista = await fetch('/api/solicitudes?' + p).then(r => r.json());
   if (lista.error) { document.getElementById('tbody').innerHTML = `<tr><td colspan="9" class="vacio">${esc(lista.error)}</td></tr>`; return; }
   const cuenta = e => lista.filter(s => e.includes(s.estado)).length;
+  const mias = lista.filter(s => s.te_toca).length;
   document.getElementById('kpis').innerHTML = `
     <div class="sl-kpi"><div class="sl-kpi-label">Solicitudes</div><div class="sl-kpi-valor">${fmtN(lista.length)}</div></div>
-    <div class="sl-kpi"><div class="sl-kpi-label">Abiertas</div><div class="sl-kpi-valor">${fmtN(cuenta(['abierta']))}</div></div>
-    <div class="sl-kpi"><div class="sl-kpi-label">En análisis</div><div class="sl-kpi-valor">${fmtN(cuenta(['en_analisis']))}</div></div>
+    <div class="sl-kpi clic${soloMias ? ' activo' : ''}" id="kpi-mias" tabindex="0" role="button" aria-pressed="${soloMias}" title="Ver solo las que te toca aprobar o ejecutar">
+      <div class="sl-kpi-label">Te toca</div><div class="sl-kpi-valor" style="color:${mias ? 'var(--amber)' : 'var(--text)'}">${fmtN(mias)}</div></div>
+    <div class="sl-kpi"><div class="sl-kpi-label">En proceso</div><div class="sl-kpi-valor">${fmtN(cuenta(EN_PROCESO))}</div></div>
     <div class="sl-kpi"><div class="sl-kpi-label">Valor total</div><div class="sl-kpi-valor">${fmt$(lista.reduce((a, s) => a + s.monto_total, 0))}</div></div>`;
-  document.getElementById('tbody').innerHTML = lista.length ? lista.map(s => `<tr data-id="${s.id}">
+  const km = document.getElementById('kpi-mias');
+  const alternar = () => { soloMias = !soloMias; cargar(); };
+  km.onclick = alternar;
+  km.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); alternar(); } };
+  if (soloMias) lista = lista.filter(s => s.te_toca);
+  document.getElementById('tbody').innerHTML = lista.length ? lista.map(s => `<tr data-id="${s.id}" class="${s.te_toca ? 'toca' : ''}">
       <td><strong>${s.numero}</strong>${s.n_fotos ? ' 📷' : ''}</td>
       <td>${fFecha(s.creado_en)}<span class="sl-sub">hace ${dias(s.creado_en)} día(s)</span></td>
       <td>${esc(s.tipo_nombre)}<span class="sl-sub">${esc(s.subtipo || '')}</span></td>
@@ -124,8 +161,9 @@ async function cargar() {
       <td>${esc(s.producto_principal || '')}${s.n_lineas > 1 ? `<span class="sl-sub">y ${s.n_lineas - 1} más</span>` : ''}</td>
       <td class="num">${fmtN(s.cantidad_total)}</td>
       <td class="num">${fmt$(s.monto_total)}</td>
-      <td><span class="pill e-${s.estado}">${esc(s.estado_nombre)}</span></td></tr>`).join('')
-    : '<tr><td colspan="9" class="vacio">No hay solicitudes con estos filtros. <a href="/solicitudes/nueva" style="color:var(--accent)">Crear una</a></td></tr>';
+      <td><span class="pill e-${s.estado}">${esc(s.estado_nombre)}</span>${s.te_toca ? '<span class="pill te-toca">Te toca</span>' : ''}</td></tr>`).join('')
+    : (soloMias ? '<tr><td colspan="9" class="vacio">No tienes solicitudes pendientes. 🎉</td></tr>'
+                : '<tr><td colspan="9" class="vacio">No hay solicitudes con estos filtros. <a href="/solicitudes/nueva" style="color:var(--accent)">Crear una</a></td></tr>');
   document.querySelectorAll('#tbody tr[data-id]').forEach(tr => tr.onclick = () => abrir(Number(tr.dataset.id)));
 }
 
@@ -139,6 +177,8 @@ async function abrir(id) {
   f.innerHTML = `<button class="sl-cerrar" onclick="cerrar()" aria-label="Cerrar">✕</button>
     <h2>${s.numero} · ${esc(s.tipo_nombre)}</h2>
     <span class="pill e-${s.estado}">${esc(s.estado_nombre)}</span>
+    ${panelAccion(s)}
+    <div class="sl-sec"><div class="sl-sec-t">Aprobación</div>${pasos(s)}</div>
     <div class="sl-sec"><div class="sl-dato">
       <span>Motivo</span><span>${esc(s.subtipo || '—')}</span>
       <span>Sucursal</span><span>${esc(s.sucursal_nombre)}${s.sucursal_destino_nombre ? ' → ' + esc(s.sucursal_destino_nombre) : ''}</span>
@@ -147,14 +187,83 @@ async function abrir(id) {
       ${s.documento ? `<span>Documento</span><span>${esc(s.documento)}</span>` : ''}
       ${s.tercero ? `<span>Cliente / proveedor</span><span>${esc(s.tercero)}</span>` : ''}
       <span>Valor (CUP)</span><span><strong>${fmt$(s.monto_total)}</strong> · ${fmtN(s.cantidad_total)} unidades</span>
+      ${s.dictamen ? `<span>Dictamen</span><span>${esc(s.dictamen)}</span>` : ''}
+      ${s.doc_ejecucion ? `<span>Documento ERP</span><span>${esc(s.doc_ejecucion)}</span>` : ''}
     </div></div>
     ${s.explicacion ? `<div class="sl-sec"><div class="sl-sec-t">Explicación</div><div class="sl-texto">${esc(s.explicacion)}</div></div>` : ''}
     <div class="sl-sec"><div class="sl-sec-t">Productos</div>
-      <table class="sl-tabla"><thead><tr><th>Código</th><th>Descripción</th><th class="num">Cant.</th><th class="num">Valor</th></tr></thead>
-      <tbody>${s.lineas.map(l => `<tr style="cursor:default"><td>${l.codigo}</td><td>${esc(l.descripcion)}</td><td class="num">${fmtN(l.cantidad)}</td><td class="num">${fmt$(l.monto)}</td></tr>`).join('')}</tbody></table>
+      <div class="sl-wrap"><table class="sl-tabla"><thead><tr><th>Código</th><th>Descripción</th><th class="num">Cant.</th><th class="num">Valor</th></tr></thead>
+      <tbody>${s.lineas.map(l => `<tr style="cursor:default"><td>${l.codigo}</td><td style="min-width:180px">${esc(l.descripcion)}</td><td class="num">${fmtN(l.cantidad)}</td><td class="num">${fmt$(l.monto)}</td></tr>`).join('')}</tbody></table></div>
     </div>
     ${s.fotos.length ? `<div class="sl-sec"><div class="sl-sec-t">Fotos</div><div class="sl-fotos">${s.fotos.map(fo => `<a href="/api/solicitudes/foto/${fo.id}" target="_blank" rel="noopener"><img src="/api/solicitudes/foto/${fo.id}" alt="Foto de la solicitud" loading="lazy"></a>`).join('')}</div></div>` : ''}
     <div class="sl-sec"><div class="sl-sec-t">Historial</div>${s.eventos.map(e => `<div class="sl-evento">${esc(e.comentario || e.estado)}<small>${fFecha(e.ts)} · ${esc(e.usuario || '')} · ${esc(e.estado)}</small></div>`).join('')}</div>`;
+}
+
+// Etapas: analisis (solo salidas) -> aprobacion 1 -> aprobacion final -> ejecucion
+function pasos(s) {
+  const orden = ['en_analisis', 'pend_aprobacion_1', 'pend_aprobacion_2', 'aprobada', 'ejecutada'];
+  const rech = s.estado === 'rechazada' || s.estado === 'anulada';
+  // en que paso se rechazo: el ultimo evento antes de rechazar
+  const idx = rech ? -1 : orden.indexOf(s.estado);
+  const cuando = (q, t) => q ? `${esc(q)} · ${fFecha(t)}` : '';
+  const items = [];
+  if (s.es_salida) items.push({ k: 0, t: 'Análisis de Control de Inventario', who: 'C. Aliaga',
+    det: s.dictamen ? `Dictamen: ${esc(s.dictamen)}` : '' });
+  items.push({ k: 1, t: 'Aprobación 1', who: 'D. Sepúlveda', det: cuando(s.aprobado1_por, s.aprobado1_en) });
+  items.push({ k: 2, t: 'Aprobación final', who: 'E. Musa o F. Musa', det: cuando(s.aprobado2_por, s.aprobado2_en) });
+  items.push({ k: 3, t: 'Ejecución en el ERP', who: 'C. Aliaga', det: cuando(s.ejecutado_por, s.ejecutado_en) });
+  const rechEn = rech ? (s.aprobado1_en ? 2 : (s.dictamen || !s.es_salida ? 1 : 0)) : null;
+  return '<div class="sl-pasos">' + items.map(it => {
+    let cls = '', dot = '';
+    if (rech) { if (it.k < rechEn) { cls = 'hecho'; dot = '✓'; } else if (it.k === rechEn) { cls = 'rech'; dot = '✕'; } }
+    else if (s.estado === 'ejecutada' || it.k < idx) { cls = 'hecho'; dot = '✓'; }
+    else if (it.k === idx) cls = 'actual';
+    return `<div class="sl-paso ${cls}"><span class="dot">${dot}</span><div>${it.t}<small>${it.det || it.who}</small></div></div>`;
+  }).join('') + '</div>';
+}
+
+function panelAccion(s) {
+  const a = s.acciones || [];
+  if (!a.length) return '';
+  let titulo, campos = '', botones = '';
+  if (a.includes('enviar_aprobacion')) {
+    titulo = 'Tu análisis';
+    campos = `<label for="ac-dictamen">Dictamen</label><select id="ac-dictamen"><option value="">Elige…</option>
+      ${cfg.dictamenes.map(d => `<option>${esc(d)}</option>`).join('')}</select>`;
+    botones = `<button class="sl-btn si" onclick="accion(${s.id}, 'enviar_aprobacion')">Enviar a aprobación</button>`;
+  } else if (a.includes('ejecutar')) {
+    titulo = 'Ejecutar en el ERP';
+    campos = `<label for="ac-doc">N° de documento en el ERP (opcional)</label><input id="ac-doc" maxlength="60">`;
+    botones = `<button class="sl-btn si" onclick="accion(${s.id}, 'ejecutar')">Marcar ejecutada</button>`;
+  } else {
+    const final = a.includes('aprobar_final');
+    titulo = final ? 'Aprobación final' : 'Tu aprobación';
+    botones = `<button class="sl-btn si" onclick="accion(${s.id}, '${final ? 'aprobar_final' : 'aprobar_1'}')">Aprobar</button>
+      <button class="sl-btn no" onclick="accion(${s.id}, 'rechazar')">Rechazar</button>`;
+  }
+  return `<div class="sl-accion"><h3>${titulo}</h3>${campos}
+    <label for="ac-com">Comentario${a.includes('rechazar') ? ' (obligatorio si rechazas)' : ' (opcional)'}</label>
+    <textarea id="ac-com" rows="2"></textarea>
+    <div class="sl-botones">${botones}</div><div class="sl-msg" id="ac-msg" role="alert"></div></div>`;
+}
+
+async function accion(id, que) {
+  const msg = document.getElementById('ac-msg');
+  if (que === 'rechazar' && !confirm('¿Rechazar esta solicitud? No se puede deshacer.')) return;
+  document.querySelectorAll('.sl-accion .sl-btn').forEach(b => b.disabled = true);
+  const v = sel => (document.getElementById(sel) || {}).value;
+  try {
+    const r = await fetch(`/api/solicitudes/${id}/accion`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: que, comentario: v('ac-com'), dictamen: v('ac-dictamen'), documento: v('ac-doc') }),
+    }).then(x => x.json());
+    if (!r.ok) throw new Error(r.msg);
+    await cargar();
+    await abrir(id);
+  } catch (e) {
+    msg.textContent = e.message;
+    document.querySelectorAll('.sl-accion .sl-btn').forEach(b => b.disabled = false);
+  }
 }
 
 function cerrar() {

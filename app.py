@@ -278,7 +278,8 @@ PREFIJOS_RESTRINGIDOS_ADQUISICIONES = (
 # en musa360.cl (decision del usuario 2026-10-10). Para abrirlas, sumar aqui
 # a C. Aliaga (ECI) y a los jefes de sucursal.
 # 2026-10-13: se suma Catalina Aliaga (ECI), pedido del usuario.
-USUARIOS_SOLICITUDES = {"dsepulveda@casamusa.cl", "caliaga@casamusa.cl"}
+# 2026-10-15: se suman E. Musa y F. Musa, que dan la aprobacion final (migracion 019).
+USUARIOS_SOLICITUDES = {"dsepulveda@casamusa.cl", "caliaga@casamusa.cl", "emusa@casamusa.cl", "fmusa@casamusa.cl"}
 
 # Logistica: la gerencia y Catalina Aliaga (pedido del usuario 2026-10-13).
 # Antes estaba en PREFIJOS_SOLO_GERENCIA; ahora tiene su propio set, igual
@@ -1583,6 +1584,8 @@ def api_solicitudes_config():
         "sucursales": [{"codigo": c, "nombre": data_loader_solicitudes_pg.SUCURSALES[c]} for c in permitidas],
         "todas_sucursales": [{"codigo": c, "nombre": n} for c, n in data_loader_solicitudes_pg.SUCURSALES.items()],
         "estados": data_loader_solicitudes_pg.ESTADOS,
+        "orden_estados": list(data_loader_solicitudes_pg.ESTADOS),
+        "dictamenes": data_loader_solicitudes_pg.DICTAMENES,
         "max_fotos": data_loader_solicitudes_pg.MAX_FOTOS,
     })
 
@@ -1613,12 +1616,15 @@ def api_solicitudes_documento():
 def api_solicitudes():
     if request.method == "GET":
         try:
-            return jsonify(data_loader_solicitudes_pg.listar_solicitudes(
+            lista = data_loader_solicitudes_pg.listar_solicitudes(
                 session.get("usuario"), _sol_ve_todas(), _sol_sucursales_usuario(),
                 estado=request.args.getlist("estado") or None,
                 tipo=request.args.getlist("tipo") or None,
                 sucursal=request.args.getlist("sucursal") or None,
-            ))
+            )
+            for x in lista:
+                x["te_toca"] = data_loader_solicitudes_pg.le_toca(x["estado"], session.get("usuario"))
+            return jsonify(lista)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -1653,7 +1659,30 @@ def api_solicitud_detalle(sid):
     s = data_loader_solicitudes_pg.get_solicitud(sid)
     if not s or not _sol_puede_ver(s):
         return jsonify({"error": "Solicitud no encontrada."}), 404
+    s["acciones"] = data_loader_solicitudes_pg.acciones_para(s["estado"], session.get("usuario"))
     return jsonify(s)
+
+
+@app.route("/api/solicitudes/<int:sid>/accion", methods=["POST"])
+@login_requerido
+def api_solicitud_accion(sid):
+    """Aprobar, rechazar, enviar a aprobacion (ECI) o marcar ejecutada (migracion 019)."""
+    s = data_loader_solicitudes_pg.get_solicitud(sid)
+    if not s or not _sol_puede_ver(s):
+        return jsonify({"ok": False, "msg": "Solicitud no encontrada."}), 404
+    d = request.get_json(silent=True) or {}
+    try:
+        nuevo = data_loader_solicitudes_pg.ejecutar_accion(
+            sid, d.get("accion"), session.get("usuario"), comentario=d.get("comentario"),
+            dictamen=d.get("dictamen"), documento=d.get("documento"))
+    except PermissionError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"No se pudo guardar: {e}"}), 500
+    return jsonify({"ok": True, "estado": nuevo,
+                    "estado_nombre": data_loader_solicitudes_pg.ESTADOS.get(nuevo, nuevo)})
 
 
 @app.route("/api/solicitudes/foto/<int:fid>")

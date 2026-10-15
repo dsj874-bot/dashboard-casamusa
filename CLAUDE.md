@@ -1135,6 +1135,23 @@ se cierra el 5%. Sirve de verdad solo si el mes en curso se sube a diario.
 - La bodega "Todas" viene en 0/NaN: el total de la empresa es la suma de
   las 6 sucursales.
 
+## Solicitudes de Inventario: aprobaciones (2026-10-15, migración 019)
+Flujo de estados, definido en `data_loader_solicitudes_pg._ACCIONES`:
+- **SALIDA:** `en_analisis` → `pend_aprobacion_1` → `pend_aprobacion_2` → `aprobada` → `ejecutada`.
+- **Otros tipos:** parten en `pend_aprobacion_1` y siguen igual.
+- **Rechazo:** desde cualquiera de los dos pasos de aprobación, con motivo obligatorio. Lleva a `rechazada`.
+
+Quién actúa en cada paso:
+- **Análisis:** el ECI (`ECI` = caliaga), que deja un `dictamen`.
+- **Aprobación 1:** `APROBADOR_1` (dsepulveda).
+- **Aprobación final:** uno de `APROBADORES_FINALES` (emusa o fmusa).
+- **Ejecución:** el ECI, con el documento ERP opcional.
+
+Detalles:
+- `ejecutar_accion()` bloquea la fila (`FOR UPDATE`) y vuelve a validar estado y rol.
+- Cada paso queda en las columnas `aprobado1_*`, `aprobado2_*` y `ejecutado_*`, y también en `solicitud_evento`.
+- La lista marca "Te toca" según `le_toca()`.
+
 ## Páginas en construcción (pendiente)
 - /datos — Vista de Datos (explorador de transacciones crudas, con
   filtros + búsqueda; diseño aún no definido con el usuario). La ruta

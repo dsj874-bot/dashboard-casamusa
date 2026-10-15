@@ -45,8 +45,20 @@ TIPOS = {
         "ayuda": "Describe la falla. La garantía es de funcionamiento: la foto es opcional.",
     },
 }
-ESTADOS = {"abierta": "Abierta", "en_analisis": "En análisis", "aprobada": "Aprobada", "rechazada": "Rechazada",
-           "ejecutada": "Ejecutada", "cerrada": "Cerrada", "anulada": "Anulada"}
+ESTADOS = {"en_analisis": "En análisis", "pend_aprobacion_1": "Por aprobar: D. Sepúlveda",
+           "pend_aprobacion_2": "Por aprobar: gerencia", "aprobada": "Aprobada · por ejecutar",
+           "ejecutada": "Ejecutada", "rechazada": "Rechazada", "anulada": "Anulada"}
+
+# Niveles de aprobacion (migracion 019, pedido del usuario 2026-10-15): todas
+# las solicitudes pasan por APROBADOR_1 y luego por uno de APROBADORES_FINALES.
+# Las salidas pasan antes por el analisis del ECI. Tras la aprobacion final el
+# ECI hace el movimiento en el ERP y la marca ejecutada.
+APROBADOR_1 = {"dsepulveda@casamusa.cl"}
+APROBADORES_FINALES = {"emusa@casamusa.cl", "fmusa@casamusa.cl"}
+ECI = {"caliaga@casamusa.cl"}
+NOMBRES = {"dsepulveda@casamusa.cl": "D. Sepúlveda", "emusa@casamusa.cl": "E. Musa",
+           "fmusa@casamusa.cl": "F. Musa", "caliaga@casamusa.cl": "C. Aliaga"}
+DICTAMENES = ["Justificada", "Error de sistema", "Pérdida confirmada"]
 MAX_FOTOS = 5
 MAX_BYTES_FOTO = 1_500_000
 
@@ -155,7 +167,7 @@ def crear_solicitud(datos, lineas, fotos, usuario, nombre):
                 raise ValueError(f"Código no encontrado: {faltan[0]}")
             cant_total = sum(float(l["cantidad"]) for l in lineas)
             monto = sum(float(l["cantidad"]) * float(prod[int(l["codigo"])]["cup"]) for l in lineas)
-            estado = "en_analisis" if tipo == "SALIDA" else "abierta"
+            estado = "en_analisis" if tipo == "SALIDA" else "pend_aprobacion_1"
             cur.execute(
                 """INSERT INTO solicitud (tipo, subtipo, estado, sucursal, sucursal_destino, solicitante,
                                           solicitante_nombre, explicacion, documento, tercero, cantidad_total, monto_total)
@@ -177,7 +189,8 @@ def crear_solicitud(datos, lineas, fotos, usuario, nombre):
                 )
             cur.execute(
                 "INSERT INTO solicitud_evento (solicitud_id, usuario, estado_desde, estado_hasta, comentario) VALUES (%s, %s, NULL, %s, %s)",
-                (sid, usuario, estado, "Solicitud creada" + (" — pasa a análisis de Control de Inventario" if estado == "en_analisis" else "")),
+                (sid, usuario, estado, "Solicitud creada — " + (
+                    "pasa a análisis de Control de Inventario" if estado == "en_analisis" else "pasa a aprobación de D. Sepúlveda")),
             )
         conn.commit()
     return sid, numero_de(sid)
@@ -232,6 +245,7 @@ def _fila_resumen(r):
         "cantidad_total": float(r["cantidad_total"]), "monto_total": float(r["monto_total"]),
         "creado_en": r["creado_en"].isoformat(), "n_lineas": r.get("n_lineas"), "n_fotos": r.get("n_fotos"),
         "producto_principal": r.get("producto_principal"),
+        "es_salida": r["tipo"] == "SALIDA",
     }
 
 
@@ -252,9 +266,98 @@ def get_solicitud(sid):
             eventos = [{"ts": r["ts"].isoformat(), "usuario": r["usuario"], "estado": ESTADOS.get(r["estado_hasta"], r["estado_hasta"]),
                         "comentario": r["comentario"]} for r in cur.fetchall()]
     d = _fila_resumen(s)
+    iso = lambda t: t.isoformat() if t else None
     d.update({"explicacion": s["explicacion"], "lineas": lineas, "fotos": fotos, "eventos": eventos,
-              "sucursal_destino_nombre": SUCURSALES.get(s["sucursal_destino"]) if s["sucursal_destino"] else None})
+              "sucursal_destino_nombre": SUCURSALES.get(s["sucursal_destino"]) if s["sucursal_destino"] else None,
+              "dictamen": s["dictamen"], "doc_ejecucion": s["doc_ejecucion"],
+              "aprobado1_por": NOMBRES.get(s["aprobado1_por"], s["aprobado1_por"]), "aprobado1_en": iso(s["aprobado1_en"]),
+              "aprobado2_por": NOMBRES.get(s["aprobado2_por"], s["aprobado2_por"]), "aprobado2_en": iso(s["aprobado2_en"]),
+              "ejecutado_por": NOMBRES.get(s["ejecutado_por"], s["ejecutado_por"]), "ejecutado_en": iso(s["ejecutado_en"])})
+    for e in d["eventos"]:
+        e["usuario"] = NOMBRES.get(e["usuario"], e["usuario"])
     return d
+
+
+# ══════════════════════════════════════════════════════
+#  APROBACIONES (migracion 019)
+# ══════════════════════════════════════════════════════
+# accion -> (estados desde los que se puede, quien puede, estado al que pasa)
+_ACCIONES = {
+    "enviar_aprobacion": ({"en_analisis"}, ECI, "pend_aprobacion_1"),
+    "aprobar_1": ({"pend_aprobacion_1"}, APROBADOR_1, "pend_aprobacion_2"),
+    "aprobar_final": ({"pend_aprobacion_2"}, APROBADORES_FINALES, "aprobada"),
+    "rechazar": ({"pend_aprobacion_1", "pend_aprobacion_2"}, None, "rechazada"),
+    "ejecutar": ({"aprobada"}, ECI, "ejecutada"),
+}
+
+
+def _puede(accion, estado, usuario):
+    desde, quienes, _ = _ACCIONES[accion]
+    if estado not in desde:
+        return False
+    if accion == "rechazar":
+        quienes = APROBADOR_1 if estado == "pend_aprobacion_1" else APROBADORES_FINALES
+    return usuario in quienes
+
+
+def acciones_para(estado, usuario):
+    """Acciones que el usuario puede hacer sobre una solicitud en ese estado."""
+    return [a for a in _ACCIONES if _puede(a, estado, usuario)]
+
+
+def le_toca(estado, usuario):
+    return bool(acciones_para(estado, usuario))
+
+
+def ejecutar_accion(sid, accion, usuario, comentario=None, dictamen=None, documento=None):
+    """Aplica una accion del flujo de aprobacion. Lanza ValueError (dato
+    faltante o estado que ya cambio) o PermissionError (no le toca)."""
+    if accion not in _ACCIONES:
+        raise ValueError("Acción desconocida.")
+    comentario = (comentario or "").strip()
+    with db.get_connection() as conn:
+        with conn.cursor() as cur:
+            # FOR UPDATE: si dos aprobadores apretan a la vez, el segundo ve el estado nuevo
+            cur.execute("SELECT id, estado FROM solicitud WHERE id = %s FOR UPDATE", (sid,))
+            s = cur.fetchone()
+            if not s:
+                raise ValueError("Solicitud no encontrada.")
+            estado = s["estado"]
+            if estado not in _ACCIONES[accion][0]:
+                raise ValueError(f"La solicitud ya está en '{ESTADOS.get(estado, estado)}'. Recarga la página.")
+            if not _puede(accion, estado, usuario):
+                raise PermissionError("Esta aprobación no te corresponde.")
+            nuevo = _ACCIONES[accion][2]
+            sets, vals = ["estado = %s", "actualizado_en = now()"], [nuevo]
+            if accion == "enviar_aprobacion":
+                if dictamen not in DICTAMENES:
+                    raise ValueError("Elige el dictamen del análisis.")
+                sets.append("dictamen = %s")
+                vals.append(dictamen)
+                texto = f"Análisis: {dictamen}" + (f" — {comentario}" if comentario else "") + " · pasa a aprobación de D. Sepúlveda"
+            elif accion == "aprobar_1":
+                sets += ["aprobado1_por = %s", "aprobado1_en = now()"]
+                vals.append(usuario)
+                texto = "Aprobada (nivel 1)" + (f" — {comentario}" if comentario else "") + " · pasa a aprobación final de gerencia"
+            elif accion == "aprobar_final":
+                sets += ["aprobado2_por = %s", "aprobado2_en = now()"]
+                vals.append(usuario)
+                texto = "Aprobación final" + (f" — {comentario}" if comentario else "") + " · pasa a ejecución de Control de Inventario"
+            elif accion == "rechazar":
+                if len(comentario) < 5:
+                    raise ValueError("Para rechazar escribe el motivo.")
+                texto = f"Rechazada — {comentario}"
+            else:  # ejecutar
+                documento = (documento or "").strip()
+                sets += ["ejecutado_por = %s", "ejecutado_en = now()", "doc_ejecucion = %s"]
+                vals += [usuario, documento or None]
+                texto = "Ejecutada en el ERP" + (f" (documento {documento})" if documento else "") + (f" — {comentario}" if comentario else "")
+            cur.execute(f"UPDATE solicitud SET {', '.join(sets)} WHERE id = %s", (*vals, sid))
+            cur.execute(
+                "INSERT INTO solicitud_evento (solicitud_id, usuario, estado_desde, estado_hasta, comentario) VALUES (%s, %s, %s, %s, %s)",
+                (sid, usuario, estado, nuevo, texto))
+        conn.commit()
+    return nuevo
 
 
 def get_foto(foto_id):
