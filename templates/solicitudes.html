@@ -209,8 +209,10 @@ function pasos(s) {
   const items = [];
   if (s.es_salida) items.push({ k: 0, t: 'Análisis de Control de Inventario', who: 'C. Aliaga',
     det: s.dictamen ? `Dictamen: ${esc(s.dictamen)}` : '' });
-  items.push({ k: 1, t: 'Aprobación 1', who: 'D. Sepúlveda', det: cuando(s.aprobado1_por, s.aprobado1_en) });
-  items.push({ k: 2, t: 'Aprobación final', who: 'E. Musa o F. Musa', det: cuando(s.aprobado2_por, s.aprobado2_en) });
+  items.push({ k: 1, t: s.requiere_final ? 'Aprobación 1' : 'Aprobación', who: 'D. Sepúlveda' + (s.requiere_final ? '' : ' · hasta $500.000 no requiere aprobación final'),
+    det: s.aprobado1_por ? cuando(s.aprobado1_por, s.aprobado1_en) + (s.requiere_final ? '' : ' · sin aprobación final (hasta $500.000)') : '' });
+  if (s.requiere_final)
+    items.push({ k: 2, t: 'Aprobación final (supera $500.000)', who: 'E. Musa o F. Musa', det: cuando(s.aprobado2_por, s.aprobado2_en) });
   items.push({ k: 3, t: 'Ejecución en el ERP', who: 'C. Aliaga', det: cuando(s.ejecutado_por, s.ejecutado_en) });
   const rechEn = rech ? (s.aprobado1_en ? 2 : (s.dictamen || !s.es_salida ? 1 : 0)) : null;
   return '<div class="sl-pasos">' + items.map(it => {
@@ -237,7 +239,8 @@ function panelAccion(s) {
     botones = `<button class="sl-btn si" onclick="accion(${s.id}, 'ejecutar')">Marcar ejecutada</button>`;
   } else {
     const final = a.includes('aprobar_final');
-    titulo = final ? 'Aprobación final' : 'Tu aprobación';
+    titulo = final ? 'Aprobación final' : (s.requiere_final ? 'Tu aprobación · después pasa a E. Musa o F. Musa (supera $500.000)'
+                                                            : 'Tu aprobación · es la única (hasta $500.000)');
     botones = `<button class="sl-btn si" onclick="accion(${s.id}, '${final ? 'aprobar_final' : 'aprobar_1'}')">Aprobar</button>
       <button class="sl-btn no" onclick="accion(${s.id}, 'rechazar')">Rechazar</button>`;
   }

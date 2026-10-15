@@ -50,9 +50,11 @@ ESTADOS = {"en_analisis": "En análisis", "pend_aprobacion_1": "Por aprobar: D. 
            "ejecutada": "Ejecutada", "rechazada": "Rechazada", "anulada": "Anulada"}
 
 # Niveles de aprobacion (migracion 019, pedido del usuario 2026-10-15): todas
-# las solicitudes pasan por APROBADOR_1 y luego por uno de APROBADORES_FINALES.
-# Las salidas pasan antes por el analisis del ECI. Tras la aprobacion final el
-# ECI hace el movimiento en el ERP y la marca ejecutada.
+# las solicitudes pasan por APROBADOR_1; las que SUPERAN UMBRAL_APROBACION_FINAL
+# (valor a CUP) pasan ademas por uno de APROBADORES_FINALES. Las salidas pasan
+# antes por el analisis del ECI. Tras la ultima aprobacion el ECI hace el
+# movimiento en el ERP y la marca ejecutada.
+UMBRAL_APROBACION_FINAL = 500_000
 APROBADOR_1 = {"dsepulveda@casamusa.cl"}
 APROBADORES_FINALES = {"emusa@casamusa.cl", "fmusa@casamusa.cl"}
 ECI = {"caliaga@casamusa.cl"}
@@ -246,6 +248,7 @@ def _fila_resumen(r):
         "creado_en": r["creado_en"].isoformat(), "n_lineas": r.get("n_lineas"), "n_fotos": r.get("n_fotos"),
         "producto_principal": r.get("producto_principal"),
         "es_salida": r["tipo"] == "SALIDA",
+        "requiere_final": requiere_aprobacion_final(r["monto_total"]),
     }
 
 
@@ -291,6 +294,10 @@ _ACCIONES = {
 }
 
 
+def requiere_aprobacion_final(monto):
+    return float(monto or 0) > UMBRAL_APROBACION_FINAL
+
+
 def _puede(accion, estado, usuario):
     desde, quienes, _ = _ACCIONES[accion]
     if estado not in desde:
@@ -318,7 +325,7 @@ def ejecutar_accion(sid, accion, usuario, comentario=None, dictamen=None, docume
     with db.get_connection() as conn:
         with conn.cursor() as cur:
             # FOR UPDATE: si dos aprobadores apretan a la vez, el segundo ve el estado nuevo
-            cur.execute("SELECT id, estado FROM solicitud WHERE id = %s FOR UPDATE", (sid,))
+            cur.execute("SELECT id, estado, monto_total FROM solicitud WHERE id = %s FOR UPDATE", (sid,))
             s = cur.fetchone()
             if not s:
                 raise ValueError("Solicitud no encontrada.")
@@ -328,6 +335,10 @@ def ejecutar_accion(sid, accion, usuario, comentario=None, dictamen=None, docume
             if not _puede(accion, estado, usuario):
                 raise PermissionError("Esta aprobación no te corresponde.")
             nuevo = _ACCIONES[accion][2]
+            # Hasta el umbral basta la aprobacion 1: pasa directo a ejecucion
+            requiere_final = requiere_aprobacion_final(s["monto_total"])
+            if accion == "aprobar_1" and not requiere_final:
+                nuevo = "aprobada"
             sets, vals = ["estado = %s", "actualizado_en = now()"], [nuevo]
             if accion == "enviar_aprobacion":
                 if dictamen not in DICTAMENES:
@@ -338,7 +349,9 @@ def ejecutar_accion(sid, accion, usuario, comentario=None, dictamen=None, docume
             elif accion == "aprobar_1":
                 sets += ["aprobado1_por = %s", "aprobado1_en = now()"]
                 vals.append(usuario)
-                texto = "Aprobada (nivel 1)" + (f" — {comentario}" if comentario else "") + " · pasa a aprobación final de gerencia"
+                texto = "Aprobada (nivel 1)" + (f" — {comentario}" if comentario else "") + (
+                    " · supera $500.000: pasa a aprobación final de gerencia" if requiere_final
+                    else " · hasta $500.000 no requiere aprobación final: pasa a ejecución de Control de Inventario")
             elif accion == "aprobar_final":
                 sets += ["aprobado2_por = %s", "aprobado2_en = now()"]
                 vals.append(usuario)

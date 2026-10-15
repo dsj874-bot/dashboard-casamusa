@@ -1144,7 +1144,8 @@ Flujo de estados, definido en `data_loader_solicitudes_pg._ACCIONES`:
 Quién actúa en cada paso:
 - **Análisis:** el ECI (`ECI` = caliaga), que deja un `dictamen`.
 - **Aprobación 1:** `APROBADOR_1` (dsepulveda).
-- **Aprobación final:** uno de `APROBADORES_FINALES` (emusa o fmusa).
+- **Aprobación final:** uno de `APROBADORES_FINALES` (emusa o fmusa), **solo si el valor a CUP supera
+  `UMBRAL_APROBACION_FINAL` ($500.000)**. Hasta ese monto, la aprobación 1 lleva directo a `aprobada`.
 - **Ejecución:** el ECI, con el documento ERP opcional.
 
 Detalles:
