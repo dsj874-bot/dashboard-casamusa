@@ -15,6 +15,7 @@ psycopg-pool==3.2.3
 pyarrow==25.0.0
 python-calamine==0.8.2
 python-dotenv==1.0.1
+google-genai==2.31.0
 python-dateutil==2.9.0.post0
 six==1.17.0
 tzdata==2026.2

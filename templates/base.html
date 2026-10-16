@@ -755,6 +755,11 @@
     </a>
 
     {% block sidebar_nav %}
+    {% if puede_ver_agente %}
+    <a href="/agente" class="nav-item {% if active == 'agente' %}active{% endif %}">
+      <span class="nav-icon">✨</span><span class="nav-label"> Analista IA</span>
+    </a>
+    {% endif %}
     <div class="nav-section-title">Principal</div>
     <a href="/resumen" class="nav-item {% if active == 'resumen' %}active{% endif %}">
       <span class="nav-icon">📊</span><span class="nav-label"> Resumen General</span>

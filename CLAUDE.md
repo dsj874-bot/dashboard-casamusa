@@ -1089,6 +1089,28 @@ que las documenta a todas.
 | /clientes | clientes.html | get_ventas_por_cliente() (top 15) |
 | /productos | productos.html | get_ventas_por_producto() (top 15) |
 
+## Analista IA (2026-10-16, migración 020)
+Chat `/agente`: preguntas en lenguaje natural sobre ventas y compras. Por ahora solo para
+`USUARIOS_AGENTE` (dsepulveda); después se suma la gerencia.
+
+**Cerebro:** Gemini, plan gratuito, lo eligió el usuario.
+- Modelo en `GEMINI_MODEL`, por defecto `gemini-3.8-flash`. Clave en `GEMINI_API_KEY`, en el `.env` y en Vercel.
+- En el plan gratuito, Google puede usar las preguntas y respuestas para mejorar sus productos, y su personal
+  puede revisarlas. El usuario lo aceptó. Por eso las herramientas devuelven solo resultados ya calculados y cortos.
+- Todo lo de Gemini vive en `agente_ia._GeminiCerebro`. Para cambiar de proveedor basta otra clase con el mismo
+  `conversar()`.
+
+**Herramientas:** `agente_herramientas.HERRAMIENTAS`.
+- Son consultas de solo lectura y parametrizadas, de máximo 25 filas.
+- La IA no calcula: elige la herramienta y redacta. Los números salen con los criterios de las pantallas:
+  - ventas: `v_ventas`, `sucursal_logica`, `vendedor_rpt`, margen ajustado al ERP;
+  - stock y cobertura: `inventario_stock`, 6 sucursales, más OC de stock pendientes.
+- Gotcha: el margen anterior a 2026 no está ajustado al ERP (`ANO_MARGEN_CONFIABLE`). Las herramientas no lo
+  comparan, y el prompt prohíbe hacerlo.
+
+**Registro:** cada pregunta queda en `agente_log`, con las herramientas usadas, los tokens, el tiempo y el error si
+lo hubo. Ese registro sirve para auditar las respuestas.
+
 ## Cotizaciones (2026-10-13, migración 018)
 Pantalla `/cotizaciones` (Comercial → Análisis, solo `USUARIOS_COTIZACIONES`
 = gerencia) con 4 pestañas: Embudo, Seguimiento, Perdidas y No creados.

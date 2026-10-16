@@ -77,6 +77,8 @@ import data_loader_logistica
 import data_loader_solicitudes_pg
 # Cotizaciones del ERP: embudo, seguimiento, perdidas y no creados (migracion 018)
 import data_loader_cotizaciones_pg
+# Analista IA (Gemini + herramientas de ventas y compras, migracion 020)
+import agente_ia
 
 # ══════════════════════════════════════════════════════
 #  GERENTES AUTORIZADOS
@@ -301,6 +303,11 @@ PREFIJOS_RESTRINGIDOS_COTIZACIONES = (
     "/cotizaciones", "/api/cotizaciones", "/subir_cotizaciones", "/api/subir_cotizaciones",
 )
 
+# Analista IA (2026-10-16): por ahora solo dsepulveda (pedido del usuario);
+# despues se suma la gerencia.
+USUARIOS_AGENTE = {"dsepulveda@casamusa.cl"}
+PREFIJOS_RESTRINGIDOS_AGENTE = ("/agente", "/api/agente")
+
 PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA = (
     "/forecast/plan_compra", "/api/forecast/plan_compras",
     "/forecast/nivel_servicio", "/api/forecast/nivel_servicio",
@@ -324,6 +331,8 @@ def _restringir_inventario_adquisiciones():
         permitidos = USUARIOS_LOGISTICA
     elif path.startswith(PREFIJOS_RESTRINGIDOS_COTIZACIONES):
         permitidos = USUARIOS_COTIZACIONES
+    elif path.startswith(PREFIJOS_RESTRINGIDOS_AGENTE):
+        permitidos = USUARIOS_AGENTE
     else:
         return None
     if "usuario" not in session:
@@ -435,7 +444,7 @@ def inject_es_admin():
         "es_pantalla_comercial": not request.path.startswith(
             PREFIJOS_RESTRINGIDOS_INVENTARIO + PREFIJOS_RESTRINGIDOS_ADQUISICIONES + PREFIJOS_SOLO_GERENCIA
             + PREFIJOS_RESTRINGIDOS_SOLICITUDES + PREFIJOS_RESTRINGIDOS_LOGISTICA
-            + PREFIJOS_RESTRINGIDOS_COTIZACIONES
+            + PREFIJOS_RESTRINGIDOS_COTIZACIONES + PREFIJOS_RESTRINGIDOS_AGENTE
         ),
         # Resumen de Adquisiciones tiene su propio "Datos al", separado
         # del de Ventas (ver _fecha_corte_adq_sesion()).
@@ -457,6 +466,7 @@ def inject_es_admin():
         # filtros de sucursal/vendedor y sin columnas de margen.
         "es_vendedor": bool(session.get("vendedor")),
         "puede_ver_cotizaciones": session.get("usuario") in USUARIOS_COTIZACIONES,
+        "puede_ver_agente": session.get("usuario") in USUARIOS_AGENTE,
     }
 
 
@@ -2101,6 +2111,38 @@ def api_subir_margen_erp():
         "msg": f"OK: reporte {ano} cargado ({rango}, {vendedores} vendedores). "
                f"Margen ajustado en {r['ajustados']} combinaciones de vendedor y mes.",
     })
+
+
+# ══════════════════════════════════════════════════════
+#  ANALISTA IA — preguntas en lenguaje natural sobre ventas y compras
+#  (agente_ia.py + agente_herramientas.py, migracion 020)
+# ══════════════════════════════════════════════════════
+@app.route("/agente")
+@login_requerido
+def agente():
+    return render_template("agente.html", active="agente", session_nombre=session.get("nombre"))
+
+
+@app.route("/api/agente/preguntar", methods=["POST"])
+@login_requerido
+def api_agente_preguntar():
+    d = request.get_json(silent=True) or {}
+    try:
+        r = agente_ia.responder(d.get("pregunta"), d.get("historial") or [], session.get("usuario"))
+        return jsonify({"ok": True, **r})
+    except agente_ia.AgenteError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error inesperado: {e}"}), 500
+
+
+@app.route("/api/agente/historial")
+@login_requerido
+def api_agente_historial():
+    try:
+        return jsonify({"ok": True, "items": agente_ia.historial_usuario(session.get("usuario"))})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
 
 
 # ══════════════════════════════════════════════════════

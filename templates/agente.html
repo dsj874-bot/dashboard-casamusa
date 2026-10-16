@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Analista IA{% endblock %}
+{% block page_title %}Analista IA{% endblock %}
+{% block page_subtitle %}Pregúntale a Musa360 sobre ventas, márgenes, stock y compras{% endblock %}
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .ag-wrap { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; min-height: calc(100vh - 150px); }
+  .ag-chat { flex: 1; display: flex; flex-direction: column; gap: 16px; padding-bottom: 16px; }
+  .ag-bienvenida { text-align: center; padding: 40px 12px 10px; color: var(--muted2); }
+  .ag-bienvenida h2 { color: var(--text); font-size: 22px; margin: 0 0 6px; }
+  .ag-bienvenida p { margin: 0 auto 20px; max-width: 60ch; line-height: 1.55; font-size: 14px; }
+  .ag-sugerencias { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; text-align: left; }
+  @media (max-width: 760px) { .ag-sugerencias { grid-template-columns: 1fr; } }
+  .ag-sug { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+            color: var(--text); font-size: 13.5px; cursor: pointer; text-align: left; font: inherit; line-height: 1.4; }
+  .ag-sug:hover { border-color: var(--accent); }
+  .ag-sug small { display: block; color: var(--muted2); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 3px; }
+  .ag-sug:focus-visible, .ag-enviar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .ag-msg { display: flex; gap: 10px; align-items: flex-start; }
+  .ag-msg.yo { justify-content: flex-end; }
+  .ag-burbuja { border-radius: 14px; padding: 12px 16px; font-size: 14px; line-height: 1.6; max-width: 100%; min-width: 0; }
+  .ag-msg.yo .ag-burbuja { background: var(--accent); color: #fff; max-width: 80%; white-space: pre-wrap; }
+  .ag-msg.ia .ag-burbuja { background: var(--surface); border: 1px solid var(--border); color: var(--text); flex: 1; }
+  .ag-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border);
+               display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+  .ag-burbuja p { margin: 0 0 10px; } .ag-burbuja p:last-child { margin-bottom: 0; }
+  .ag-burbuja ul, .ag-burbuja ol { margin: 0 0 10px; padding-left: 20px; }
+  .ag-burbuja strong { color: var(--text); }
+  .ag-burbuja .ag-tw { overflow-x: auto; margin: 6px 0 12px; }
+  .ag-burbuja table { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 100%; }
+  .ag-burbuja th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted);
+                   padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .ag-burbuja td { padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .ag-burbuja td.num, .ag-burbuja th.num { text-align: right; }
+  .ag-burbuja.error { border-color: var(--red); color: var(--red); }
+  .ag-como { margin-top: 10px; font-size: 12px; color: var(--muted2); }
+  .ag-como summary { cursor: pointer; }
+  .ag-como li { margin: 4px 0; }
+  .ag-como code { font-size: 11.5px; color: var(--muted2); word-break: break-word; }
+  .ag-pensando { color: var(--muted2); font-size: 13.5px; }
+  .ag-pensando::after { content: ''; animation: puntos 1.2s steps(4) infinite; }
+  @keyframes puntos { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+  @media (prefers-reduced-motion: reduce) { .ag-pensando::after { animation: none; content: '…'; } }
+
+  .ag-entrada { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0 14px; }
+  .ag-caja { display: flex; gap: 8px; align-items: flex-end; background: var(--surface); border: 1px solid var(--border);
+             border-radius: 14px; padding: 8px 8px 8px 14px; }
+  .ag-caja:focus-within { border-color: var(--accent); }
+  .ag-caja textarea { flex: 1; background: none; border: none; color: var(--text); font: inherit; font-size: 14px;
+                      resize: none; max-height: 160px; min-height: 24px; padding: 6px 0; outline: none; }
+  .ag-enviar { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 9px 16px; font-weight: 700; cursor: pointer; }
+  .ag-enviar:disabled { opacity: .5; cursor: wait; }
+  .ag-pie { display: flex; justify-content: space-between; gap: 10px; font-size: 11.5px; color: var(--muted2); margin-top: 6px; flex-wrap: wrap; }
+  .ag-pie button { background: none; border: none; color: var(--muted2); cursor: pointer; text-decoration: underline; font: inherit; padding: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ag-wrap">
+  <div class="ag-chat" id="chat" aria-live="polite"></div>
+  <div class="ag-entrada">
+    <form class="ag-caja" id="form">
+      <label for="pregunta" class="sr-only" style="position:absolute;left:-9999px">Tu pregunta</label>
+      <textarea id="pregunta" rows="1" placeholder="Ej: ¿cómo van las ventas de Matta este mes contra el año pasado?"></textarea>
+      <button class="ag-enviar" id="enviar" type="submit">Preguntar</button>
+    </form>
+    <div class="ag-pie">
+      <span>Los números salen de Musa360. Revisa "¿Cómo lo calculé?" en cada respuesta.</span>
+      <button type="button" id="nueva">Nueva conversación</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const SUGERENCIAS = [
+  ['Ventas', '¿Cómo vamos este mes contra el mismo mes del año pasado, por sucursal?'],
+  ['Margen', '¿Qué vendedores bajaron más su venta en septiembre y cómo está su margen?'],
+  ['Clientes', '¿Qué clientes importantes dejaron de comprar en los últimos 3 meses?'],
+  ['Marcas', '¿Cuáles son las 10 marcas que más venden este año y cómo crecen?'],
+  ['Compras', '¿Qué productos prioritarios de Bticino están por quebrar?'],
+  ['Compras', '¿Cuánto debo comprar de Sinthesi para quedar con 1,5 meses de stock?'],
+  ['Inventario', '¿Dónde tengo más sobrestock en Legrand y cuánto vale?'],
+  ['Proveedores', '¿A qué proveedores les hemos comprado más este año y cuánto falta por recibir?'],
+];
+const CLAVE = 'agente_conversacion_v1';
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let conversacion = [];
+try { conversacion = JSON.parse(sessionStorage.getItem(CLAVE) || '[]'); } catch (e) { conversacion = []; }
+const guardar = () => { try { sessionStorage.setItem(CLAVE, JSON.stringify(conversacion.slice(-30))); } catch (e) {} };
+
+// Markdown basico y seguro: se escapa todo y luego se da formato
+function md(texto) {
+  const lineas = esc(texto).split('\n');
+  let html = '', lista = null, tabla = [];
+  const inline = s => s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/(^|[\s(])_(.+?)_(?=$|[\s.,;:)])/g, '$1<em>$2</em>').replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=$|[\s.,;:)])/g, '$1<em>$2</em>');
+  const cerrarLista = () => { if (lista) { html += `</${lista}>`; lista = null; } };
+  const cerrarTabla = () => {
+    if (!tabla.length) return;
+    // fuera la fila separadora |---|:---:|
+    const filas = tabla.filter(l => !/^\|?[\s:|-]+\|?$/.test(l));
+    const celdas = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+    const esNum = c => /^[-+]?\$?[\d.,]+\s*(%|MM)?$/.test(c);
+    if (filas.length) {
+      const cab = celdas(filas[0]);
+      html += '<div class="ag-tw"><table><thead><tr>' + cab.map(c => `<th>${inline(c)}</th>`).join('') + '</tr></thead><tbody>' +
+        filas.slice(1).map(l => '<tr>' + celdas(l).map(c => `<td class="${esNum(c) ? 'num' : ''}">${inline(c)}</td>`).join('') + '</tr>').join('') +
+        '</tbody></table></div>';
+    }
+    tabla = [];
+  };
+  for (const l of lineas) {
+    const t = l.trim();
+    if (t.startsWith('|')) { cerrarLista(); tabla.push(t); continue; }
+    cerrarTabla();
+    let m;
+    if ((m = t.match(/^[-*•]\s+(.*)/))) { if (lista !== 'ul') { cerrarLista(); html += '<ul>'; lista = 'ul'; } html += `<li>${inline(m[1])}</li>`; }
+    else if ((m = t.match(/^\d+[.)]\s+(.*)/))) { if (lista !== 'ol') { cerrarLista(); html += '<ol>'; lista = 'ol'; } html += `<li>${inline(m[1])}</li>`; }
+    else if ((m = t.match(/^#{1,4}\s+(.*)/))) { cerrarLista(); html += `<p><strong>${inline(m[1])}</strong></p>`; }
+    else if (!t) { cerrarLista(); }
+    else { cerrarLista(); html += `<p>${inline(t)}</p>`; }
+  }
+  cerrarTabla(); cerrarLista();
+  return html;
+}
+
+function pasosHtml(pasos) {
+  if (!pasos || !pasos.length) return '';
+  return `<details class="ag-como"><summary>¿Cómo lo calculé? (${pasos.length} consulta${pasos.length > 1 ? 's' : ''})</summary><ol>` +
+    pasos.map(p => `<li><strong>${esc(p.herramienta)}</strong> ${p.resumen ? '— ' + esc(p.resumen) : ''}<br><code>${esc(JSON.stringify(p.parametros))}</code></li>`).join('') +
+    '</ol></details>';
+}
+
+function pintar() {
+  const chat = document.getElementById('chat');
+  if (!conversacion.length) {
+    chat.innerHTML = `<div class="ag-bienvenida"><h2>¿Qué quieres saber?</h2>
+      <p>Pregunta en tus palabras sobre ventas, márgenes, clientes, stock, quiebres, sobrestock o compras. El analista consulta los datos de Musa360 y te responde con números.</p>
+      <div class="ag-sugerencias">${SUGERENCIAS.map(([c, q]) => `<button type="button" class="ag-sug" data-q="${esc(q)}"><small>${esc(c)}</small>${esc(q)}</button>`).join('')}</div></div>`;
+    chat.querySelectorAll('.ag-sug').forEach(b => b.onclick = () => preguntar(b.dataset.q));
+    return;
+  }
+  chat.innerHTML = conversacion.map(m => m.rol === 'usuario'
+    ? `<div class="ag-msg yo"><div class="ag-burbuja">${esc(m.texto)}</div></div>`
+    : `<div class="ag-msg ia"><div class="ag-avatar" aria-hidden="true">✨</div><div class="ag-burbuja${m.error ? ' error' : ''}">${m.pensando ? '<span class="ag-pensando">Consultando los datos</span>' : md(m.texto) + pasosHtml(m.pasos)}</div></div>`
+  ).join('');
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+}
+
+async function preguntar(texto) {
+  texto = (texto || '').trim();
+  if (!texto) return;
+  const btn = document.getElementById('enviar');
+  btn.disabled = true;
+  const historial = conversacion.filter(m => !m.error && !m.pensando).map(m => ({ rol: m.rol, texto: m.texto }));
+  conversacion.push({ rol: 'usuario', texto });
+  const espera = { rol: 'agente', pensando: true, texto: '' };
+  conversacion.push(espera);
+  pintar();
+  try {
+    const r = await fetch('/api/agente/preguntar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pregunta: texto, historial }),
+    });
+    const d = await r.json().catch(() => ({ ok: false, msg: `Error ${r.status} del servidor` }));
+    Object.assign(espera, d.ok ? { pensando: false, texto: d.respuesta, pasos: d.pasos }
+                               : { pensando: false, error: true, texto: d.msg || 'No se pudo responder.' });
+  } catch (e) {
+    Object.assign(espera, { pensando: false, error: true, texto: 'Error de conexión. Intenta de nuevo.' });
+  }
+  guardar();
+  pintar();
+  btn.disabled = false;
+  document.getElementById('pregunta').focus();
+}
+
+const caja = document.getElementById('pregunta');
+caja.addEventListener('input', () => { caja.style.height = 'auto'; caja.style.height = Math.min(caja.scrollHeight, 160) + 'px'; });
+caja.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('form').requestSubmit(); } });
+document.getElementById('form').addEventListener('submit', e => {
+  e.preventDefault();
+  const t = caja.value; caja.value = ''; caja.style.height = 'auto';
+  preguntar(t);
+});
+document.getElementById('nueva').onclick = () => { conversacion = []; guardar(); pintar(); caja.focus(); };
+pintar();
+</script>
+{% endblock %}
