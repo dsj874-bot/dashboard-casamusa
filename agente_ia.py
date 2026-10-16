@@ -19,7 +19,13 @@ from datetime import date
 import db
 import agente_herramientas as H
 
-MODELO = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+# gemini-3.6-flash es el principal: en el plan gratuito 3.8-flash se satura y
+# no respondia en 60 s (prueba del 2026-10-16), mientras 3.6 contesta en segundos.
+MODELO = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+# Si el modelo principal esta saturado (503) o agoto su cuota gratuita diaria
+# (429: 20 consultas por modelo al dia, medido el 2026-10-16) se pasa a estos,
+# en orden. Cada modelo tiene su propia cuota: en total ~80 consultas al dia.
+MODELOS_RESPALDO = [m for m in os.environ.get("GEMINI_MODELOS_RESPALDO", "gemini-3.8-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite").split(",") if m]
 MAX_PASOS = 8          # llamadas a herramientas por pregunta
 MAX_HISTORIAL = 8      # mensajes previos que se le recuerdan
 
@@ -69,7 +75,9 @@ class _GeminiCerebro:
         from google import genai
         from google.genai import types
         self.genai, self.types = genai, types
-        self.cliente = genai.Client(api_key=clave)
+        # Tope por llamada: Vercel corta la funcion a los 300 s
+        self.cliente = genai.Client(api_key=clave, http_options=types.HttpOptions(timeout=30_000))
+        self.tiempos = []
         self.tool = types.Tool(function_declarations=[
             types.FunctionDeclaration(name=n, description=h["descripcion"], parameters_json_schema=h["parametros"])
             for n, h in H.HERRAMIENTAS.items()])
@@ -86,13 +94,7 @@ class _GeminiCerebro:
         contenidos.append(t.Content(role="user", parts=[t.Part.from_text(text=pregunta)]))
         tin = tout = 0
         for _ in range(MAX_PASOS + 1):
-            try:
-                resp = self.cliente.models.generate_content(model=MODELO, contents=contenidos, config=config)
-            except Exception as e:  # errores de la API de Google
-                codigo = getattr(e, "code", None)
-                if codigo == 429:
-                    raise AgenteError("Se alcanzó el límite gratuito de Google por ahora. Espera un minuto y vuelve a preguntar.")
-                raise AgenteError(f"Google no respondió: {e}")
+            resp = self._generar(contenidos, config)
             um = getattr(resp, "usage_metadata", None)
             if um:
                 tin += um.prompt_token_count or 0
@@ -106,8 +108,45 @@ class _GeminiCerebro:
             for ll in llamadas:
                 resultado = ejecutar(ll.name, dict(ll.args or {}))
                 partes.append(t.Part.from_function_response(name=ll.name, response={"resultado": resultado}))
-            contenidos.append(t.Content(role="tool", parts=partes))
+            # Las respuestas de herramientas van con rol "user" (la API rechaza "tool")
+            contenidos.append(t.Content(role="user", parts=partes))
         raise AgenteError("La pregunta necesitó demasiados pasos. Intenta hacerla más específica.")
+
+    def _generar(self, contenidos, config):
+        """Llama a Gemini. Ante 503 (modelo saturado) reintenta y pasa a los modelos
+        de respaldo; el modelo que respondio queda en self.modelo_usado. Una vez que
+        un modelo responde se sigue con el mismo en el resto de la conversacion."""
+        modelos = [getattr(self, "modelo_usado", None) or MODELO] + \
+            [m for m in MODELOS_RESPALDO if m != (getattr(self, "modelo_usado", None) or MODELO)]
+        ultimo, agotados = None, []
+        for i, modelo in enumerate(modelos):
+            for intento in range(2):
+                t0 = time.time()
+                try:
+                    resp = self.cliente.models.generate_content(model=modelo, contents=contenidos, config=config)
+                    self.tiempos.append((modelo, round(time.time() - t0, 1)))
+                    self.modelo_usado = modelo
+                    return resp
+                except Exception as e:  # errores de la API de Google
+                    self.tiempos.append((modelo, round(time.time() - t0, 1), str(getattr(e, "code", type(e).__name__))))
+                    codigo = getattr(e, "code", None)
+                    if codigo is None and "timeout" in type(e).__name__.lower():
+                        codigo = 504
+                    ultimo = e
+                    if codigo == 429:   # cuota gratuita del modelo agotada: siguiente modelo
+                        agotados.append(modelo)
+                        break
+                    if codigo not in (500, 503, 504):
+                        raise AgenteError(f"Google no respondió: {e}")
+                    if codigo == 504:   # no respondio a tiempo: pasar directo al siguiente modelo
+                        break
+                    if intento == 0:
+                        time.sleep(2)
+        if len(agotados) == len(modelos):
+            raise AgenteError("Se agotó la cuota gratuita diaria de Google (unas 25 a 35 preguntas al día). "
+                              "Se renueva durante la madrugada; vuelve a preguntar más tarde.")
+        raise AgenteError("Los modelos de Google están saturados o sin cuota en este momento. "
+                          "Intenta de nuevo en unos minutos.")
 
 
 def _resumen(resultado):
@@ -153,9 +192,10 @@ def responder(pregunta, historial, usuario):
         pasos.append({"herramienta": nombre, "parametros": args, "resumen": _resumen(res)})
         return res
 
-    error, texto, tin, tout = None, "", 0, 0
+    error, texto, tin, tout, cerebro = None, "", 0, 0, None
     try:
-        texto, tin, tout = _GeminiCerebro().conversar(sistema, historial, pregunta, ejecutar)
+        cerebro = _GeminiCerebro()
+        texto, tin, tout = cerebro.conversar(sistema, historial, pregunta, ejecutar)
         if not texto:
             texto = "No pude armar una respuesta. Intenta reformular la pregunta."
     except AgenteError as e:
@@ -164,7 +204,7 @@ def responder(pregunta, historial, usuario):
     try:
         db.execute("""INSERT INTO agente_log (usuario, pregunta, respuesta, pasos, modelo, tokens_entrada, tokens_salida, ms, error)
                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                   (usuario, pregunta, texto or None, json.dumps(pasos, ensure_ascii=False, default=str), MODELO,
+                   (usuario, pregunta, texto or None, json.dumps(pasos, ensure_ascii=False, default=str), getattr(cerebro, "modelo_usado", MODELO),
                     tin, tout, ms, error))
     except Exception:
         pass  # el registro nunca debe botar la respuesta
