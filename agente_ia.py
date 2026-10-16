@@ -26,7 +26,7 @@ MODELO = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 # (429: 20 consultas por modelo al dia, medido el 2026-10-16) se pasa a estos,
 # en orden. Cada modelo tiene su propia cuota: en total ~80 consultas al dia.
 MODELOS_RESPALDO = [m for m in os.environ.get("GEMINI_MODELOS_RESPALDO", "gemini-3.8-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite").split(",") if m]
-MAX_PASOS = 8          # llamadas a herramientas por pregunta
+MAX_PASOS = 10         # llamadas a herramientas por pregunta
 MAX_HISTORIAL = 8      # mensajes previos que se le recuerdan
 
 SISTEMA = """Eres el Analista de Musa360, el sistema de gestión de Casa Musa (Chile), distribuidora y retail de
@@ -35,9 +35,13 @@ materiales eléctricos e iluminación. Respondes preguntas de la gerencia sobre 
 REGLAS
 - Responde SIEMPRE en español de Chile, claro y breve: primero la respuesta directa, después el detalle.
 - NUNCA inventes cifras. Todo número sale de una herramienta. Si ninguna herramienta lo entrega, dilo.
-- Responde SOLO lo que las herramientas miden. No reemplaces un dato por otro parecido: "documentos emitidos"
-  NO son despachos. Hoy no tienes datos de logística (despachos, retiros, choferes), cotizaciones ni solicitudes
-  de inventario: si te preguntan por eso, di que todavía no tienes acceso a esa información.
+- Responde SOLO lo que los datos miden. No reemplaces un dato por otro parecido ("documentos emitidos" NO son
+  despachos). Si algo no está en ninguna fuente, dilo.
+- Eres un analista: cuando la pregunta lo amerite, cruza fuentes (ventas + cotizaciones + stock + compras +
+  logística) y explica el porqué, no solo el qué. Antes de concluir, revisa que las cifras sean coherentes.
+- Prefiere las herramientas fijas para lo típico (ventas_resumen, ventas_por, stock, quiebres, sobrestock,
+  plan_compra, compras_ordenes, logistica). Usa consulta_sql para cruces, para datos que solo están en el esquema ia
+  y cuando una herramienta fija no alcance. Si una consulta falla, corrígela y reintenta (máximo 2 veces).
 - Si la pregunta es ambigua (período, sucursal), asume lo más razonable y dilo en una línea al final.
 - Indica siempre el período de los datos que usaste.
 - Montos en pesos chilenos con punto de miles ($12.345.678). Sobre $1.000.000 usa millones con "MM"
@@ -61,6 +65,41 @@ DEFINICIONES DE CASA MUSA
 - CUP = costo unitario promedio; el stock y las compras se valorizan a CUP.
 - Marcas frecuentes: BTIC Bticino, LEGR Legrand (RX3 = protecciones Legrand), SNTH Sinthesi, SCHN Schneider,
   PHIL Philips, TECH línea importada propia. Ante la duda usa buscar_valores.
+
+ESQUEMA ia (PostgreSQL, solo lectura) PARA consulta_sql — usa SOLO estas vistas y columnas:
+- ventas(fecha, ano, mes, dia, doc_sap, folio, tipo_doc, codigo_cliente, nombre_cliente, sucursal, almacen, vendedor,
+  codigo, descripcion, marca, familia, subfamilia, grupo, procedencia, canal, cantidad, precio_unitario, venta, margen,
+  es_distribucion). Una fila por línea de documento. venta = neto sin IVA (notas de crédito en negativo).
+  margen = utilidad ajustada al ERP. sucursal = código lógico (LC, MR, MT, CH, MP, SE, CMD, CANAL DIGITAL, OF).
+  Clientes genéricos de boleta: codigo_cliente LIKE 'CB-%' y 'C9999999-3'.
+- productos(codigo, referencia, descripcion, marca, familia, subfamilia, grupo, procedencia, embalaje, cup,
+  unidades_en_pedido). Maestro de productos; cup = costo unitario promedio.
+- stock(codigo, sucursal, stock, transito, venta_mensual). Foto de HOY, sin historia. sucursal = nombre
+  ('San Isidro','Las Condes','Manuel Rodríguez','Matta','Chicureo','Maipú'). Total empresa = suma de las 6.
+- compras(n_orden_compra, codigo, fecha, proveedor, marca, referencia, descripcion, cantidad_comprada,
+  cantidad_pendiente, precio_unitario, monto, monto_pendiente, tipo_compra, sucursal). Órdenes de compra.
+- recepciones(n_recepcion, n_oc, codigo, fecha, proveedor, descripcion, cantidad, precio_clp, monto, sucursal).
+- cotizaciones(nro_cotizacion, fecha, almacen, codigo_cliente, nombre_cliente, vendedor, codigo, descripcion, marca,
+  grupo, familia, cantidad, precio_unitario, monto, nro_pedido, fecha_pedido, nro_factura, fecha_factura, facturada,
+  no_creado). Una fila por línea cotizada. almacen: SI-STK, LC-STK, MR-STK, MT-STK, CH-STK, MP-STK.
+  nro_factura = ventas.doc_sap (así se cruzan). facturada = tiene factura. no_creado = código 100000/100005
+  (producto que no existe en catálogo; si se vende se crea un código especial 6xxxxx).
+  Conversión = monto de líneas facturadas / monto cotizado. Cotizaciones de más de $20 MM son proyectos.
+- clasificacion(alcance, codigo, abc, xyz, clase, ciclo, venta_12m, margen_12m, meses_con_venta, venta_mensual,
+  cobertura, stock). alcance 'EMPRESA' o sucursal (SI, LC, MR, MT, CH, MP).
+- prioritarios(codigo, codigo_equivalente, descripcion, familia, subfamilia, procedencia, meses_objetivo).
+- no_comprar(codigo, motivo). metas(ano, mes, sucursal, vendedor, meta). presupuesto(sucursal, ano, presupuesto_anual).
+- nivel_servicio(fecha, sucursal, valor_inventario, nivel_servicio): historia desde 27-08-2026; incluye una fila
+  sucursal = 'TOTAL': no la sumes con las sucursales.
+- ne_x_facturar(sucursal, vendedor, monto_ne): negocios ganados por facturar. margen_erp(ano, mes, vendedor, venta,
+  ganancia): reporte oficial de margen del ERP. dias_habiles(fecha, es_habil, descripcion).
+  clientes_distribucion(codigo_cliente, nombre_cliente).
+- solicitudes(id, numero, tipo, subtipo, estado, sucursal, sucursal_destino, solicitante_nombre, explicacion,
+  documento, tercero, cantidad_total, monto_total, creado_en, dictamen, aprobado1_en, aprobado2_en, ejecutado_en) y
+  solicitud_lineas(solicitud_id, codigo, descripcion, cantidad, cup): solicitudes de control de inventario
+  (entradas, salidas, mermas, postventas, garantías).
+Reglas SQL: filtra fechas por rango (fecha BETWEEN ...), agrupa y ordena en SQL, usa LIMIT. Los códigos de producto
+son enteros en todas las vistas. Para nombres usa ILIKE '%texto%'.
 
 CONTEXTO DE LOS DATOS
 - Hoy es {hoy}. Ventas cargadas hasta el {ventas_hasta}. Inventario cargado el {inventario_cargado}.
@@ -162,6 +201,8 @@ def _resumen(resultado):
         for k in ("periodo", "criterio"):
             if k in resultado:
                 return str(resultado[k])
+        if "columnas" in resultado:
+            return f"{resultado.get('n_filas', 0)} filas" + (" (hay más)" if resultado.get("aviso") else "")
     return ""
 
 

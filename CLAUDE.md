@@ -1108,6 +1108,22 @@ Chat `/agente`: preguntas en lenguaje natural sobre ventas y compras. Por ahora 
 - Gotcha: el margen anterior a 2026 no está ajustado al ERP (`ANO_MARGEN_CONFIABLE`). Las herramientas no lo
   comparan, y el prompt prohíbe hacerlo.
 
+**Mente libre (migración 021, 2026-10-16):** el analista cruza toda la información con su propia SQL.
+- Herramienta `consulta_sql`: una sola consulta SELECT sobre el esquema `ia`, máximo 50 filas.
+- `ia` tiene 18 vistas con nombres claros: ventas, productos, stock, compras, recepciones, cotizaciones,
+  clasificación, prioritarios, metas, presupuesto, solicitudes, etc. Quedan fuera `usuarios` (hashes),
+  las fotos y los logs.
+- Corre con el rol **`agente_lectura`**: solo USAGE/SELECT sobre `ia`, transacciones de solo lectura y
+  `statement_timeout` de 15 s. La conexión va en `DATABASE_URL_LECTURA` (`.env` + Vercel), y se cambia la
+  contraseña con `python scripts/clave_agente_lectura.py`.
+- Probado: lee `ia.*`; NO lee `public.*` ni puede escribir, crear, hacer `set role` ni pasarse del tiempo.
+- El mapa de la base va en el prompt (`SISTEMA` en `agente_ia.py`). Si se agrega una vista a `ia`, hay que
+  agregarla también ahí.
+- Herramienta `logistica`: la planilla de despachos en vivo (`data_loader_logistica`).
+
+**Cuota gratuita:** 20 consultas al día POR MODELO (medido). Hay una cascada de modelos en
+`MODELOS_RESPALDO`.
+
 **Registro:** cada pregunta queda en `agente_log`, con las herramientas usadas, los tokens, el tiempo y el error si
 lo hubo. Ese registro sirve para auditar las respuestas.
 

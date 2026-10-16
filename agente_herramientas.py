@@ -12,7 +12,12 @@ Criterios (iguales a las pantallas de Comercial):
 - Stock = inventario_stock de las 6 sucursales; venta mensual = la del inventario.
 """
 import math
-from datetime import date, timedelta
+import os
+import re
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+
+import psycopg
 
 import db
 
@@ -412,6 +417,80 @@ def compras_ordenes(desde=None, hasta=None, proveedor=None, marca=None, agrupar=
 
 
 # ══════════════════════════════════════════════════════
+#  CONSULTA LIBRE (migracion 021): SQL de solo lectura sobre el esquema ia
+# ══════════════════════════════════════════════════════
+MAX_FILAS_SQL = 50
+_PROHIBIDAS = re.compile(r"\b(insert|update|delete|merge|drop|alter|create|grant|revoke|truncate|copy|call|"
+                         r"do|set|reset|vacuum|analyze|listen|notify|pg_sleep|lo_import|lo_export|dblink)\b", re.I)
+
+
+def _a_json(v):
+    if isinstance(v, Decimal):
+        f = float(v)
+        return int(f) if f.is_integer() else round(f, 4)
+    if isinstance(v, (date, datetime)):
+        return v.isoformat()
+    return v
+
+
+def consulta_sql(sql):
+    """Ejecuta UNA consulta SELECT sobre las vistas del esquema ia, con el usuario
+    agente_lectura (solo lectura, 15 s maximo). Devuelve hasta 50 filas."""
+    sql = (sql or "").strip().rstrip(";").strip()
+    if not re.match(r"(?is)^(select|with)\b", sql):
+        raise ValueError("Solo se permiten consultas SELECT (o WITH ... SELECT).")
+    if ";" in sql:
+        raise ValueError("Una sola consulta por vez (sin ';').")
+    if _PROHIBIDAS.search(re.sub(r"'[^']*'", "''", sql)):
+        raise ValueError("La consulta tiene una palabra no permitida: solo lectura.")
+    if len(sql) > 6000:
+        raise ValueError("Consulta demasiado larga.")
+    url = os.environ.get("DATABASE_URL_LECTURA")
+    if not url:
+        raise ValueError("La consulta libre no está configurada (falta DATABASE_URL_LECTURA).")
+    try:
+        with psycopg.connect(url, prepare_threshold=None, autocommit=False, connect_timeout=10) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET TRANSACTION READ ONLY")
+                cur.execute(sql)
+                cols = [d.name for d in cur.description] if cur.description else []
+                filas = cur.fetchmany(MAX_FILAS_SQL + 1)
+            conn.rollback()
+    except psycopg.errors.QueryCanceled:
+        raise ValueError("La consulta tardó más de 15 segundos. Acota el período o agrega filtros.")
+    except psycopg.Error as e:
+        raise ValueError(f"Error de SQL: {str(e).splitlines()[0]}")
+    mas = len(filas) > MAX_FILAS_SQL
+    return {"columnas": cols, "filas": [[_a_json(v) for v in f] for f in filas[:MAX_FILAS_SQL]],
+            "n_filas": min(len(filas), MAX_FILAS_SQL),
+            "aviso": "Hay más de 50 filas: agrupa o filtra más si necesitas el total." if mas else None}
+
+
+# ══════════════════════════════════════════════════════
+#  LOGISTICA: la planilla de despachos y retiros (en vivo)
+# ══════════════════════════════════════════════════════
+def logistica(desde=None, hasta=None, sucursal=None, chofer=None, tipo=None):
+    """Cumplimiento de despachos y retiros desde la planilla de logistica (Google Sheets, en vivo)."""
+    import data_loader_logistica as L
+    hoy = date.today()
+    d = L.get_panel_logistica(desde=desde or date(hoy.year, 1, 1).isoformat(), hasta=hasta or hoy.isoformat(),
+                              sucursal=[sucursal] if isinstance(sucursal, str) else sucursal,
+                              chofer=[chofer] if isinstance(chofer, str) else chofer,
+                              tipo=[tipo] if isinstance(tipo, str) else tipo)
+    semanal = [s for s in d.get("semanal", [])
+               if (not desde or s["hasta"] >= desde) and (not hasta or s["desde"] <= hasta)][-12:]
+    return {
+        "leido_en": d.get("leido_en"), "periodo": f"{desde or date(hoy.year, 1, 1)} a {hasta or hoy}",
+        "kpis": d.get("kpis"), "mensual": d.get("mensual"), "ultimas_semanas": semanal,
+        "capacidad_por_movimientos_del_dia": d.get("capacidad"), "capacidad_por_chofer_dia": d.get("por_chofer_dia"),
+        "choferes": d.get("choferes"), "sucursales_origen": d.get("sucursales"), "dias_semana": d.get("dias"),
+        "motivos_incumplimiento": d.get("motivos"), "comentarios_frecuentes": (d.get("comentarios") or [])[:6],
+        "plazo_de_entrega": d.get("plazo"), "comunas_top": (d.get("comunas") or [])[:8],
+        "vencidos_sin_cerrar": len(d.get("vencidos") or []), "calidad_planilla": d.get("calidad"),
+    }
+
+
+# ══════════════════════════════════════════════════════
 #  Catalogo para la IA (nombre -> funcion + esquema)
 # ══════════════════════════════════════════════════════
 _SUC = {"type": "array", "items": {"type": "string", "enum": list(SUCURSALES_VENTA)},
@@ -483,6 +562,26 @@ HERRAMIENTAS = {
             "marca": {"type": "string"}, "familia": {"type": "string"}, "solo_prioritarios": {"type": "boolean"},
             "meses_stock": {"type": "number"}, "meses_horizonte": {"type": "number"}, "factor_venta": {"type": "number"},
             "top": {"type": "integer"}}},
+    },
+    "consulta_sql": {
+        "fn": consulta_sql,
+        "descripcion": ("Consulta libre: ejecuta UNA consulta SQL SELECT (PostgreSQL) sobre las vistas del esquema ia "
+                        "descritas en tus instrucciones. Úsala para cruzar información (cotizaciones con ventas o stock, "
+                        "clientes con vendedores, metas, solicitudes, recepciones, clasificación, etc.) o cuando ninguna "
+                        "otra herramienta responda. Agrupa y resume en SQL: devuelve máximo 50 filas. 15 s máximo."),
+        "parametros": {"type": "object", "properties": {
+            "sql": {"type": "string", "description": "Una sola consulta SELECT o WITH ... SELECT, sin punto y coma."}},
+            "required": ["sql"]},
+    },
+    "logistica": {
+        "fn": logistica,
+        "descripcion": ("Despachos y retiros desde la planilla de logística (en vivo): cumplimiento, movimientos por día, "
+                        "capacidad por chofer, choferes, sucursal de origen, motivos de incumplimiento, plazos de entrega, "
+                        "comunas y vencidos sin cerrar. Filtros opcionales por sucursal (SI, MT, LC, CH, MR, MP), chofer y tipo "
+                        "(Despacho o Retiro)."),
+        "parametros": {"type": "object", "properties": {
+            "desde": _FECHA, "hasta": _FECHA, "sucursal": {"type": "string"}, "chofer": {"type": "string"},
+            "tipo": {"type": "string", "enum": ["Despacho", "Retiro"]}}},
     },
     "compras_ordenes": {
         "fn": compras_ordenes,
