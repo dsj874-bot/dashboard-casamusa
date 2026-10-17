@@ -90,11 +90,18 @@ const SUGERENCIAS = [
   ['Inventario', '¿Dónde tengo más sobrestock en Legrand y cuánto vale?'],
   ['Proveedores', '¿A qué proveedores les hemos comprado más este año y cuánto falta por recibir?'],
 ];
-const CLAVE = 'agente_conversacion_v1';
+// La conversacion vive en el navegador y se descarta tras 2 horas sin uso,
+// para que al volver otro dia se parta de cero.
+const CLAVE = 'agente_conversacion_v2';
+const VIGENCIA_MS = 2 * 60 * 60 * 1000;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 let conversacion = [];
-try { conversacion = JSON.parse(sessionStorage.getItem(CLAVE) || '[]'); } catch (e) { conversacion = []; }
-const guardar = () => { try { sessionStorage.setItem(CLAVE, JSON.stringify(conversacion.slice(-30))); } catch (e) {} };
+try {
+  sessionStorage.removeItem('agente_conversacion_v1');
+  const g = JSON.parse(localStorage.getItem(CLAVE) || 'null');
+  if (g && Array.isArray(g.m) && Date.now() - g.t < VIGENCIA_MS) conversacion = g.m;
+} catch (e) { conversacion = []; }
+const guardar = () => { try { localStorage.setItem(CLAVE, JSON.stringify({ t: Date.now(), m: conversacion.slice(-30) })); } catch (e) {} };
 
 // Markdown basico y seguro: se escapa todo y luego se da formato
 function md(texto) {
