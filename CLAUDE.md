@@ -462,6 +462,33 @@ Mismo patrón que Comercial: `USAR_POSTGRES_INVENTARIO` (default "1"),
   de dónde salió. Verificado: 473/501 productos Prioritarios y 417/739
   de 2ª Línea usan Lead Time real; el resto cae al default por falta
   de historial de compra suficiente.
+  **2026-10-20 — Plan de Compra de Prioritarios: venta SIN proyectos**
+  (pedido del usuario: "déjame fuera la venta por proyecto, me hace
+  comprar en exceso"). La venta mensual de la empresa ya NO es
+  `venta_mensual` de 'Todas' (datos duros del ERP), sino
+  `_venta_sin_proyectos_pg()`:
+  - es el promedio de los 12 meses cerrados anteriores al mes de la
+    última venta, en `v_ventas` (todas las sucursales y canales);
+  - salen las facturas de proyecto: un `doc_sap` que se lleva más de
+    1 mes de la venta de toda la empresa de ese producto. Las NC de ese
+    tamaño también salen;
+  - se combina con el equivalente igual que antes (promedio).
+
+  Prueba hacia atrás sobre los prioritarios (jul-sep 2026), contra la
+  venta de mostrador:
+  - error por producto 55% → 43%;
+  - sobrecompra en 3 meses a la mitad;
+  - el faltante sube algo, porque los prioritarios crecen.
+
+  La regla de proyectos "por cliente" del Sugerido sacaba el 43% de la
+  venta, porque incluye contratistas habituales; esta saca ~21%.
+
+  Impacto al 20-10-2026 (2 meses): $50,6 MM → $24,3 MM y 163 → 107
+  productos. Es solo el Plan de Compra de Prioritarios: Alertas,
+  Distribución, 2ª Línea, Sugerido y el Analista IA siguen con datos
+  duros. La pantalla muestra el período usado y la columna
+  "Venta/mes sin proyectos"; el `*` indica que hubo proyectos, y el
+  tooltip dice cuántos. SQL: ~1,1 s en el servidor.
   **2026-08-29 — Fórmula de San Isidro (CD) en Alertas de Quiebre
   Crítico cambiada** (pedido explícito del usuario, solo aplica a
   Alertas de Productos Prioritarios; Segunda Línea y Distribución NO
