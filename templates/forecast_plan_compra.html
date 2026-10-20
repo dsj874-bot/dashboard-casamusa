@@ -195,12 +195,23 @@ function cargarDatos() {
   const meses = document.getElementById("f-meses").value;
 
   document.getElementById("tabla-body").innerHTML =
-    '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Cargando...</td></tr>';
+    '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Cargando... (puede tardar unos segundos)</td></tr>';
 
+  const t0 = Date.now();
   fetch(`/api/forecast/plan_compras?${qsFamilia()}&meses=${encodeURIComponent(meses)}`)
-    .then(r => r.json())
+    .then(async r => {
+      const txt = await r.text();
+      let d;
+      try { d = JSON.parse(txt); } catch (e) { throw new Error(`respuesta ${r.status} del servidor (${Math.round((Date.now() - t0) / 1000)} s)`); }
+      if (!r.ok || d.error) throw new Error(d.error || `error ${r.status}`);
+      return d;
+    })
     .then(renderTodo)
-    .catch(err => console.error("Error plan de compras:", err));
+    .catch(err => {
+      console.error("Error plan de compras:", err);
+      document.getElementById("tabla-body").innerHTML =
+        `<tr><td colspan="6" style="text-align:center;color:var(--danger, #e5484d);padding:24px;">No se pudo cargar el plan: ${String(err.message || err).replace(/</g, "&lt;")}</td></tr>`;
+    });
 
   cargarComparativo();
 }
