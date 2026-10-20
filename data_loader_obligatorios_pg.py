@@ -10,6 +10,8 @@ se consulta Postgres solo por los codigos que realmente hacen falta
 ~19.000 codigos que existen en total).
 """
 import math
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 import db
@@ -479,30 +481,80 @@ def _cargar_datos_plan_pg(familia=None):
     la aritmetica final, no los datos: la pantalla pide el plan y ademas
     el comparativo de 1 / 1,5 / 2 meses, y antes cada uno de esos cuatro
     calculos volvia a traer exactamente lo mismo de Postgres (~6,4s cada
-    vez, ~26s de puro retrabajo)."""
+    vez, ~26s de puro retrabajo).
+
+    2026-10-20 ("los calculos se demoran mucho"): las cuatro cargas
+    pesadas (stock, lead time, venta sin proyectos, productos) corren en
+    paralelo, cada una con su conexion del pool, y el resultado queda en
+    memoria _CACHE_TTL segundos por familia: cambiar los meses o volver a
+    la pantalla no vuelve a consultar. Los datos se cargan una vez al dia."""
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
+            # La clave incluye la hora de la ultima carga de inventario: si
+            # se sube uno nuevo, el plan se recalcula aunque no pase el TTL.
+            cur.execute("SELECT max(cargado_en) AS c FROM inventario_control")
+            carga = cur.fetchone()["c"]
+            clave = (carga, tuple(sorted([familia] if isinstance(familia, str) else (familia or []))))
+            hit = _CACHE_PLAN.get(clave)
+            if hit and time.time() - hit[0] < _CACHE_TTL:
+                return hit[1]
             obligatorios = _cargar_obligatorios_pg(cur, familia)
+    codigos_necesarios = set()
+    for fila in obligatorios:
+        codigos_necesarios.add(fila["codigo_obligatorio"])
+        if fila["codigo_equivalente"] is not None:
+            codigos_necesarios.add(fila["codigo_equivalente"])
+    bodegas = [n for n, _, _, _ in do.SUCURSALES_CRITICAS] + ["Todas"]
 
-            codigos_necesarios = set()
-            for fila in obligatorios:
-                codigos_necesarios.add(fila["codigo_obligatorio"])
-                if fila["codigo_equivalente"] is not None:
-                    codigos_necesarios.add(fila["codigo_equivalente"])
+    def con_cursor(fn, *args):
+        with db.conexion_pool() as conn:
+            with conn.cursor() as cur:
+                return fn(cur, *args)
 
-            bodegas = [n for n, _, _, _ in do.SUCURSALES_CRITICAS] + ["Todas"]
-            venta, desde, hasta = _venta_sin_proyectos_pg(cur, codigos_necesarios)
-            return {
-                "obligatorios":    obligatorios,
-                "datos":           _cargar_stock_pg(cur, codigos_necesarios, bodegas),
-                "productos_extra": _cargar_productos_extra_pg(cur, codigos_necesarios),
-                "lead_time_real":  _lead_time_real_por_producto_pg(cur, codigos_necesarios),
-                "venta":           venta,
-                "venta_periodo":   (desde, hasta),
-            }
+    def stock_y_productos(cur):
+        return _cargar_stock_pg(cur, codigos_necesarios, bodegas), _cargar_productos_extra_pg(cur, codigos_necesarios)
+
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        f_stock = ex.submit(con_cursor, stock_y_productos)
+        f_lt = ex.submit(con_cursor, _lead_time_real_por_producto_pg, codigos_necesarios)
+        f_venta = ex.submit(con_cursor, _venta_sin_proyectos_pg, codigos_necesarios)
+        datos, productos_extra = f_stock.result()
+        venta, desde, hasta = f_venta.result()
+        lead_time = f_lt.result()
+    resultado = {
+        "excluidos":       dec.codigos_excluidos_compra(),
+        "obligatorios":    obligatorios,
+        "datos":           datos,
+        "productos_extra": productos_extra,
+        "lead_time_real":  lead_time,
+        "venta":           venta,
+        "venta_periodo":   (desde, hasta),
+    }
+    _CACHE_PLAN[clave] = (time.time(), resultado)
+    return resultado
 
 
-def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None, datos_plan=None):
+# Datos del Plan de Compra en memoria por familia (ver _cargar_datos_plan_pg)
+_CACHE_PLAN = {}
+_CACHE_TTL = 600
+
+
+def _comparativo_meses(familia, datos_plan):
+    """Valor $ del plan para cada nivel de meses, sobre los mismos datos."""
+    extra = datos_plan["productos_extra"]
+    niveles = []
+    for meses in do.NIVELES_COMPARACION_MESES:
+        r = get_plan_compra_reposicion_pg(familia, meses, datos_plan=datos_plan, con_comparativo=False)
+        valor = sum(
+            p["cantidad_a_comprar"] * float((extra.get(p["codigo_a_comprar"]) or {}).get("cup") or 0)
+            for p in r["productos"]
+            if not p["sin_opcion_nacional"] and (p["cantidad_a_comprar"] or 0) > 0
+        )
+        niveles.append({"meses": meses, "valor": round(valor, 0)})
+    return niveles
+
+
+def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None, datos_plan=None, con_comparativo=True):
     """datos_plan: resultado de _cargar_datos_plan_pg() ya cargado, para
     poder calcular varios niveles de meses sin volver a consultar."""
     meses_default = meses_objetivo_default if meses_objetivo_default is not None else do.MESES_OBJETIVO_COMPRA
@@ -516,7 +568,7 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None, dat
     venta           = datos_plan["venta"]
     venta_desde, venta_hasta = datos_plan["venta_periodo"]
 
-    codigos_excluidos = dec.codigos_excluidos_compra()
+    codigos_excluidos = datos_plan["excluidos"] if "excluidos" in datos_plan else dec.codigos_excluidos_compra()
 
     productos = []
     for fila in obligatorios:
@@ -599,6 +651,7 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None, dat
     productos.sort(key=lambda p: -(p["cantidad_a_comprar"] or 0))
 
     return {
+        "comparativo": _comparativo_meses(familia, datos_plan) if con_comparativo else None,
         "productos": productos,
         "resumen": {
             "total_obligatorios":   len(productos),
@@ -616,20 +669,7 @@ def get_resumen_valor_compra_pg(familia=None):
     base UNA vez y se recalculan los niveles sobre esos mismos datos --
     el cup para valorizar ya viene en productos_extra, asi que tampoco
     hace falta volver a consultarlo por nivel."""
-    datos_plan = _cargar_datos_plan_pg(familia)
-    productos_extra = datos_plan["productos_extra"]
-
-    niveles = []
-    for meses in do.NIVELES_COMPARACION_MESES:
-        resultado = get_plan_compra_reposicion_pg(familia, meses, datos_plan=datos_plan)
-        valor_total = sum(
-            p["cantidad_a_comprar"] * float((productos_extra.get(p["codigo_a_comprar"]) or {}).get("cup") or 0)
-            for p in resultado["productos"]
-            if not p["sin_opcion_nacional"] and (p["cantidad_a_comprar"] or 0) > 0
-        )
-        niveles.append({"meses": meses, "valor": round(valor_total, 0)})
-
-    return {"niveles": niveles}
+    return {"niveles": _comparativo_meses(familia, _cargar_datos_plan_pg(familia))}
 
 
 def exportar_plan_compras_excel_pg(familia=None, meses_objetivo_default=None):

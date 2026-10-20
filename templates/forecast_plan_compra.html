@@ -206,24 +206,15 @@ function cargarDatos() {
       if (!r.ok || d.error) throw new Error(d.error || `error ${r.status}`);
       return d;
     })
-    .then(renderTodo)
+    .then(d => { renderTodo(d); if (d.comparativo) renderComparativo({ niveles: d.comparativo }); })
     .catch(err => {
       console.error("Error plan de compras:", err);
       document.getElementById("tabla-body").innerHTML =
         `<tr><td colspan="6" style="text-align:center;color:var(--danger, #e5484d);padding:24px;">No se pudo cargar el plan: ${String(err.message || err).replace(/</g, "&lt;")}</td></tr>`;
     });
-
-  cargarComparativo();
 }
 
 const fmtValor = v => "$" + Math.round(v).toLocaleString("es-CL");
-
-function cargarComparativo() {
-  fetch(`/api/forecast/plan_compras/resumen_valor?${qsFamilia()}`)
-    .then(r => r.json())
-    .then(renderComparativo)
-    .catch(err => console.error("Error resumen valor compra:", err));
-}
 
 function renderComparativo(d) {
   const mesesActual = document.getElementById("f-meses").value;
