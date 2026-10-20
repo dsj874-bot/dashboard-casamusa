@@ -92,6 +92,7 @@
     <div class="kpi-value" id="kpi-necesidad" style="color:var(--accent)">—</div>
   </div>
 </div>
+<div id="nota-venta" style="font-size:12px;color:var(--muted);margin:-8px 0 16px;"></div>
 
 <div class="filtros-marca">
   <div class="filtro-item">
@@ -127,12 +128,13 @@
           <th>Producto</th>
           <th class="text-right">Código a Comprar (Nacional)</th>
           <th class="text-right">Embalaje</th>
+          <th class="text-right" title="Promedio de 12 meses cerrados de venta real, sin las facturas de proyecto (una factura que se lleva más de 1 mes de venta de la empresa)">Venta/mes sin proyectos</th>
           <th class="text-right">Lead Time usado</th>
           <th class="text-right">Cantidad a Comprar</th>
         </tr>
       </thead>
       <tbody id="tabla-body">
-        <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">Cargando...</td></tr>
+        <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">Cargando...</td></tr>
       </tbody>
     </table>
   </div>
@@ -193,7 +195,7 @@ function cargarDatos() {
   const meses = document.getElementById("f-meses").value;
 
   document.getElementById("tabla-body").innerHTML =
-    '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Cargando...</td></tr>';
+    '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Cargando...</td></tr>';
 
   fetch(`/api/forecast/plan_compras?${qsFamilia()}&meses=${encodeURIComponent(meses)}`)
     .then(r => r.json())
@@ -241,10 +243,16 @@ function renderComparativo(d) {
 function renderTodo(d) {
   document.getElementById("kpi-total").textContent      = fmtUnid(d.resumen.total_obligatorios);
   document.getElementById("kpi-necesidad").textContent   = fmtUnid(d.resumen.con_necesidad_compra);
+  if (d.resumen.venta_desde) {
+    const mes = iso => { const [y, m] = iso.split("-"); return ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"][+m - 1] + "-" + y.slice(2); };
+    document.getElementById("nota-venta").textContent =
+      `Venta mensual: promedio de ${mes(d.resumen.venta_desde)} a ${mes(d.resumen.venta_hasta)} sin las ventas de proyecto ` +
+      `(una factura que se lleva más de 1 mes de venta de la empresa). Los proyectos se compran a pedido.`;
+  }
 
   if (d.productos.length === 0) {
     document.getElementById("tabla-body").innerHTML =
-      `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">No hay productos obligatorios definidos para esta familia.</td></tr>`;
+      `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">No hay productos obligatorios definidos para esta familia.</td></tr>`;
     return;
   }
 
@@ -299,11 +307,20 @@ function renderTodo(d) {
     return `<span class="text-muted" title="Sin dato real confiable (${motivo}) -- se usa el default de la empresa">${dias} (default)</span>`;
   }
 
+  function fmtVenta(p) {
+    if (p.venta_mensual == null) return '<span class="text-muted">—</span>';
+    const v = fmtUnid(Math.round(p.venta_mensual));
+    return p.proyectos_mensual > 0
+      ? `<span title="Además, ${fmtUnid(Math.round(p.proyectos_mensual))}/mes en proyectos (no cuentan: se compran a pedido)">${v} *</span>`
+      : v;
+  }
+
   function filaProducto(p, attrs) {
     if (p.sin_opcion_nacional) {
       return `
         <tr class="fila-producto-compra" ${attrs}>
           <td>${p.descripcion}</td>
+          <td class="text-right">—</td>
           <td class="text-right">—</td>
           <td class="text-right">—</td>
           <td class="text-right">—</td>
@@ -317,6 +334,7 @@ function renderTodo(d) {
           <td>${p.descripcion}</td>
           <td class="text-right">${p.codigo_a_comprar}</td>
           <td class="text-right">${fmtUnid(p.embalaje)}</td>
+          <td class="text-right">${fmtVenta(p)}</td>
           <td class="text-right">${fmtLeadTime(p)}</td>
           <td class="text-right sin-opcion" title="Marcado como 'no se compra' en Productos No Comprar">No se compra</td>
         </tr>
@@ -328,6 +346,7 @@ function renderTodo(d) {
         <td>${p.descripcion}</td>
         <td class="text-right">${p.codigo_a_comprar}</td>
         <td class="text-right">${fmtUnid(p.embalaje)}</td>
+        <td class="text-right">${fmtVenta(p)}</td>
         <td class="text-right">${fmtLeadTime(p)}</td>
         <td class="text-right ${sinNecesidad ? 'sin-necesidad' : 'cantidad-comprar'}">
           ${sinNecesidad ? 'Sin necesidad' : fmtUnid(p.cantidad_a_comprar)}
@@ -340,7 +359,7 @@ function renderTodo(d) {
     const conNecesidad = g.productos.filter(p => p.cantidad_a_comprar > 0).length;
     html += `
       <tr class="fila-subfamilia-header" data-gidx="${gi}">
-        <td colspan="5" class="fw-bold">
+        <td colspan="6" class="fw-bold">
           <span class="icono-expandir">▶</span> ${g.subfamilia}
           <span style="color:${conNecesidad > 0 ? 'var(--accent)' : 'var(--muted)'};font-weight:600;margin-left:8px;">
             (${conNecesidad} de ${g.productos.length} requieren compra)
@@ -354,7 +373,7 @@ function renderTodo(d) {
         const conNecesidadSub = sg.productos.filter(p => p.cantidad_a_comprar > 0).length;
         html += `
           <tr class="fila-grupo-header" data-parent-sub="${gi}" data-gpidx="${gid}">
-            <td colspan="5" class="fw-bold">
+            <td colspan="6" class="fw-bold">
               <span class="icono-expandir">▶</span> ${sg.grupo}
               <span style="color:${conNecesidadSub > 0 ? 'var(--accent)' : 'var(--muted)'};font-weight:600;margin-left:8px;">
                 (${conNecesidadSub} de ${sg.productos.length} requieren compra)

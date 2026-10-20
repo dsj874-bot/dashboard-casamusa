@@ -10,6 +10,7 @@ se consulta Postgres solo por los codigos que realmente hacen falta
 ~19.000 codigos que existen en total).
 """
 import math
+from datetime import timedelta
 
 import db
 import data_loader_inventario as dli
@@ -421,6 +422,56 @@ def _lead_time_real_por_producto_pg(cur, codigos):
     return resultado
 
 
+def _venta_sin_proyectos_pg(cur, codigos):
+    """Venta mensual de la empresa para el Plan de Compra: promedio de los
+    12 meses cerrados anteriores al mes de la ultima venta cargada, SIN las
+    facturas de proyecto. Proyecto = una factura (doc_sap) que se lleva mas
+    de 1 mes de la venta de toda la empresa de ese producto (las notas de
+    credito de ese tamano tambien salen: son devoluciones de proyecto).
+    Los proyectos se compran a pedido, no con stock.
+
+    Pedido del usuario 2026-10-20 ("dejame fuera la venta por proyecto,
+    me hace comprar en exceso"). Prueba hacia atras jul-sep 2026 sobre los
+    prioritarios: error por producto 55% -> 43%, sobrecompra a la mitad.
+    Reemplaza a los datos duros del ERP (venta_mensual de 'Todas'), que
+    ademas venian ~10% sobre la venta real.
+
+    Devuelve ({codigo: {"venta": u/mes, "proyectos": u/mes, "facturas_proyecto": n}}, desde, hasta)."""
+    cur.execute("SELECT max(fecha_conta) AS m FROM v_ventas")
+    ultima = cur.fetchone()["m"]
+    hasta = ultima.replace(day=1) - timedelta(days=1)
+    desde = (hasta.replace(day=1) - timedelta(days=1)).replace(day=1)
+    for _ in range(10):
+        desde = (desde - timedelta(days=1)).replace(day=1)
+    if not codigos:
+        return {}, desde, hasta
+    cur.execute(
+        """WITH d AS (
+               SELECT codigo_cm AS c, doc_sap, sum(cantidad) AS q FROM v_ventas
+                WHERE codigo_cm = ANY(%(c)s) AND fecha_conta BETWEEN %(d)s AND %(h)s
+                GROUP BY 1, 2),
+           t AS (SELECT c, greatest(sum(q), 0) / 12.0 AS prom FROM d GROUP BY c)
+           SELECT d.c,
+                  coalesce(sum(d.q) FILTER (WHERE NOT (t.prom > 0 AND abs(d.q) > t.prom)), 0) AS limpio,
+                  coalesce(sum(d.q) FILTER (WHERE t.prom > 0 AND abs(d.q) > t.prom), 0) AS proy,
+                  count(*) FILTER (WHERE t.prom > 0 AND d.q > t.prom) AS n_proy
+             FROM d JOIN t USING (c) GROUP BY d.c""",
+        {"c": list(codigos), "d": desde, "h": hasta},
+    )
+    res = {r["c"]: {"venta": max(float(r["limpio"]), 0.0) / 12.0,
+                    "proyectos": max(float(r["proy"]), 0.0) / 12.0,
+                    "facturas_proyecto": int(r["n_proy"])}
+           for r in cur.fetchall()}
+    return res, desde, hasta
+
+
+def _venta_plan(venta, cod_obl, cod_equiv):
+    """Misma combinacion que _venta_combinada_pg (promedio con el
+    equivalente), sobre la venta sin proyectos."""
+    v = lambda c: (venta.get(c) or {}).get("venta", 0.0) if c is not None else 0.0
+    return v(cod_obl) if cod_equiv is None else (v(cod_obl) + v(cod_equiv)) / 2
+
+
 def _cargar_datos_plan_pg(familia=None):
     """Todo lo que el Plan de Compra lee de la base, en una sola pasada.
 
@@ -440,11 +491,14 @@ def _cargar_datos_plan_pg(familia=None):
                     codigos_necesarios.add(fila["codigo_equivalente"])
 
             bodegas = [n for n, _, _, _ in do.SUCURSALES_CRITICAS] + ["Todas"]
+            venta, desde, hasta = _venta_sin_proyectos_pg(cur, codigos_necesarios)
             return {
                 "obligatorios":    obligatorios,
                 "datos":           _cargar_stock_pg(cur, codigos_necesarios, bodegas),
                 "productos_extra": _cargar_productos_extra_pg(cur, codigos_necesarios),
                 "lead_time_real":  _lead_time_real_por_producto_pg(cur, codigos_necesarios),
+                "venta":           venta,
+                "venta_periodo":   (desde, hasta),
             }
 
 
@@ -459,6 +513,8 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None, dat
     datos           = datos_plan["datos"]
     productos_extra = datos_plan["productos_extra"]
     lead_time_real  = datos_plan["lead_time_real"]
+    venta           = datos_plan["venta"]
+    venta_desde, venta_hasta = datos_plan["venta_periodo"]
 
     codigos_excluidos = dec.codigos_excluidos_compra()
 
@@ -491,7 +547,8 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None, dat
 
         extra_comprar = productos_extra.get(cod_a_comprar)
 
-        venta_consolidada = _venta_combinada_pg(datos, cod_obl, cod_equiv, "Todas")
+        venta_consolidada = _venta_plan(venta, cod_obl, cod_equiv)
+        proyectos_mes = sum((venta.get(c) or {}).get("proyectos", 0.0) for c in (cod_obl, cod_equiv) if c is not None)
         stock_total = sum(
             _stock_combinado_pg(datos, cod_obl, cod_equiv, nombre)
             for nombre, _, _, _ in do.SUCURSALES_CRITICAS
@@ -530,6 +587,8 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None, dat
             "codigo_a_comprar":   int(cod_a_comprar),
             "embalaje":           embalaje,
             "cantidad_a_comprar": cantidad_a_comprar,
+            "venta_mensual":      round(venta_consolidada, 1),
+            "proyectos_mensual":  round(proyectos_mes, 1),
             "sin_opcion_nacional": False,
             "excluido_compra":    excluido_compra,
             "lead_time_dias_habiles": round(lt["dias_habiles"], 1),
@@ -546,6 +605,8 @@ def get_plan_compra_reposicion_pg(familia=None, meses_objetivo_default=None, dat
             "con_necesidad_compra": sum(1 for p in productos if (p["cantidad_a_comprar"] or 0) > 0),
             "sin_opcion_nacional":  sum(1 for p in productos if p["sin_opcion_nacional"]),
             "excluidos_compra":     sum(1 for p in productos if p["excluido_compra"]),
+            "venta_desde":          venta_desde.isoformat(),
+            "venta_hasta":          venta_hasta.isoformat(),
         },
     }
 
