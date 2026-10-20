@@ -424,13 +424,23 @@ def _lead_time_real_por_producto_pg(cur, codigos):
     return resultado
 
 
-def _venta_sin_proyectos_pg(cur, codigos):
+def _periodo_venta_plan():
+    """12 meses cerrados anteriores al mes en curso (hora de Chile)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    hasta = datetime.now(ZoneInfo("America/Santiago")).date().replace(day=1) - timedelta(days=1)
+    desde = hasta.replace(day=1)
+    for _ in range(11):
+        desde = (desde - timedelta(days=1)).replace(day=1)
+    return desde, hasta
+
+
+def _calcular_venta_sin_proyectos(cur, codigos, desde, hasta):
     """Venta mensual de la empresa para el Plan de Compra: promedio de los
-    12 meses cerrados anteriores al mes de la ultima venta cargada, SIN las
-    facturas de proyecto. Proyecto = una factura (doc_sap) que se lleva mas
-    de 1 mes de la venta de toda la empresa de ese producto (las notas de
-    credito de ese tamano tambien salen: son devoluciones de proyecto).
-    Los proyectos se compran a pedido, no con stock.
+    12 meses cerrados, SIN las facturas de proyecto. Proyecto = una factura
+    (doc_sap) que se lleva mas de 1 mes de la venta de toda la empresa de
+    ese producto (las notas de credito de ese tamano tambien salen: son
+    devoluciones de proyecto). Los proyectos se compran a pedido, no con stock.
 
     Pedido del usuario 2026-10-20 ("dejame fuera la venta por proyecto,
     me hace comprar en exceso"). Prueba hacia atras jul-sep 2026 sobre los
@@ -438,15 +448,10 @@ def _venta_sin_proyectos_pg(cur, codigos):
     Reemplaza a los datos duros del ERP (venta_mensual de 'Todas'), que
     ademas venian ~10% sobre la venta real.
 
-    Devuelve ({codigo: {"venta": u/mes, "proyectos": u/mes, "facturas_proyecto": n}}, desde, hasta)."""
-    cur.execute("SELECT max(fecha_conta) AS m FROM v_ventas")
-    ultima = cur.fetchone()["m"]
-    hasta = ultima.replace(day=1) - timedelta(days=1)
-    desde = (hasta.replace(day=1) - timedelta(days=1)).replace(day=1)
-    for _ in range(10):
-        desde = (desde - timedelta(days=1)).replace(day=1)
+    Recorre v_ventas (pesado, 1-3 s): por eso se precalcula de noche en la
+    tabla venta_sin_proyectos (ver recalcular_venta_sin_proyectos_pg)."""
     if not codigos:
-        return {}, desde, hasta
+        return {}
     cur.execute(
         """WITH d AS (
                SELECT codigo_cm AS c, doc_sap, sum(cantidad) AS q FROM v_ventas
@@ -460,11 +465,73 @@ def _venta_sin_proyectos_pg(cur, codigos):
              FROM d JOIN t USING (c) GROUP BY d.c""",
         {"c": list(codigos), "d": desde, "h": hasta},
     )
-    res = {r["c"]: {"venta": max(float(r["limpio"]), 0.0) / 12.0,
-                    "proyectos": max(float(r["proy"]), 0.0) / 12.0,
-                    "facturas_proyecto": int(r["n_proy"])}
-           for r in cur.fetchall()}
-    return res, desde, hasta
+    res = {c: {"venta": 0.0, "proyectos": 0.0, "facturas_proyecto": 0} for c in codigos}
+    for r in cur.fetchall():
+        res[r["c"]] = {"venta": max(float(r["limpio"]), 0.0) / 12.0,
+                       "proyectos": max(float(r["proy"]), 0.0) / 12.0,
+                       "facturas_proyecto": int(r["n_proy"])}
+    return res
+
+
+def _guardar_venta_sin_proyectos(cur, venta, desde, hasta):
+    # Una sola sentencia con arreglos (no executemany: 600 viajes a la base)
+    cods = list(venta)
+    cur.execute(
+        """INSERT INTO venta_sin_proyectos (codigo, venta, proyectos, facturas_proyecto, desde, hasta, calculado_en)
+           SELECT c, v, p, n, %(d)s, %(h)s, now()
+             FROM unnest(%(c)s::bigint[], %(v)s::numeric[], %(p)s::numeric[], %(n)s::int[]) AS x(c, v, p, n)
+           ON CONFLICT (codigo) DO UPDATE SET venta = EXCLUDED.venta, proyectos = EXCLUDED.proyectos,
+               facturas_proyecto = EXCLUDED.facturas_proyecto, desde = EXCLUDED.desde, hasta = EXCLUDED.hasta,
+               calculado_en = now()""",
+        {"c": cods, "v": [venta[c]["venta"] for c in cods], "p": [venta[c]["proyectos"] for c in cods],
+         "n": [venta[c]["facturas_proyecto"] for c in cods], "d": desde, "h": hasta},
+    )
+
+
+def recalcular_venta_sin_proyectos_pg():
+    """Recalcula la tabla venta_sin_proyectos para todos los prioritarios
+    (y sus equivalentes). La llama el cron de cada noche."""
+    desde, hasta = _periodo_venta_plan()
+    with db.conexion_pool() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT codigo_obligatorio AS c FROM productos_obligatorios
+                           UNION SELECT codigo_equivalente FROM productos_obligatorios WHERE codigo_equivalente IS NOT NULL""")
+            codigos = [r["c"] for r in cur.fetchall()]
+            venta = _calcular_venta_sin_proyectos(cur, codigos, desde, hasta)
+            cur.execute("DELETE FROM venta_sin_proyectos")
+            _guardar_venta_sin_proyectos(cur, venta, desde, hasta)
+        conn.commit()
+    _CACHE_PLAN.clear()
+    return {"productos": len(venta), "desde": desde.isoformat(), "hasta": hasta.isoformat()}
+
+
+def _venta_sin_proyectos_pg(cur, codigos):
+    """Lee la venta sin proyectos precalculada (milisegundos). Si la tabla
+    no tiene el periodo vigente (mes nuevo y el cron no corrio), la
+    recalcula entera una vez; si falta algun codigo (prioritario recien
+    agregado), calcula solo esos y los guarda.
+
+    Devuelve ({codigo: {"venta", "proyectos", "facturas_proyecto"}}, desde, hasta)."""
+    desde, hasta = _periodo_venta_plan()
+    if not codigos:
+        return {}, desde, hasta
+    cur.execute("""SELECT codigo, venta, proyectos, facturas_proyecto FROM venta_sin_proyectos
+                    WHERE desde = %(d)s AND hasta = %(h)s""", {"d": desde, "h": hasta})
+    filas = cur.fetchall()
+    if not filas:
+        recalcular_venta_sin_proyectos_pg()
+        cur.execute("""SELECT codigo, venta, proyectos, facturas_proyecto FROM venta_sin_proyectos
+                        WHERE desde = %(d)s AND hasta = %(h)s""", {"d": desde, "h": hasta})
+        filas = cur.fetchall()
+    res = {r["codigo"]: {"venta": float(r["venta"]), "proyectos": float(r["proyectos"]),
+                         "facturas_proyecto": int(r["facturas_proyecto"])} for r in filas}
+    faltan = [c for c in codigos if c not in res]
+    if faltan:
+        nuevos = _calcular_venta_sin_proyectos(cur, faltan, desde, hasta)
+        _guardar_venta_sin_proyectos(cur, nuevos, desde, hasta)
+        cur.connection.commit()
+        res.update(nuevos)
+    return {c: res[c] for c in codigos if c in res}, desde, hasta
 
 
 def _venta_plan(venta, cod_obl, cod_equiv):

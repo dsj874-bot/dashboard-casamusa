@@ -488,7 +488,7 @@ Mismo patrón que Comercial: `USAR_POSTGRES_INVENTARIO` (default "1"),
   Distribución, 2ª Línea, Sugerido y el Analista IA siguen con datos
   duros. La pantalla muestra el período usado y la columna
   "Venta/mes sin proyectos"; el `*` indica que hubo proyectos, y el
-  tooltip dice cuántos. SQL: ~1,1 s en el servidor.
+  tooltip dice cuántos. Recorrer `v_ventas` en cada carga dejó la pantalla en 10+ s, así que se precalcula en la tabla `venta_sin_proyectos` (migración 022). Se recalcula cada noche en `/api/cron/confirmar_fecha` con `recalcular_venta_sin_proyectos_pg()`. Si falta el mes vigente, la pantalla la recalcula una vez; si falta un código, solo ese. Las cargas de stock, lead time y venta van en paralelo. La pantalla hace una sola llamada, que trae el comparativo, y queda en memoria 10 min por familia, atada a `inventario_control.cargado_en`.
   **2026-08-29 — Fórmula de San Isidro (CD) en Alertas de Quiebre
   Crítico cambiada** (pedido explícito del usuario, solo aplica a
   Alertas de Productos Prioritarios; Segunda Línea y Distribución NO

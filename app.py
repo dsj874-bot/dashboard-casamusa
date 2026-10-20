@@ -1340,12 +1340,21 @@ def api_cron_confirmar_fecha():
             estado = {"mensaje": "no se pudo calcular"}
         if estado.get("alerta"):
             app.logger.warning("DATOS ATRASADOS: %s", estado.get("mensaje"))
+        # Venta sin proyectos del Plan de Compra de Prioritarios: se
+        # precalcula aca para que la pantalla no recorra v_ventas en cada
+        # carga (2026-10-20). Si falla, la pantalla la recalcula sola.
+        try:
+            venta_plan = data_loader_obligatorios_pg.recalcular_venta_sin_proyectos_pg()
+        except Exception as e:
+            app.logger.warning("venta sin proyectos fallo dentro del cron: %s", e)
+            venta_plan = {"error": str(e)}
         return jsonify({
             "ok": True,
             "hora_chile": ahora.strftime("%Y-%m-%d %H:%M"),
             "dia_confirmado": dia.isoformat(),
             "corte_vigente": data_loader_pg.fecha_datos_real_pg().isoformat(),
             "estado_datos": estado,
+            "venta_sin_proyectos": venta_plan,
         })
     except Exception as e:
         app.logger.exception("Cron confirmar_fecha fallo")
