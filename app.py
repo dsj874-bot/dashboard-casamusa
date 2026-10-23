@@ -303,9 +303,12 @@ PREFIJOS_RESTRINGIDOS_COTIZACIONES = (
     "/cotizaciones", "/api/cotizaciones", "/subir_cotizaciones", "/api/subir_cotizaciones",
 )
 
-# Analista IA (2026-10-16): por ahora solo dsepulveda (pedido del usuario);
-# despues se suma la gerencia.
-USUARIOS_AGENTE = {"dsepulveda@casamusa.cl"}
+# Analista IA (2026-10-16): partio solo con dsepulveda; desde 2026-10-23
+# toda la gerencia (pedido del usuario). Misma lista que USUARIOS_GERENCIA.
+USUARIOS_AGENTE = {
+    "dsepulveda@casamusa.cl", "emusa@casamusa.cl", "fmusa@casamusa.cl",
+    "malvarado@casamusa.cl", "jsantana@casamusa.cl",
+}
 PREFIJOS_RESTRINGIDOS_AGENTE = ("/agente", "/api/agente")
 
 PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA = (
