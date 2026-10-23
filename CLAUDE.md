@@ -1218,6 +1218,35 @@ Detalles:
 - Cada paso queda en las columnas `aprobado1_*`, `aprobado2_*` y `ejecutado_*`, y también en `solicitud_evento`.
 - La lista marca "Te toca" según `le_toca()`.
 
+## Venta y margen iguales al ERP (2026-10-23, migración 023)
+Pedido del usuario: "quiero que en Musa360 aparezca igual que en el ERP". Se eligió el ajuste automático en vez de
+recargar la venta.
+
+**El problema.** El margen ya se llevaba al % del ERP con `ajuste_costo_erp` (migración 015), pero la venta difería
+en algunos vendedor-mes: documentos que cambiaron en el ERP después de cargarse, como notas de crédito o cambios de
+vendedor.
+
+**La solución.**
+- `ajuste_venta_erp` guarda por vendedor y mes la diferencia de venta y de margen con `margen_erp`.
+- `v_ventas` las suma como una línea más (`UNION ALL`), con `tipo_doc` = `marca` = `familia` = 'AJUSTE ERP' y sin
+  `codigo_cm`.
+- Resultado: la venta y el margen por vendedor, sucursal y total son iguales al ERP al peso (ene-oct 2026:
+  $5.246.361.024 / $1.943.945.706).
+- En las vistas por producto, marca o cliente aparece como "AJUSTE ERP". Las que filtran `codigo_cm IS NOT NULL` no
+  lo ven.
+
+**Cuándo se recalcula.** Lo hace `recalcular_ajuste_margen_erp_pg()` al cargar el reporte del ERP y al subir ventas.
+- El mes del reporte se compara solo hasta el día anterior a la carga (`cargado_en` en hora de Chile).
+- Lo que se suba después suma normal y no queda "congelado" en la cifra del reporte.
+
+**Gotchas.**
+- La rama de ajustes del `UNION ALL` debe ser simple, sin `row_number()` ni otras funciones de ventana. Por eso
+  usa `-id` como id. Con una función de ventana, Postgres no empuja los filtros (`ano`, `fecha_conta`,
+  `codigo_cm`) a `ventas`, y consultas de 3 ms pasaban a 800 ms.
+- Nunca `DROP ... CASCADE` sobre tablas que usa `v_ventas`: borra `ia.ventas` (Analista IA). Pasó una vez y se
+  restauró desde la 021, con su `grant select ... to agente_lectura`.
+- Para volver atrás basta con vaciar `ajuste_venta_erp`.
+
 ## Páginas en construcción (pendiente)
 - /datos — Vista de Datos (explorador de transacciones crudas, con
   filtros + búsqueda; diseño aún no definido con el usuario). La ruta

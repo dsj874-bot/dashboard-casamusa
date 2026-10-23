@@ -1839,8 +1839,46 @@ def recalcular_ajuste_margen_erp_pg(ano):
             n = cur.rowcount
             cur.execute("SELECT min(factor) mn, max(factor) mx FROM ajuste_costo_erp WHERE ano = %s", (ano,))
             r = cur.fetchone()
+            # Migracion 023: lo que aun difiere del ERP (venta, y el margen que
+            # arrastra esa venta) va como una linea "AJUSTE ERP" por vendedor y
+            # mes, para que Musa360 muestre la venta y el margen del ERP. El mes
+            # del reporte se compara solo hasta el dia anterior a la carga: lo que
+            # se suba despues suma normal.
+            cur.execute("DELETE FROM ajuste_venta_erp WHERE ano = %s", (ano,))
+            cur.execute(
+                """WITH corte AS (
+                       SELECT (max(cargado_en) AT TIME ZONE 'America/Santiago')::date - 1 AS hasta
+                         FROM margen_erp WHERE ano = %(ano)s),
+                   mu AS (
+                       SELECT v.mes, trim(v.vendedor) AS vt, max(v.vendedor) AS vendedor,
+                              sum(v.total) AS venta,
+                              sum(v.total - v.costo_total * coalesce(a.factor, 1)) AS ganancia,
+                              mode() WITHIN GROUP (ORDER BY v.sucursal) AS sucursal
+                         FROM ventas v
+                         CROSS JOIN corte
+                         LEFT JOIN ajuste_costo_erp a ON a.ano = v.ano AND a.mes = v.mes AND a.vendedor = v.vendedor
+                        WHERE v.ano = %(ano)s AND v.fecha_conta <= corte.hasta AND v.vendedor IS NOT NULL
+                        GROUP BY v.mes, trim(v.vendedor)),
+                   er AS (SELECT mes, vendedor AS vt, venta, ganancia FROM margen_erp WHERE ano = %(ano)s),
+                   dif AS (
+                       SELECT coalesce(er.mes, mu.mes) AS mes, coalesce(mu.vendedor, er.vt) AS vendedor,
+                              coalesce(mu.sucursal, 'SI-STK') AS sucursal,
+                              coalesce(er.venta, 0) - coalesce(mu.venta, 0) AS venta,
+                              coalesce(er.ganancia, 0) - coalesce(mu.ganancia, 0) AS ganancia
+                         FROM er FULL JOIN mu ON mu.mes = er.mes AND mu.vt = er.vt
+                        WHERE coalesce(er.mes, mu.mes) IN (SELECT DISTINCT mes FROM margen_erp WHERE ano = %(ano)s))
+                   INSERT INTO ajuste_venta_erp (ano, mes, vendedor, fecha, sucursal, venta, ganancia)
+                   SELECT %(ano)s, dif.mes, dif.vendedor,
+                          least((make_date(%(ano)s, dif.mes, 1) + interval '1 month - 1 day')::date, corte.hasta),
+                          dif.sucursal, dif.venta, dif.ganancia
+                     FROM dif CROSS JOIN corte
+                    WHERE abs(dif.venta) >= 1 OR abs(dif.ganancia) >= 1""",
+                {"ano": ano},
+            )
+            n_ajuste = cur.rowcount
         conn.commit()
-    return {"ajustados": n, "factor_min": float(r["mn"] or 1), "factor_max": float(r["mx"] or 1)}
+    return {"ajustados": n, "factor_min": float(r["mn"] or 1), "factor_max": float(r["mx"] or 1),
+            "ajustes_venta": n_ajuste}
 
 
 def estado_margen_erp_pg(ano):
