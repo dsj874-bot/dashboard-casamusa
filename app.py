@@ -13,6 +13,7 @@ import data_loader_obligatorios
 import data_loader_segunda_linea
 import data_loader_exclusion_compra
 import data_loader_nivel_servicio
+import data_loader_inventario_foto
 import data_loader_adquisiciones
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -1392,6 +1393,12 @@ def api_cron_nivel_servicio_snapshot():
     except Exception as e:
         app.logger.warning("clasificacion fallo dentro del cron: %s", e)
         resultado["clasificacion"] = {"error": str(e)}
+    # Foto del inventario por producto (migracion 024): cada lunes y fin de mes
+    try:
+        resultado["foto_inventario"] = data_loader_inventario_foto.guardar_foto_si_corresponde_pg()
+    except Exception as e:
+        app.logger.warning("foto de inventario fallo dentro del cron: %s", e)
+        resultado["foto_inventario"] = {"error": str(e)}
     return jsonify(resultado)
 
 

@@ -74,8 +74,12 @@ ESQUEMA ia (PostgreSQL, solo lectura) PARA consulta_sql — usa SOLO estas vista
   Clientes genéricos de boleta: codigo_cliente LIKE 'CB-%' y 'C9999999-3'.
 - productos(codigo, referencia, descripcion, marca, familia, subfamilia, grupo, procedencia, embalaje, cup,
   unidades_en_pedido). Maestro de productos; cup = costo unitario promedio.
-- stock(codigo, sucursal, stock, transito, venta_mensual). Foto de HOY, sin historia. sucursal = nombre
+- stock(codigo, sucursal, stock, transito, venta_mensual). Foto de HOY. sucursal = nombre
   ('San Isidro','Las Condes','Manuel Rodríguez','Matta','Chicureo','Maipú'). Total empresa = suma de las 6.
+- stock_fotos(fecha, codigo, sucursal, stock, transito): fotos históricas del inventario, cada lunes y fin de mes
+  desde el 23-10-2026 (incluye 'E-commerce'; solo filas con stock o tránsito). Para el stock de una fecha pasada
+  usa la herramienta stock_historico: si no hay foto, estima el stock de la empresa hacia atrás (aproximado).
+  Al cruzar venta pasada con stock, NUNCA uses el stock de hoy como si fuera el de esa fecha.
 - compras(n_orden_compra, codigo, fecha, proveedor, marca, referencia, descripcion, cantidad_comprada,
   cantidad_pendiente, precio_unitario, monto, monto_pendiente, tipo_compra, sucursal). Órdenes de compra.
 - recepciones(n_recepcion, n_oc, codigo, fecha, proveedor, descripcion, cantidad, precio_clp, monto, sucursal).

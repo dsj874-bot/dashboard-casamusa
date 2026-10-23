@@ -20,6 +20,7 @@ from decimal import Decimal
 import psycopg
 
 import db
+import data_loader_inventario_foto as dif
 
 SUCURSALES_VENTA = {
     "LC": "Las Condes", "MR": "Manuel Rodríguez", "MT": "Matta", "CH": "Chicureo", "MP": "Maipú",
@@ -300,6 +301,48 @@ def stock_producto(texto=None, codigos=None, marca=None, top=15):
     return {"productos": filas[:max(1, min(int(top or 15), MAX_FILAS))], "encontrados": len(filas)}
 
 
+def stock_historico(fecha, texto=None, codigos=None, marca=None, top=15):
+    """Stock que habia en una fecha pasada, para cruzar la venta de ese momento
+    con el inventario de entonces (ej. ver si un producto estaba quebrado).
+    Usa la foto del inventario mas cercana dentro de los 7 dias previos (exacta,
+    por sucursal); si no hay, estima el stock de la EMPRESA hacia atras
+    (stock - recepciones + ventas), aproximado."""
+    try:
+        f = date.fromisoformat(str(fecha)[:10])
+    except ValueError:
+        raise ValueError("La fecha debe venir como AAAA-MM-DD.")
+    w, p = [], {}
+    if codigos:
+        w.append("p.codigo = ANY(%(cods)s)")
+        p["cods"] = [int(c) for c in codigos]
+    if texto:
+        w.append("(p.descripcion ILIKE %(t)s OR p.referencia ILIKE %(t)s OR p.codigo::text = %(tx)s)")
+        p.update({"t": f"%{texto}%", "tx": str(texto).strip()})
+    if marca:
+        w.append("p.marca = %(marca)s")
+        p["marca"] = marca.upper()
+    if not w:
+        raise ValueError("Indica un texto, códigos o una marca.")
+    prods = db.query_all("SELECT p.codigo, p.descripcion, p.marca, coalesce(p.cup, 0) AS cup FROM productos p WHERE "
+                         + " AND ".join(w) + " LIMIT 500", p)
+    st = dif.stock_en_fecha_pg([r["codigo"] for r in prods], f)
+    filas = []
+    for r in prods:
+        x = st.get(r["codigo"]) or {}
+        filas.append({"codigo": r["codigo"], "descripcion": r["descripcion"], "marca": r["marca"],
+                      "stock_empresa": round(x.get("empresa") or 0, 1), "por_sucursal": x.get("por_sucursal"),
+                      "valor_cup": round((x.get("empresa") or 0) * float(r["cup"]))})
+    filas.sort(key=lambda x: -x["valor_cup"])
+    tipo = next(iter(st.values()), {}).get("tipo")
+    fb = next(iter(st.values()), {}).get("fecha_base")
+    return {"fecha_pedida": f.isoformat(), "tipo": tipo, "fecha_base": fb,
+            "nota": ("Foto real del inventario del %s, por sucursal." % fb) if tipo == "foto" else
+                    ("Estimado de la EMPRESA hacia atrás desde el inventario del %s (stock - recepciones + ventas). "
+                     "Aproximado: no incluye ajustes, mermas ni tomas de inventario; sirve para saber si había o no "
+                     "stock, no para cifras exactas. No hay detalle por sucursal." % fb),
+            "encontrados": len(filas), "productos": filas[:max(1, min(int(top or 15), MAX_FILAS))]}
+
+
 def quiebres(marca=None, familia=None, solo_prioritarios=True, meses_umbral=1.0, top=20):
     """Productos que se venden y tienen menos de `meses_umbral` meses de cobertura
     (stock + transito + OC de stock pendientes)."""
@@ -540,6 +583,15 @@ HERRAMIENTAS = {
             "texto": {"type": "string", "description": "Descripción, referencia o código"},
             "codigos": {"type": "array", "items": {"type": "integer"}}, "marca": {"type": "string"},
             "top": {"type": "integer"}}},
+    },
+    "stock_historico": {
+        "fn": stock_historico,
+        "descripcion": "Stock que había en una FECHA PASADA (para cruzar con la venta de ese momento, ej. si un producto estaba quebrado cuando bajó la venta). Usa la foto real del inventario si hay una en los 7 días previos (por sucursal; se guardan cada lunes y fin de mes desde el 23-10-2026); si no, estima el stock de la empresa hacia atrás (aproximado). Productos por texto, códigos o marca.",
+        "parametros": {"type": "object", "properties": {
+            "fecha": {"type": "string", "description": "AAAA-MM-DD"},
+            "texto": {"type": "string", "description": "Descripción, referencia o código"},
+            "codigos": {"type": "array", "items": {"type": "integer"}}, "marca": {"type": "string"},
+            "top": {"type": "integer"}}, "required": ["fecha"]},
     },
     "quiebres": {
         "fn": quiebres,

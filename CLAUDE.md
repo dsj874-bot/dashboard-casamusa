@@ -1248,6 +1248,25 @@ vendedor.
   restauró desde la 021, con su `grant select ... to agente_lectura`.
 - Para volver atrás basta con vaciar `ajuste_venta_erp`.
 
+## Fotos del inventario por producto (2026-10-23, migración 024)
+`inventario_stock` es solo la última foto. Para cruzar venta pasada con el stock de entonces, `inventario_foto` guarda
+`(fecha, codigo, bodega, stock, transito)`.
+
+**Cuándo se toma una foto.** Cada lunes y el último día de cada mes. Si una semana no hubo inventario el lunes, se
+toma igual cuando la última foto cumple 7 días.
+- La toma el cron `/api/cron/nivel_servicio_snapshot` con `guardar_foto_si_corresponde_pg()`.
+- La fecha es el día de `inventario_control.cargado_en`, en hora de Chile.
+- Solo guarda filas con stock o tránsito distinto de cero, en las 6 sucursales y E-commerce.
+- Cada foto pesa ~1,9 MB, unos 110 MB al año. Decisión del usuario ("opción A"): no fotos diarias, para cuidar el
+  espacio; la base tenía 465 MB al 23-10-2026.
+
+**Analista IA.** Tiene la herramienta `stock_historico(fecha, ...)` y la vista `ia.stock_fotos`.
+- Si hay foto en los 7 días previos, la usa: es exacta y por sucursal.
+- Si no, `stock_en_fecha_pg()` estima el stock de la EMPRESA hacia atrás: stock − recepciones + ventas.
+- Validado contra el valor de `nivel_servicio_historico`: 0,0% al 1-oct, +2,7% al 15-oct, +5,9% al 15-sep y +9,9%
+  al 28-ago. Los ajustes de inventario no están en los datos, así que sirve para saber si había o no stock, no para
+  cifras exactas.
+
 ## Páginas en construcción (pendiente)
 - /datos — Vista de Datos (explorador de transacciones crudas, con
   filtros + búsqueda; diseño aún no definido con el usuario). La ruta
