@@ -1117,8 +1117,9 @@ que las documenta a todas.
 | /productos | productos.html | get_ventas_por_producto() (top 15) |
 
 ## Analista IA (2026-10-16, migración 020)
-Chat `/agente`: preguntas en lenguaje natural sobre ventas y compras. Por ahora solo para
-`USUARIOS_AGENTE` (dsepulveda); después se suma la gerencia.
+Chat `/agente`: preguntas en lenguaje natural sobre ventas y compras. Lo pueden usar los de
+`USUARIOS_AGENTE`: partió solo con dsepulveda y desde 2026-10-23 incluye a toda la gerencia, los mismos 5 de
+`USUARIOS_GERENCIA`.
 
 **Cerebro:** Gemini, plan gratuito, lo eligió el usuario.
 - Modelo en `GEMINI_MODEL`, por defecto `gemini-3.8-flash`. Clave en `GEMINI_API_KEY`, en el `.env` y en Vercel.
