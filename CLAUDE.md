@@ -726,6 +726,28 @@ explícitamente por SQL --
 `pg_stat_activity where datname=current_database() and state !=
 'idle'`) -- no basta con volver a matar el proceso de Windows.
 
+## Gotcha Postgres #3 — dos cargas de ventas a la vez duplican filas (candado_carga)
+
+Incidente real 2026-10-30: `sincronizar_ventas_pg` hace delete-por-fecha y
+despues COPY en lotes. Dos cargas simultaneas (carga diaria local +
+/subir_ventas) borraron las mismas fechas y luego insertaron las dos ->
+1.465 filas duplicadas el 26, 27 y 28/10/2026 (+$70,6 MM). Se noto porque
+al subir el reporte "Margen por vendedor" el ajuste de octubre (migr. 023)
+dio -$70,6 MM y el 29-10 aparecio con venta total negativa. Se borraron las
+copias (respaldo en `ventas_dup_respaldo_20261030`) y octubre cuadro al
+peso con el ERP ($538,36 MM).
+
+- Desde la migracion 025 la sincronizacion toma el candado `sync_ventas`
+  de la tabla `candado_carga` (`tomar_candado`/`soltar_candado` en
+  data_loader_pg.py): la segunda carga espera hasta 4 min y despues falla
+  con un mensaje claro; un candado huerfano vence a los 20 min.
+- **NO usar `pg_advisory_lock`**: la conexion pasa por el pooler de
+  Supabase en modo transaccion; el candado de sesion se pierde al hacer
+  commit y otra conexion lo "consigue" igual (probado).
+- Chequeo rapido de duplicados: agrupar `ventas` por
+  (fecha_conta, doc_sap, tipo_doc, codigo_cm, cantidad, total) y buscar
+  count(*) > 1 — en dias normales da 0.
+
 ## Gotcha grave — subida web "por año completo" borra lo que el archivo no trae
 `cargar_ano_pg()` (DELETE WHERE ano=X + INSERT) sirve para una carga
 inicial o una re-extracción COMPLETA del año desde SAP — pero NUNCA

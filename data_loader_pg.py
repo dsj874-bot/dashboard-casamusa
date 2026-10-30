@@ -778,6 +778,38 @@ def get_proyeccion_pg(filtros=None, fecha_corte=None):
     return {"kpis": kpis, "filas": filas}
 
 
+def tomar_candado(nombre, espera_max=240, vence_min=20):
+    """Toma el candado `nombre` de la tabla candado_carga (migracion 025)
+    y devuelve el token para soltarlo. Si otro proceso lo tiene, espera
+    hasta `espera_max` segundos; un candado de un proceso que murio vence
+    solo a los `vence_min` minutos. No usa pg_advisory_lock porque la
+    conexion pasa por el pooler de Supabase en modo transaccion."""
+    import time, uuid
+    token = uuid.uuid4().hex
+    limite = time.monotonic() + espera_max
+    with db.get_connection() as conn:
+        while True:
+            fila = conn.execute(
+                """UPDATE candado_carga SET tomado_en = now(), tomado_por = %s
+                    WHERE nombre = %s
+                      AND (tomado_en IS NULL OR tomado_en < now() - make_interval(mins => %s))
+                RETURNING nombre""", (token, nombre, vence_min)).fetchone()
+            conn.commit()
+            if fila:
+                return token
+            if time.monotonic() > limite:
+                raise RuntimeError("Hay otra carga de ventas en curso. Intenta de nuevo en unos minutos.")
+            time.sleep(5)
+
+
+def soltar_candado(nombre, token):
+    with db.get_connection() as conn:
+        conn.execute("UPDATE candado_carga SET tomado_en = NULL, tomado_por = NULL WHERE nombre = %s AND tomado_por = %s",
+                     (nombre, token))
+        conn.commit()
+
+
+
 def sincronizar_ventas_pg(df, fechas, tamano_lote=1500, reintentos=3):
     """Sincroniza en Postgres las filas de `df` que caen en `fechas`:
     delete-by-fecha + insert -- mismo criterio de dedupe por rango de
@@ -832,12 +864,19 @@ def sincronizar_ventas_pg(df, fechas, tamano_lote=1500, reintentos=3):
     sql = f"copy ventas ({cols_sql}) from stdin"
     filas = [tuple(valor_sql(getattr(r, c)) for c in VENTAS_DF_COLS) for r in df.itertuples(index=False)]
 
-    conn = db.get_connection()
-    with conn.cursor() as cur:
-        cur.execute("delete from ventas where fecha_conta = ANY(%s)", (fechas,))
-    conn.commit()
+    # Candado: dos cargas a la vez (ej. la diaria local + /subir_ventas)
+    # borraban las mismas fechas y despues insertaban las dos -> filas
+    # duplicadas (26-28/10/2026, +$70,6 MM, ver CLAUDE.md). Con el candado
+    # la segunda espera, y su delete se lleva lo que inserto la primera.
+    token = tomar_candado("sync_ventas")
 
+    conn = None
     try:
+        conn = db.get_connection()
+        with conn.cursor() as cur:
+            cur.execute("delete from ventas where fecha_conta = ANY(%s)", (fechas,))
+        conn.commit()
+
         for i in range(0, len(filas), tamano_lote):
             lote = filas[i:i + tamano_lote]
             for intento in range(1, reintentos + 1):
@@ -857,7 +896,11 @@ def sincronizar_ventas_pg(df, fechas, tamano_lote=1500, reintentos=3):
                         raise
                     conn = db.get_connection()
     finally:
-        conn.close()
+        try:
+            if conn is not None:
+                conn.close()
+        finally:
+            soltar_candado("sync_ventas", token)
 
 
 def get_seguimiento_metas_pg(filtros=None, fecha_corte=None):
