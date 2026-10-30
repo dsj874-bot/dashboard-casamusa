@@ -37,7 +37,7 @@ def serie():
     return db.query_all("""
       with d as (
         select fecha_conta f, doc_sap, marca = any(%(m)s) lb, coalesce(cond_pago,'') = 'CONTADO' cont,
-               sum(total) v, sum(utilidad_bruta) u
+               sum(total) v, sum(total - costo_total) u  -- margen SAP: el factor ERP es por vendedor-mes y distorsiona un dia de una marca
         from v_ventas where fecha_conta >= %(ini)s group by 1,2,3,4)
       select f,
         coalesce(sum(v) filter (where lb and cont and abs(v) <= %(p)s),0) lb_cont,
