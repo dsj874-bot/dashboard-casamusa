@@ -2034,7 +2034,7 @@ def api_subir_ventas():
         df = data_loader._normalizar_df(df)
         df = data_loader._aplicar_sucursal_logica(df)
         fechas = df["FECHA_CONTA"].dt.date.unique().tolist()
-        data_loader_pg.sincronizar_ventas_pg(df, fechas)
+        data_loader_pg.sincronizar_ventas_pg(df, fechas, recalcular_erp=False)
     except Exception as e:
         return jsonify({"ok": False, "msg": f"Error al procesar/subir el archivo: {e}"}), 500
 

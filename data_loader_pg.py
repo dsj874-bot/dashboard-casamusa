@@ -810,7 +810,7 @@ def soltar_candado(nombre, token):
 
 
 
-def sincronizar_ventas_pg(df, fechas, tamano_lote=1500, reintentos=3):
+def sincronizar_ventas_pg(df, fechas, tamano_lote=1500, reintentos=3, recalcular_erp=True):
     """Sincroniza en Postgres las filas de `df` que caen en `fechas`:
     delete-by-fecha + insert -- mismo criterio de dedupe por rango de
     fecha que usa el cache local (actualizar_desde_archivo_mensual) y
@@ -901,6 +901,17 @@ def sincronizar_ventas_pg(df, fechas, tamano_lote=1500, reintentos=3):
                 conn.close()
         finally:
             soltar_candado("sync_ventas", token)
+
+    # La venta nueva cambia la comparacion contra el reporte del ERP (y el
+    # dia de corte, ver _corte_reporte_erp): se recalcula el ajuste en toda
+    # carga, tambien en la diaria. /subir_ventas lo hace por su cuenta para
+    # poder avisar si falla. Si falla aqui, la venta ya quedo cargada igual.
+    if recalcular_erp:
+        for ano in sorted({f.year for f in fechas}):
+            try:
+                recalcular_ajuste_margen_erp_pg(ano)
+            except Exception as e:
+                print(f"Aviso: no se pudo recalcular el ajuste ERP {ano}: {e}")
 
 
 def get_seguimiento_metas_pg(filtros=None, fecha_corte=None):
@@ -1858,6 +1869,41 @@ def cargar_margen_erp_pg(filas, ano, cargado_por="admin"):
     return recalcular_ajuste_margen_erp_pg(ano)
 
 
+def _corte_reporte_erp(cur, ano):
+    """Ultimo dia que cubre el reporte de margen del ERP. El reporte no trae
+    fechas: si se descarga en la manana llega hasta ayer, si se descarga en
+    la tarde trae tambien el dia de hoy (caso real 2026-11-05: el ajuste
+    sumo dos veces la venta del dia de la carga, +$21 MM). Se elige entre el
+    dia anterior a la carga y el dia de la carga, el que deja la venta de
+    Musa360 de ese mes mas cerca del total del ERP. Por eso hay que volver a
+    calcularlo cada vez que entra venta (ver sincronizar_ventas_pg)."""
+    cur.execute(
+        """SELECT (max(cargado_en) AT TIME ZONE 'America/Santiago')::date AS d
+             FROM margen_erp WHERE ano = %s""",
+        (ano,),
+    )
+    carga = cur.fetchone()["d"]
+    if carga is None:
+        return None
+    hasta = carga - timedelta(days=1)
+    if carga.year != ano:
+        return hasta
+    cur.execute("SELECT sum(venta) AS v FROM margen_erp WHERE ano = %s AND mes = %s", (ano, carga.month))
+    erp_mes = cur.fetchone()["v"]
+    if erp_mes is None:
+        return hasta
+    cur.execute(
+        """SELECT coalesce(sum(total) FILTER (WHERE fecha_conta <= %(ayer)s), 0) AS ayer,
+                  coalesce(sum(total) FILTER (WHERE fecha_conta <= %(hoy)s), 0) AS hoy
+             FROM ventas WHERE ano = %(ano)s AND mes = %(mes)s""",
+        {"ayer": hasta, "hoy": carga, "ano": ano, "mes": carga.month},
+    )
+    m = cur.fetchone()
+    if abs(float(erp_mes) - float(m["hoy"])) < abs(float(erp_mes) - float(m["ayer"])):
+        return carga
+    return hasta
+
+
 def recalcular_ajuste_margen_erp_pg(ano):
     """Factor de costo por vendedor y mes para que el margen de Musa360
     quede en el % de margen del ERP (ver migracion 015):
@@ -1885,13 +1931,12 @@ def recalcular_ajuste_margen_erp_pg(ano):
             # Migracion 023: lo que aun difiere del ERP (venta, y el margen que
             # arrastra esa venta) va como una linea "AJUSTE ERP" por vendedor y
             # mes, para que Musa360 muestre la venta y el margen del ERP. El mes
-            # del reporte se compara solo hasta el dia anterior a la carga: lo que
-            # se suba despues suma normal.
+            # del reporte se compara solo hasta el ultimo dia que trae el
+            # reporte: lo que se suba despues suma normal.
+            hasta = _corte_reporte_erp(cur, ano)
             cur.execute("DELETE FROM ajuste_venta_erp WHERE ano = %s", (ano,))
             cur.execute(
-                """WITH corte AS (
-                       SELECT (max(cargado_en) AT TIME ZONE 'America/Santiago')::date - 1 AS hasta
-                         FROM margen_erp WHERE ano = %(ano)s),
+                """WITH corte AS (SELECT %(hasta)s::date AS hasta),
                    mu AS (
                        SELECT v.mes, trim(v.vendedor) AS vt, max(v.vendedor) AS vendedor,
                               sum(v.total) AS venta,
@@ -1916,7 +1961,7 @@ def recalcular_ajuste_margen_erp_pg(ano):
                           dif.sucursal, dif.venta, dif.ganancia
                      FROM dif CROSS JOIN corte
                     WHERE abs(dif.venta) >= 1 OR abs(dif.ganancia) >= 1""",
-                {"ano": ano},
+                {"ano": ano, "hasta": hasta},
             )
             n_ajuste = cur.rowcount
         conn.commit()

@@ -1258,8 +1258,13 @@ vendedor.
 - En las vistas por producto, marca o cliente aparece como "AJUSTE ERP". Las que filtran `codigo_cm IS NOT NULL` no
   lo ven.
 
-**Cuándo se recalcula.** Lo hace `recalcular_ajuste_margen_erp_pg()` al cargar el reporte del ERP y al subir ventas.
-- El mes del reporte se compara solo hasta el día anterior a la carga (`cargado_en` en hora de Chile).
+**Cuándo se recalcula.** Lo hace `recalcular_ajuste_margen_erp_pg()` al cargar el reporte del ERP y en toda carga de
+ventas: `/subir_ventas`, el botón "Actualizar datos" y la carga diaria (`sincronizar_ventas_pg(..., recalcular_erp=True)`).
+- El mes del reporte se compara solo hasta el último día que trae el reporte (`_corte_reporte_erp()`). El reporte no
+  trae fechas: se elige entre el día anterior a la carga y el día de la carga, el que deja la venta de Musa360 del mes
+  más cerca del total del ERP.
+- Bug real 2026-11-05: el reporte se bajó en la tarde con la venta del mismo día, el corte fijo "día anterior" creó un
+  AJUSTE ERP de +$20,99 MM y, al entrar esa venta, noviembre mostró $92,9 MM en vez de $71,9 MM.
 - Lo que se suba después suma normal y no queda "congelado" en la cifra del reporte.
 
 **Gotchas.**
