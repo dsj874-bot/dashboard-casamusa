@@ -898,15 +898,18 @@ def finanzas_proveedores():
                            session_nombre=session.get("nombre"))
 
 
-def _proveedores_filtro():
-    return [p for p in request.args.getlist("proveedor") if p] or None
+def _filtros_finanzas():
+    return {"proveedores": [p for p in request.args.getlist("proveedor") if p] or None,
+            "estado": request.args.get("estado") or None,
+            "desde": request.args.get("desde") or None,
+            "hasta": request.args.get("hasta") or None}
 
 
 @app.route("/api/finanzas/proveedores")
 @login_requerido
 def api_finanzas_proveedores():
     try:
-        return jsonify({"ok": True, **data_loader_finanzas_pg.get_panel(proveedores=_proveedores_filtro())})
+        return jsonify({"ok": True, **data_loader_finanzas_pg.get_panel(**_filtros_finanzas())})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)}), 500
 
@@ -915,7 +918,7 @@ def api_finanzas_proveedores():
 @login_requerido
 def api_finanzas_proveedores_exportar():
     try:
-        buf = data_loader_finanzas_pg.exportar_excel(proveedores=_proveedores_filtro())
+        buf = data_loader_finanzas_pg.exportar_excel(**_filtros_finanzas())
         return send_file(buf, as_attachment=True, download_name=f"Programa_pagos_proveedores_{date.today().isoformat()}.xlsx",
                          mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     except Exception as e:

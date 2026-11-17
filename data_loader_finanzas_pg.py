@@ -144,7 +144,7 @@ def _lunes(d):
     return d - dt.timedelta(days=d.weekday())
 
 
-def get_panel(hoy=None, proveedores=None):
+def get_panel(hoy=None, proveedores=None, estado=None, desde=None, hasta=None):
     hoy = hoy or dt.date.today()
     carga = ultima_carga()
     plazos = {p["codigo_proveedor"]: p for p in get_plazos()}
@@ -159,9 +159,11 @@ def get_panel(hoy=None, proveedores=None):
                         key=lambda x: x["proveedor"])
     filtro = set(proveedores or [])
     pend = []
+    total_rec = 0.0
     for f in filas:
         if filtro and f["proveedor"] not in filtro:
             continue
+        total_rec += float(f["total_recepcion"] or 0)
         rec = float(f["total_recepcion"] or 0)
         fac = float(f["total_facturado"] or 0)
         pag = float(f["total_pagado"] or 0)
@@ -191,6 +193,48 @@ def get_panel(hoy=None, proveedores=None):
             "vence": vence.isoformat(), "dias_vencido": (hoy - vence).days if vence < hoy else 0,
             "estado": e, "tipo": tipo, "monto": round(monto),
         })
+
+    # Pagado = recepcionado - pendiente (antes de los filtros de estado/fecha,
+    # que solo acotan lo que se mira de lo pendiente)
+    pend_total_sin_filtro = sum(p["monto"] for p in pend)
+    grupos = {"factura": (TIPOS[0], TIPOS[1]), "sin_factura": (TIPOS[2],), "sin_vinculo": (TIPOS[3],)}
+    if estado in grupos:
+        pend = [p for p in pend if p["tipo"] in grupos[estado]]
+    if desde:
+        pend = [p for p in pend if p["vence"] >= desde]
+    if hasta:
+        pend = [p for p in pend if p["vence"] <= hasta]
+
+    # Antiguedad (tramos por dias al vencimiento)
+    TRAMOS = [("Vencido más de 30 días", None, -31), ("Vencido 1 a 30 días", -30, -1), ("Vence en 0 a 15 días", 0, 15),
+              ("Vence en 16 a 30 días", 16, 30), ("Vence en 31 a 60 días", 31, 60), ("Vence en más de 60 días", 61, None)]
+    antig = [{"tramo": t, "monto": 0.0, "n": 0} for t, _, _ in TRAMOS]
+    tabla_prov = defaultdict(lambda: {"vencido": 0.0, "d0_15": 0.0, "d16_30": 0.0, "despues": 0.0, "n": 0, "plazo": PLAZO_DEFECTO})
+    for p in pend:
+        dias_al_venc = (dt.date.fromisoformat(p["vence"]) - hoy).days
+        for i, (_, lo, hi) in enumerate(TRAMOS):
+            if (lo is None or dias_al_venc >= lo) and (hi is None or dias_al_venc <= hi):
+                antig[i]["monto"] += p["monto"]; antig[i]["n"] += 1
+                break
+        t = tabla_prov[p["proveedor"]]
+        t["plazo"] = p["plazo"]; t["n"] += 1
+        if dias_al_venc < 0: t["vencido"] += p["monto"]
+        elif dias_al_venc <= 15: t["d0_15"] += p["monto"]
+        elif dias_al_venc <= 30: t["d16_30"] += p["monto"]
+        else: t["despues"] += p["monto"]
+    tabla_proveedores = sorted(({"proveedor": k, "plazo": v["plazo"], "n": v["n"], "vencido": round(v["vencido"]), "d0_15": round(v["d0_15"]),
+                                 "d16_30": round(v["d16_30"]), "despues": round(v["despues"]),
+                                 "total": round(v["vencido"] + v["d0_15"] + v["d16_30"] + v["despues"])} for k, v in tabla_prov.items()),
+                               key=lambda x: -x["total"])
+    fact_venc = [p for p in pend if p["dias_vencido"] > 0 and p["tipo"] in (TIPOS[0], TIPOS[1])]
+    resumen = {
+        "recepcionado": round(total_rec),
+        "pagado": round(total_rec - pend_total_sin_filtro),
+        "pendiente": round(sum(p["monto"] for p in pend)),
+        "pct_pagado": round(100 * (total_rec - pend_total_sin_filtro) / total_rec, 1) if total_rec else 0,
+        "facturas_vencidas_n": len(fact_venc),
+        "facturas_vencidas_monto": round(sum(p["monto"] for p in fact_venc)),
+    }
 
     lunes_hoy = _lunes(hoy)
     sem = defaultdict(lambda: defaultdict(float))
@@ -230,6 +274,10 @@ def get_panel(hoy=None, proveedores=None):
     return {
         "hoy": hoy.isoformat(), "carga": {**carga, "cargado_en": carga["cargado_en"].isoformat()},
         "kpis": kpis, "tipos": TIPOS, "semanas": semanas,
+        "resumen": resumen,
+        "antiguedad": [{**a, "monto": round(a["monto"])} for a in antig],
+        "top_proveedores": [{"proveedor": t["proveedor"], "monto": t["total"]} for t in tabla_proveedores[:8]],
+        "tabla_proveedores": tabla_proveedores,
         "por_proveedor_mes": {"meses": meses, "filas": filas_pm},
         # Primero las facturas impagas (lo que de verdad se debe), despues lo recibido sin factura
         "vencidos": sorted(venc, key=lambda p: (p["tipo"] not in (TIPOS[0], TIPOS[1]), -p["dias_vencido"], p["proveedor"])),
@@ -239,12 +287,12 @@ def get_panel(hoy=None, proveedores=None):
     }
 
 
-def exportar_excel(hoy=None, proveedores=None):
+def exportar_excel(hoy=None, proveedores=None, estado=None, desde=None, hasta=None):
     """Excel del programa de pagos: por semana, vencido impago, proveedor x mes y detalle."""
     import io
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
-    p = get_panel(hoy, proveedores)
+    p = get_panel(hoy, proveedores, estado, desde, hasta)
     wb = Workbook()
     azul = PatternFill("solid", fgColor="1F4E78")
 
