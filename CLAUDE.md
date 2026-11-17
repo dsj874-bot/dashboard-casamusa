@@ -1395,3 +1395,17 @@ const r = await fetch('/api/endpoint', {
 const d = await r.json();
 if(d.error) { /* manejar error */ return; }
 ```
+
+## Finanzas > Proveedores (programa de pagos, migracion 026, 2026-11-17)
+- Pantalla `/finanzas/proveedores` (template `finanzas_proveedores.html`,
+  logica `data_loader_finanzas_pg.py`). Acceso: solo `USUARIOS_FINANZAS`
+  (hoy solo dsepulveda); el resto de la gerencia ve `/finanzas` como
+  "en construccion". Los prefijos restringidos llevan "/" final a proposito.
+- Fuente: informe SAP "Pago a Proveedores" (una fila por OC + recepcion,
+  montos CON IVA), subido desde la pantalla por partes (`/api/finanzas/
+  subir_pagos/inicio` -> partes -> `/fin`). Cada carga reemplaza a la
+  anterior; hasta el `/fin` la pantalla sigue mostrando la carga previa.
+- Regla: vence = recepcion + plazo (`plazo_proveedor`, editable en la
+  pantalla; sin fila = 60 dias; Philips/Signify y Zama 30; Legrand 45).
+  `sin_vinculo` (Legrand): SAP no amarra sus facturas a las recepciones
+  desde abril-2026, asi que se asume pagado lo ya vencido.

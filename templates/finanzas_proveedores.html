@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+
+{% block title %}Finanzas · Proveedores{% endblock %}
+{% block page_title %}Pago a Proveedores{% endblock %}
+{% block page_subtitle %}Cuándo pagar a cada proveedor, según recepciones y estado de pago en SAP{% endblock %}
+{% block boton_actualizar %}{% endblock %}
+
+{% block sidebar_nav %}{% include "_finanzas_sidebar.html" %}{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  .fp-barra { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 18px; }
+  .fp-filtro { display: flex; flex-direction: column; gap: 4px; min-width: 260px; }
+  .fp-filtro label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .fp-filtro select, .fp-input {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 8px 10px; font-size: 12.5px;
+  }
+  .fp-acciones { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .fp-leido { font-size: 11.5px; color: var(--muted2); text-align: right; line-height: 1.4; max-width: 320px; }
+  .fp-btn {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .fp-btn.prim { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .fp-btn:disabled { opacity: .5; cursor: wait; }
+  .fp-btn:focus-visible, .fp-filtro select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .fp-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+  @media (max-width: 1100px) { .fp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .fp-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+  .fp-kpi.alerta { border-color: var(--red); }
+  .fp-kpi-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 6px; }
+  .fp-kpi-valor { font-size: 22px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+  .fp-kpi-valor.rojo { color: var(--red); }
+  .fp-kpi-sub { font-size: 11.5px; color: var(--muted2); margin-top: 3px; }
+
+  .fp-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; margin-bottom: 18px; }
+  @media (max-width: 1100px) { .fp-grid { grid-template-columns: 1fr; } }
+  .fp-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; min-width: 0; margin-bottom: 18px; }
+  .fp-grid .fp-card { margin-bottom: 0; }
+  .fp-card-titulo { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+  .fp-card-sub { font-size: 12px; color: var(--muted2); margin-bottom: 12px; line-height: 1.5; }
+
+  .fp-tabla { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .fp-tabla th {
+    text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
+    padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; background: var(--surface);
+  }
+  .fp-tabla td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  .fp-tabla .izq { text-align: left; }
+  .fp-tabla td.izq { white-space: normal; }
+  .fp-tabla tr.total td { font-weight: 700; border-top: 2px solid var(--border); }
+  .fp-wrap { overflow-x: auto; }
+  .fp-wrap.alto { max-height: 380px; overflow-y: auto; }
+  .fp-wrap.alto th { position: sticky; top: 0; z-index: 1; }
+  .fp-rojo { color: var(--red); font-weight: 700; }
+  .pill { display: inline-block; white-space: nowrap; padding: 2px 8px; border-radius: 10px; font-size: 10.5px; font-weight: 600; background: var(--surface2); color: var(--muted2); }
+  .pill.fact { background: rgba(239,68,68,.15); color: var(--red); }
+  .pill.sinf { background: rgba(59,130,246,.15); color: var(--blue); }
+  .pill.vinc { background: rgba(245,158,11,.15); color: var(--amber); }
+  .vacio { text-align: center; color: var(--muted2); padding: 18px; font-size: 12.5px; }
+  .fp-nota { font-size: 11.5px; color: var(--muted2); line-height: 1.5; margin-top: 10px; }
+
+  .fp-panel { display: none; }
+  .fp-panel.abierto { display: block; }
+  .drop-zone {
+    background: var(--surface2); border: 2px dashed var(--border); border-radius: 14px;
+    padding: 26px 20px; text-align: center; cursor: pointer;
+  }
+  .drop-zone.dragover { border-color: var(--accent); }
+  .drop-zone:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .drop-zone input { display: none; }
+  .progreso { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; margin-top: 10px; }
+  .progreso div { height: 6px; background: var(--accent); width: 0; transition: width .2s; }
+  .estado-subida { font-size: 12.5px; color: var(--muted2); margin-top: 8px; }
+  .estado-subida.ok { color: var(--accent); } .estado-subida.error { color: var(--red); }
+  .fp-chart { position: relative; height: 300px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fp-barra">
+  <div class="fp-filtro">
+    <label for="f-prov">Proveedor</label>
+    <select id="f-prov"><option value="">Todos los proveedores</option></select>
+  </div>
+  <div class="fp-acciones">
+    <div class="fp-leido" id="leido">Cargando…</div>
+    <button class="fp-btn" id="btn-plazos" aria-expanded="false" aria-controls="panel-plazos">Plazos por proveedor</button>
+    <button class="fp-btn" id="btn-subir" aria-expanded="false" aria-controls="panel-subir">Subir informe SAP</button>
+    <button class="fp-btn prim" id="btn-exportar">Exportar Excel</button>
+  </div>
+</div>
+
+<div class="fp-card fp-panel" id="panel-subir">
+  <div class="fp-card-titulo">Subir informe "Pago a Proveedores" de SAP</div>
+  <div class="fp-card-sub">El Excel tal como sale de SAP (una fila por OC y recepción, con total recepcionado, facturado, pagado y estado).
+    Cada carga reemplaza a la anterior. Conviene subirlo una vez por semana, por ejemplo cada lunes.</div>
+  <div class="drop-zone" id="drop" tabindex="0" role="button" aria-label="Elegir el informe de pago a proveedores">
+    <input type="file" id="input" accept=".xlsx">
+    <div style="font-size:14px;font-weight:600;color:var(--text)">Arrastra aquí el informe o haz click para elegirlo (.xlsx)</div>
+  </div>
+  <div class="progreso"><div id="prog"></div></div>
+  <div class="estado-subida" id="estado-subida" role="status"></div>
+</div>
+
+<div class="fp-card fp-panel" id="panel-plazos">
+  <div class="fp-card-titulo">Plazos de pago por proveedor</div>
+  <div class="fp-card-sub">Días desde la recepción. Los proveedores que no están en esta lista se pagan a <strong>60 días</strong>.
+    "Sin vínculo en SAP": SAP no amarra sus facturas a las recepciones, así que se asume pagado lo ya vencido.</div>
+  <div class="fp-wrap">
+    <table class="fp-tabla">
+      <thead><tr><th class="izq">Proveedor</th><th class="izq">Código</th><th>Días</th><th>Sin vínculo en SAP</th><th class="izq">Modificado</th><th></th></tr></thead>
+      <tbody id="tbody-plazos"></tbody>
+    </table>
+  </div>
+  <div class="fp-barra" style="margin:14px 0 0">
+    <div class="fp-filtro"><label for="np-prov">Agregar proveedor</label><select id="np-prov"></select></div>
+    <div class="fp-filtro" style="min-width:90px"><label for="np-dias">Días</label><input class="fp-input" id="np-dias" type="number" min="0" max="365" value="30"></div>
+    <label style="font-size:12px;color:var(--muted2);display:flex;gap:6px;align-items:center"><input type="checkbox" id="np-vinc"> Sin vínculo en SAP</label>
+    <button class="fp-btn prim" id="np-guardar">Agregar</button>
+  </div>
+</div>
+
+<div class="fp-kpis">
+  <div class="fp-kpi"><div class="fp-kpi-label">Pendiente de pago</div><div class="fp-kpi-valor" id="k-pend">—</div><div class="fp-kpi-sub" id="k-pend-sub"></div></div>
+  <div class="fp-kpi alerta"><div class="fp-kpi-label">Vencido impago</div><div class="fp-kpi-valor rojo" id="k-venc">—</div><div class="fp-kpi-sub" id="k-venc-sub"></div></div>
+  <div class="fp-kpi"><div class="fp-kpi-label">Vence esta semana</div><div class="fp-kpi-valor" id="k-sem">—</div><div class="fp-kpi-sub">de hoy al domingo</div></div>
+  <div class="fp-kpi"><div class="fp-kpi-label">Próximos 30 días</div><div class="fp-kpi-valor" id="k-30">—</div><div class="fp-kpi-sub">sin contar lo vencido</div></div>
+  <div class="fp-kpi"><div class="fp-kpi-label">Proveedores con saldo</div><div class="fp-kpi-valor" id="k-prov">—</div><div class="fp-kpi-sub">con algo por pagar</div></div>
+</div>
+
+<div class="fp-card">
+  <div class="fp-card-titulo">Calendario de pagos por semana</div>
+  <div class="fp-card-sub">Monto con IVA que vence cada semana (lunes a domingo), según el estado en SAP.</div>
+  <div class="fp-chart"><canvas id="chart-sem" role="img" aria-label="Pagos por semana"></canvas></div>
+</div>
+
+<div class="fp-grid">
+  <div class="fp-card">
+    <div class="fp-card-titulo">Vencido impago</div>
+    <div class="fp-card-sub" id="venc-sub">Lo que ya debió pagarse, del más atrasado al más reciente.</div>
+    <div class="fp-wrap alto"><table class="fp-tabla" id="tabla-venc"></table></div>
+  </div>
+  <div class="fp-card">
+    <div class="fp-card-titulo">Semana a semana</div>
+    <div class="fp-card-sub">Total por semana y los proveedores que más pesan.</div>
+    <div class="fp-wrap alto"><table class="fp-tabla" id="tabla-sem"></table></div>
+  </div>
+</div>
+
+<div class="fp-card">
+  <div class="fp-card-titulo">Por proveedor y mes de vencimiento</div>
+  <div class="fp-card-sub">Para programar el flujo de caja por proveedor.</div>
+  <div class="fp-wrap"><table class="fp-tabla" id="tabla-pm"></table></div>
+</div>
+
+<div class="fp-card">
+  <div class="fp-card-titulo">Detalle de recepciones pendientes</div>
+  <div class="fp-barra" style="margin:8px 0 10px">
+    <input class="fp-input" id="buscar" type="search" placeholder="Buscar proveedor, OC o recepción…" aria-label="Buscar en el detalle" style="min-width:280px">
+  </div>
+  <div class="fp-wrap alto"><table class="fp-tabla" id="tabla-det"></table></div>
+  <div class="fp-nota" id="nota"></div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const COLUMNAS = {{ columnas | tojson }};
+const COLS_FECHA = new Set(['Fecha OC', 'Fecha Recepción']);
+const FILAS_POR_PARTE = 1500;
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt$ = v => '$' + Math.round(v || 0).toLocaleString('es-CL');
+const fmtMM = v => '$' + ((v || 0) / 1e6).toLocaleString('es-CL', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + ' MM';
+const fmtF = iso => iso ? iso.slice(0, 10).split('-').reverse().join('-') : '—';
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const etiqMes = m => m === 'vencido' ? 'Vencido' : MESES[Number(m.slice(5))] + ' ' + m.slice(2, 4);
+const etiqSem = s => s === 'vencido' ? 'Vencido' : fmtF(s).slice(0, 5);
+let datos = null, chart = null;
+
+function pillTipo(t) {
+  const [c, corto] = t.startsWith('Facturada') ? ['fact', 'Factura impaga'] : t.startsWith('Pago parcial') ? ['fact', 'Saldo pago parcial']
+    : t.startsWith('Recibida') ? ['sinf', 'Sin factura'] : ['vinc', 'Sin vínculo SAP'];
+  return `<span class="pill ${c}" title="${esc(t)}">${corto}</span>`;
+}
+
+async function cargar() {
+  const prov = document.getElementById('f-prov').value;
+  const qs = prov ? '?proveedor=' + encodeURIComponent(prov) : '';
+  document.getElementById('leido').textContent = 'Cargando…';
+  try {
+    const d = await fetch('/api/finanzas/proveedores' + qs).then(r => r.json());
+    if (!d.ok) throw new Error(d.msg);
+    datos = d;
+    pintar(d);
+  } catch (e) {
+    document.getElementById('leido').textContent = 'No se pudo cargar: ' + e.message;
+  }
+}
+
+function pintar(d) {
+  if (!d.carga) {
+    document.getElementById('leido').textContent = 'Todavía no hay informe cargado. Usa "Subir informe SAP".';
+    pintarPlazos(d);
+    return;
+  }
+  document.getElementById('leido').innerHTML = `Informe: <strong>${esc(d.carga.archivo)}</strong><br>subido el ${new Date(d.carga.cargado_en).toLocaleString('es-CL')}`;
+  const sel = document.getElementById('f-prov');
+  if (sel.options.length <= 1) {
+    sel.innerHTML = '<option value="">Todos los proveedores</option>' + d.proveedores.map(p => `<option>${esc(p.proveedor)}</option>`).join('');
+  }
+  const k = d.kpis;
+  document.getElementById('k-pend').textContent = fmtMM(k.pendiente);
+  document.getElementById('k-pend-sub').textContent = 'con IVA, al ' + fmtF(d.hoy);
+  document.getElementById('k-venc').textContent = fmtMM(k.vencido);
+  document.getElementById('k-venc-sub').textContent = fmtMM(k.vencido_facturado) + ' son facturas impagas';
+  document.getElementById('k-sem').textContent = fmtMM(k.semana);
+  document.getElementById('k-30').textContent = fmtMM(k.prox_30);
+  document.getElementById('k-prov').textContent = k.proveedores;
+
+  const colores = [css('--red'), css('--amber'), css('--blue'), css('--muted2')];
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById('chart-sem'), {
+    type: 'bar',
+    data: {
+      labels: d.semanas.map(s => etiqSem(s.semana)),
+      datasets: d.tipos.map((t, i) => ({ label: t, data: d.semanas.map(s => s.por_tipo[t] / 1e6), backgroundColor: colores[i], stack: 's', borderRadius: 2 })),
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: css('--muted2'), boxWidth: 12 } },
+        tooltip: { callbacks: {
+          title: it => { const s = d.semanas[it[0].dataIndex].semana; return s === 'vencido' ? 'Vencido impago' : 'Semana del ' + fmtF(s); },
+          label: c => ` ${c.dataset.label}: ${fmtMM(c.raw * 1e6)}`,
+          footer: it => 'Total: ' + fmtMM(d.semanas[it[0].dataIndex].total),
+        } },
+      },
+      scales: {
+        x: { stacked: true, ticks: { color: css('--muted2') }, grid: { display: false } },
+        y: { stacked: true, ticks: { color: css('--muted2'), callback: v => '$' + v + ' MM' }, grid: { color: css('--border') } },
+      },
+    },
+  });
+
+  const tv = document.getElementById('tabla-venc');
+  document.getElementById('venc-sub').textContent = `${d.vencidos.length} recepciones por ${fmtMM(k.vencido)}. Primero las facturas impagas, después lo recibido sin factura en SAP.`;
+  tv.innerHTML = '<thead><tr><th class="izq">Proveedor</th><th class="izq">Estado</th><th>OC</th><th>Venció</th><th>Días</th><th>Monto</th></tr></thead><tbody>' +
+    (d.vencidos.map(v => `<tr><td class="izq">${esc(v.proveedor)}</td><td class="izq">${pillTipo(v.tipo)}</td><td>${v.n_oc}</td>
+      <td>${fmtF(v.vence)}</td><td class="fp-rojo">${v.dias_vencido}</td><td>${fmt$(v.monto)}</td></tr>`).join('') ||
+      '<tr><td colspan="6" class="vacio">Nada vencido</td></tr>') + '</tbody>';
+
+  document.getElementById('tabla-sem').innerHTML = '<thead><tr><th class="izq">Semana</th><th>Total</th><th class="izq">Principales proveedores</th></tr></thead><tbody>' +
+    d.semanas.map(s => `<tr><td class="izq ${s.semana === 'vencido' ? 'fp-rojo' : ''}">${s.semana === 'vencido' ? 'Vencido' : fmtF(s.semana)}</td><td>${fmtMM(s.total)}</td>
+      <td class="izq">${s.principales.map(p => `${esc(p.proveedor.split(' S.A')[0].split(' SPA')[0])} ${fmtMM(p.monto)}`).join(' · ')}</td></tr>`).join('') +
+    `<tr class="total"><td class="izq">Total</td><td>${fmtMM(k.pendiente)}</td><td></td></tr></tbody>`;
+
+  const pm = d.por_proveedor_mes;
+  document.getElementById('tabla-pm').innerHTML = `<thead><tr><th class="izq">Proveedor</th><th>Plazo</th>${pm.meses.map(m => `<th>${etiqMes(m)}</th>`).join('')}<th>Total</th></tr></thead><tbody>` +
+    pm.filas.map(f => `<tr><td class="izq">${esc(f.proveedor)}</td><td>${f.plazo} d</td>${pm.meses.map(m => `<td class="${m === 'vencido' && f.valores[m] ? 'fp-rojo' : ''}">${f.valores[m] ? fmtMM(f.valores[m]) : ''}</td>`).join('')}<td><strong>${fmtMM(f.total)}</strong></td></tr>`).join('') +
+    `<tr class="total"><td class="izq">Total</td><td></td>${pm.meses.map(m => `<td>${fmtMM(pm.filas.reduce((a, f) => a + (f.valores[m] || 0), 0))}</td>`).join('')}<td>${fmtMM(k.pendiente)}</td></tr></tbody>`;
+
+  pintarDetalle();
+  pintarPlazos(d);
+  document.getElementById('nota').innerHTML = 'Vencimiento = fecha de recepción + plazo del proveedor. Montos con IVA, tal como vienen del informe de SAP. ' +
+    '"Recibida, sin factura aún": el vencimiento real corre desde la factura, que puede llegar después. ' +
+    '"Sin vínculo en SAP" (Legrand): SAP no amarra sus facturas a las recepciones, así que se asume pagado lo ya vencido.';
+}
+
+function pintarDetalle() {
+  if (!datos || !datos.detalle) return;
+  const q = document.getElementById('buscar').value.trim().toLowerCase();
+  const filas = datos.detalle.filter(x => !q || `${x.proveedor} ${x.n_oc} ${x.n_recepcion}`.toLowerCase().includes(q));
+  document.getElementById('tabla-det').innerHTML = '<thead><tr><th>Vence</th><th class="izq">Proveedor</th><th class="izq">Estado</th><th>OC</th><th>Recepción</th><th>Fecha recepción</th><th>Plazo</th><th>Monto</th></tr></thead><tbody>' +
+    (filas.slice(0, 600).map(x => `<tr><td class="${x.dias_vencido ? 'fp-rojo' : ''}">${fmtF(x.vence)}</td><td class="izq">${esc(x.proveedor)}</td><td class="izq">${pillTipo(x.tipo)}</td>
+      <td>${x.n_oc}</td><td>${x.n_recepcion ?? ''}</td><td>${fmtF(x.fecha_recepcion)}</td><td>${x.plazo} d</td><td>${fmt$(x.monto)}</td></tr>`).join('') ||
+      '<tr><td colspan="8" class="vacio">Sin resultados</td></tr>') +
+    (filas.length > 600 ? `<tr><td colspan="8" class="vacio">Se muestran 600 de ${filas.length}. Usa el buscador o exporta a Excel.</td></tr>` : '') + '</tbody>';
+}
+
+function pintarPlazos(d) {
+  document.getElementById('tbody-plazos').innerHTML = (d.plazos || []).map(p => `<tr data-cod="${esc(p.codigo_proveedor)}" data-nom="${esc(p.nombre)}">
+    <td class="izq">${esc(p.nombre)}</td><td class="izq">${esc(p.codigo_proveedor)}</td>
+    <td><input class="fp-input pl-dias" type="number" min="0" max="365" value="${p.dias}" style="width:80px" aria-label="Días de ${esc(p.nombre)}"></td>
+    <td><input type="checkbox" class="pl-vinc" ${p.sin_vinculo ? 'checked' : ''} aria-label="Sin vínculo en SAP ${esc(p.nombre)}"></td>
+    <td class="izq">${esc(p.updated_by || '')} ${p.updated_at ? fmtF(p.updated_at) : ''}</td>
+    <td><button class="fp-btn pl-guardar">Guardar</button> <button class="fp-btn pl-borrar">Quitar</button></td></tr>`).join('') ||
+    '<tr><td colspan="6" class="vacio">Sin plazos especiales: todos a 60 días</td></tr>';
+  const ya = new Set((d.plazos || []).map(p => p.codigo_proveedor));
+  document.getElementById('np-prov').innerHTML = (d.proveedores || []).filter(p => !ya.has(p.codigo))
+    .map(p => `<option value="${esc(p.codigo)}">${esc(p.proveedor)}</option>`).join('');
+}
+
+async function guardarPlazo(cod, nombre, dias, vinc, metodo = 'POST') {
+  const r = await fetch('/api/finanzas/plazos', { method: metodo, headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ codigo_proveedor: cod, nombre, dias, sin_vinculo: vinc }) });
+  const d = await r.json().catch(() => ({ ok: false, msg: 'Error ' + r.status }));
+  if (!d.ok) { alert(d.msg || 'No se pudo guardar'); return; }
+  cargar();
+}
+
+document.getElementById('tbody-plazos').addEventListener('click', e => {
+  const tr = e.target.closest('tr'); if (!tr) return;
+  if (e.target.classList.contains('pl-guardar'))
+    guardarPlazo(tr.dataset.cod, tr.dataset.nom, tr.querySelector('.pl-dias').value, tr.querySelector('.pl-vinc').checked);
+  if (e.target.classList.contains('pl-borrar') && confirm('¿Quitar el plazo especial? Ese proveedor vuelve a 60 días.'))
+    guardarPlazo(tr.dataset.cod, tr.dataset.nom, 0, false, 'DELETE');
+});
+document.getElementById('np-guardar').addEventListener('click', () => {
+  const s = document.getElementById('np-prov');
+  if (!s.value) return;
+  guardarPlazo(s.value, s.options[s.selectedIndex].text, document.getElementById('np-dias').value, document.getElementById('np-vinc').checked);
+});
+
+function togglePanel(btn, id) {
+  const p = document.getElementById(id), abierto = !p.classList.contains('abierto');
+  p.classList.toggle('abierto', abierto); btn.setAttribute('aria-expanded', abierto);
+}
+document.getElementById('btn-subir').addEventListener('click', e => togglePanel(e.currentTarget, 'panel-subir'));
+document.getElementById('btn-plazos').addEventListener('click', e => togglePanel(e.currentTarget, 'panel-plazos'));
+document.getElementById('f-prov').addEventListener('change', cargar);
+document.getElementById('buscar').addEventListener('input', pintarDetalle);
+document.getElementById('btn-exportar').addEventListener('click', () => {
+  const prov = document.getElementById('f-prov').value;
+  window.location = '/api/finanzas/proveedores/exportar' + (prov ? '?proveedor=' + encodeURIComponent(prov) : '');
+});
+
+// ---------- subida del informe ----------
+function aFecha(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 10);
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/); if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return s;
+}
+function estadoSubida(t, clase, pct) {
+  const el = document.getElementById('estado-subida'); el.textContent = t; el.className = 'estado-subida ' + (clase || '');
+  if (pct != null) document.getElementById('prog').style.width = pct + '%';
+}
+async function subir(archivo) {
+  try {
+    estadoSubida('Leyendo el Excel…', '', 3);
+    const wb = XLSX.read(await archivo.arrayBuffer(), { type: 'array' });
+    const filas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null, raw: true });
+    if (!filas.length) throw new Error('El archivo no trae filas.');
+    const faltan = COLUMNAS.filter(c => !(c in filas[0]));
+    if (faltan.length) throw new Error('No es el informe de pago a proveedores. Faltan columnas: ' + faltan.join(', '));
+    const datosF = filas.map(f => COLUMNAS.map(c => COLS_FECHA.has(c) ? aFecha(f[c]) : f[c]));
+    const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(r => r.json().catch(() => ({ ok: false, msg: 'Error ' + r.status + ' del servidor' })));
+    const ini = await post('/api/finanzas/subir_pagos/inicio', { archivo: archivo.name });
+    if (!ini.ok) throw new Error(ini.msg);
+    const n = Math.ceil(datosF.length / FILAS_POR_PARTE);
+    for (let p = 0; p < n; p++) {
+      estadoSubida(`Subiendo parte ${p + 1} de ${n}…`, '', 5 + 90 * p / n);
+      const r = await post('/api/finanzas/subir_pagos', { carga_id: ini.carga_id, filas: datosF.slice(p * FILAS_POR_PARTE, (p + 1) * FILAS_POR_PARTE) });
+      if (!r.ok) throw new Error(r.msg);
+    }
+    const fin = await post('/api/finanzas/subir_pagos/fin', { carga_id: ini.carga_id, filas: datosF.length });
+    if (!fin.ok) throw new Error(fin.msg);
+    estadoSubida(`Listo: ${fin.filas.toLocaleString('es-CL')} líneas cargadas.`, 'ok', 100);
+    document.getElementById('f-prov').innerHTML = '<option value="">Todos los proveedores</option>';
+    cargar();
+  } catch (e) {
+    estadoSubida(e.message, 'error');
+  }
+}
+const drop = document.getElementById('drop'), input = document.getElementById('input');
+drop.addEventListener('click', () => input.click());
+drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+input.addEventListener('change', () => input.files[0] && subir(input.files[0]));
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('dragover'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('dragover'); }));
+drop.addEventListener('drop', e => e.dataTransfer.files[0] && subir(e.dataTransfer.files[0]));
+
+cargar();
+</script>
+{% endblock %}

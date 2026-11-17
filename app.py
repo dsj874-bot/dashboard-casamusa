@@ -78,6 +78,8 @@ import data_loader_logistica
 import data_loader_solicitudes_pg
 # Cotizaciones del ERP: embudo, seguimiento, perdidas y no creados (migracion 018)
 import data_loader_cotizaciones_pg
+# Finanzas > Proveedores: programa de pagos a proveedores (migracion 026)
+import data_loader_finanzas_pg
 # Analista IA (Gemini + herramientas de ventas y compras, migracion 020)
 import agente_ia
 
@@ -312,6 +314,13 @@ USUARIOS_AGENTE = {
 }
 PREFIJOS_RESTRINGIDOS_AGENTE = ("/agente", "/api/agente")
 
+# Finanzas > Proveedores (programa de pagos, migracion 026): por ahora solo
+# dsepulveda (decision del usuario 2026-11-17). Para abrirla, sumar aqui.
+USUARIOS_FINANZAS = {"dsepulveda@casamusa.cl"}
+# Con "/" final a proposito: /finanzas a secas lo resuelve la ruta (al resto
+# de la gerencia le sigue mostrando "en construccion").
+PREFIJOS_RESTRINGIDOS_FINANZAS = ("/finanzas/", "/api/finanzas/")
+
 PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA = (
     "/forecast/plan_compra", "/api/forecast/plan_compras",
     "/forecast/nivel_servicio", "/api/forecast/nivel_servicio",
@@ -337,6 +346,8 @@ def _restringir_inventario_adquisiciones():
         permitidos = USUARIOS_COTIZACIONES
     elif path.startswith(PREFIJOS_RESTRINGIDOS_AGENTE):
         permitidos = USUARIOS_AGENTE
+    elif path.startswith(PREFIJOS_RESTRINGIDOS_FINANZAS):
+        permitidos = USUARIOS_FINANZAS
     else:
         return None
     if "usuario" not in session:
@@ -449,6 +460,7 @@ def inject_es_admin():
             PREFIJOS_RESTRINGIDOS_INVENTARIO + PREFIJOS_RESTRINGIDOS_ADQUISICIONES + PREFIJOS_SOLO_GERENCIA
             + PREFIJOS_RESTRINGIDOS_SOLICITUDES + PREFIJOS_RESTRINGIDOS_LOGISTICA
             + PREFIJOS_RESTRINGIDOS_COTIZACIONES + PREFIJOS_RESTRINGIDOS_AGENTE
+            + PREFIJOS_RESTRINGIDOS_FINANZAS
         ),
         # Resumen de Adquisiciones tiene su propio "Datos al", separado
         # del de Ventas (ver _fecha_corte_adq_sesion()).
@@ -627,6 +639,10 @@ def inicio():
             or (a["slug"] == "adquisiciones" and usuario in USUARIOS_ADQUISICIONES)
             or (a["slug"] == "forecast" and usuario in USUARIOS_FORECAST)
         ]
+    # Finanzas: activa solo para USUARIOS_FINANZAS; el resto de la gerencia
+    # la sigue viendo como "en construccion".
+    if usuario in USUARIOS_FINANZAS:
+        areas_visibles = [dict(a, activo=True) if a["slug"] == "finanzas" else a for a in areas_visibles]
     return render_template("inicio.html", areas=areas_visibles, session_nombre=session.get("nombre"))
 
 
@@ -865,7 +881,106 @@ def api_adquisiciones_otif():
 @app.route("/finanzas")
 @login_requerido
 def finanzas():
-    return _area_en_construccion("finanzas")
+    if session.get("usuario") not in USUARIOS_FINANZAS:
+        return _area_en_construccion("finanzas")
+    return redirect(url_for("finanzas_proveedores"))
+
+
+# ══════════════════════════════════════════════════════
+#  FINANZAS > PROVEEDORES — programa de pagos (migracion 026)
+#  Fuente: informe SAP "Pago a Proveedores", subido desde la pantalla.
+# ══════════════════════════════════════════════════════
+@app.route("/finanzas/proveedores")
+@login_requerido
+def finanzas_proveedores():
+    return render_template("finanzas_proveedores.html", active="finanzas_proveedores",
+                           columnas=data_loader_finanzas_pg.COLUMNAS_SAP,
+                           session_nombre=session.get("nombre"))
+
+
+def _proveedores_filtro():
+    return [p for p in request.args.getlist("proveedor") if p] or None
+
+
+@app.route("/api/finanzas/proveedores")
+@login_requerido
+def api_finanzas_proveedores():
+    try:
+        return jsonify({"ok": True, **data_loader_finanzas_pg.get_panel(proveedores=_proveedores_filtro())})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
+@app.route("/api/finanzas/proveedores/exportar")
+@login_requerido
+def api_finanzas_proveedores_exportar():
+    try:
+        buf = data_loader_finanzas_pg.exportar_excel(proveedores=_proveedores_filtro())
+        return send_file(buf, as_attachment=True, download_name=f"Programa_pagos_proveedores_{date.today().isoformat()}.xlsx",
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
+@app.route("/api/finanzas/plazos", methods=["POST", "DELETE"])
+@login_requerido
+def api_finanzas_plazos():
+    d = request.get_json(silent=True) or {}
+    codigo = (d.get("codigo_proveedor") or "").strip()
+    if not codigo:
+        return jsonify({"ok": False, "msg": "Falta el código del proveedor."}), 400
+    try:
+        if request.method == "DELETE":
+            data_loader_finanzas_pg.borrar_plazo(codigo)
+        else:
+            data_loader_finanzas_pg.guardar_plazo(codigo, d.get("nombre"), d.get("dias"), d.get("sin_vinculo"), session.get("usuario"))
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error al guardar: {e}"}), 500
+    return jsonify({"ok": True})
+
+
+@app.route("/api/finanzas/subir_pagos/inicio", methods=["POST"])
+@login_requerido
+def api_finanzas_subir_inicio():
+    d = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"ok": True, "carga_id": data_loader_finanzas_pg.iniciar_carga(d.get("archivo"), session.get("usuario"))})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+@app.route("/api/finanzas/subir_pagos", methods=["POST"])
+@login_requerido
+def api_finanzas_subir_parte():
+    """Una parte del informe (el navegador lee el Excel y lo manda en partes:
+    Vercel corta los cuerpos sobre 4,5 MB)."""
+    d = request.get_json(silent=True) or {}
+    filas, carga_id = d.get("filas") or [], d.get("carga_id")
+    if not filas or not carga_id:
+        return jsonify({"ok": False, "msg": "La parte no trae filas."}), 400
+    try:
+        filas = data_loader_finanzas_pg.normalizar_filas(filas)
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    try:
+        return jsonify({"ok": True, "filas": data_loader_finanzas_pg.cargar_parte(int(carga_id), filas)})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error al guardar: {e}"}), 500
+
+
+@app.route("/api/finanzas/subir_pagos/fin", methods=["POST"])
+@login_requerido
+def api_finanzas_subir_fin():
+    d = request.get_json(silent=True) or {}
+    try:
+        n = data_loader_finanzas_pg.terminar_carga(int(d.get("carga_id") or 0), int(d.get("filas") or 0))
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+    return jsonify({"ok": True, "filas": n})
 
 
 @app.route("/inventario")
