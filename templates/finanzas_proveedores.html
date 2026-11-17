@@ -125,7 +125,7 @@
 </div>
 
 <div class="fp-kpis">
-  <div class="fp-card"><div class="fp-kpi-label">Total recepcionado 2026</div><div class="fp-kpi-valor" id="k-rec">—</div><div class="fp-kpi-sub">con IVA</div></div>
+  <div class="fp-card"><div class="fp-kpi-label">Total recepcionado 2026</div><div class="fp-kpi-valor" id="k-rec">—</div><div class="fp-kpi-sub" id="k-rec-sub">con IVA</div></div>
   <div class="fp-card"><div class="fp-kpi-label">Total pagado</div><div class="fp-kpi-valor verde" id="k-pag">—</div><div class="fp-kpi-sub" id="k-pag-sub"></div></div>
   <div class="fp-card"><div class="fp-kpi-label">Saldo pendiente</div><div class="fp-kpi-valor rojo" id="k-pend">—</div><div class="fp-kpi-sub" id="k-pend-sub">por pagar</div></div>
   <div class="fp-card"><div class="fp-kpi-label">% pagado</div><div class="fp-kpi-valor" id="k-pct">—</div><div class="fp-kpi-sub">de lo recepcionado</div></div>
@@ -218,6 +218,7 @@ function pintar(d) {
 
   const r = d.resumen;
   document.getElementById('k-rec').textContent = fmtMM(r.recepcionado);
+  document.getElementById('k-rec-sub').textContent = 'con IVA · recepciones al ' + fmtF(d.corte) + ' (igual que Adquisiciones)';
   document.getElementById('k-pag').textContent = fmtMM(r.pagado);
   document.getElementById('k-pag-sub').textContent = 'según SAP';
   document.getElementById('k-pend').textContent = fmtMM(r.pendiente);

@@ -150,11 +150,16 @@ def get_panel(hoy=None, proveedores=None, estado=None, desde=None, hasta=None):
     plazos = {p["codigo_proveedor"]: p for p in get_plazos()}
     if not carga:
         return {"carga": None, "plazos": list(plazos.values())}
+    # Corte = ultima recepcion cargada en Adquisiciones (tabla recepciones):
+    # asi Finanzas y Adquisiciones miran los mismos dias (pedido del usuario
+    # 2026-11-17). Si no hay recepciones cargadas, no se corta.
+    corte = (db.query_one("SELECT max(fecha_recepcion) AS f FROM recepciones") or {}).get("f")
     filas = db.query_all("""SELECT n_oc, fecha_oc, codigo_proveedor, proveedor, n_recepcion, fecha_recepcion,
                                    total_recepcion, total_facturado, total_pagado, estado
                               FROM pago_proveedor_linea
-                             WHERE carga_id = %s AND estado <> 'Sin recepción' AND fecha_recepcion IS NOT NULL""",
-                            (carga["carga_id"],))
+                             WHERE carga_id = %s AND estado <> 'Sin recepción' AND fecha_recepcion IS NOT NULL
+                               AND (%s::date IS NULL OR fecha_recepcion <= %s::date)""",
+                            (carga["carga_id"], corte, corte))
     todos_prov = sorted(({"proveedor": n, "codigo": c} for c, n in {(f["codigo_proveedor"], f["proveedor"]) for f in filas if f["proveedor"]}),
                         key=lambda x: x["proveedor"])
     filtro = set(proveedores or [])
@@ -272,7 +277,8 @@ def get_panel(hoy=None, proveedores=None, estado=None, desde=None, hasta=None):
         "proveedores": len({p["proveedor"] for p in pend}),
     }
     return {
-        "hoy": hoy.isoformat(), "carga": {**carga, "cargado_en": carga["cargado_en"].isoformat()},
+        "hoy": hoy.isoformat(), "corte": corte.isoformat() if corte else None,
+        "carga": {**carga, "cargado_en": carga["cargado_en"].isoformat()},
         "kpis": kpis, "tipos": TIPOS, "semanas": semanas,
         "resumen": resumen,
         "antiguedad": [{**a, "monto": round(a["monto"])} for a in antig],
