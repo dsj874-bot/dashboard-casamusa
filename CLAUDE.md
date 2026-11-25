@@ -1409,3 +1409,19 @@ if(d.error) { /* manejar error */ return; }
   pantalla; sin fila = 60 dias; Philips/Signify y Zama 30; Legrand 45).
   `sin_vinculo` (Legrand): SAP no amarra sus facturas a las recepciones
   desde abril-2026, asi que se asume pagado lo ya vencido.
+
+## Última Línea (área propia, 2026-11-25)
+- Mosaico propio en `/inicio` (slug `ultima_linea`, NO dentro de Finanzas). Ruta
+  `/ultima_linea` + `/api/ultima_linea`, template `ultima_linea.html`, sidebar
+  `_ultima_linea_sidebar.html`, lógica `data_loader_ultima_linea_pg.py`.
+- Acceso: `USUARIOS_ULTIMA_LINEA` = dsepulveda y emusa (muestra sueldos del GG).
+- Columnas del Gerente General (archivo `data/Ultima Linea/...Ppto 2026...xlsx`,
+  hoja Ppto26). Venta y margen reales (margen ERP); Digital = canal digital +
+  casamusa.cl + venta asistida + marketplaces; OF fuera.
+- Gastos mensuales del GG fijos en el .py (`GASTOS_2026`, `PPTO_2027`). Solo las
+  rem. indirectas se reparten, por MARGEN (opción "por venta" = como el GG).
+- Punto de equilibrio = gastos propios / (mg% × (1 − indirectas/margen total));
+  holgura = venta / PE − 1. Se ve por mes y por año.
+- Mes en curso proyectado por días hábiles + NE x Facturar (margen del año de cada
+  sucursal, no el 20% de Proyección). Resto del año al promedio de meses cerrados.
+

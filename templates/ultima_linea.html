@@ -1,0 +1,382 @@
+{% extends "base.html" %}
+
+{% block title %}Última Línea{% endblock %}
+{% block page_title %}Última Línea{% endblock %}
+{% block page_subtitle %}Cuánto deja cada sucursal después de pagar sus gastos y su parte de la gerencia{% endblock %}
+{% block boton_actualizar %}{% endblock %}
+
+{% block sidebar_nav %}{% include "_ultima_linea_sidebar.html" %}{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  .ul-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; min-width: 0; }
+  .ul-titulo { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+  .ul-sub { font-size: 11.5px; color: var(--muted2); margin-bottom: 10px; line-height: 1.45; }
+
+  .ul-barra { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+  .ul-f { display: flex; flex-direction: column; gap: 4px; }
+  .ul-f > label, .ul-f > span { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .ul-f select { background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-family: inherit; min-width: 230px; }
+  .seg { display: inline-flex; background: var(--surface2); border: 1px solid var(--border); border-radius: 9px; padding: 3px; gap: 2px; }
+  .seg button { background: none; border: 0; color: var(--muted2); font: inherit; font-size: 12px; font-weight: 600;
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .seg button:focus-visible, .ul-f select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ul-der { margin-left: auto; font-size: 11px; color: var(--muted2); text-align: right; line-height: 1.45; }
+  .ul-der strong { color: var(--text); }
+
+  .ul-eq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+  .eq-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .eq-estado { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 10px; white-space: nowrap; }
+  .eq-estado.ok { background: rgba(34,197,94,.15); color: var(--pos); }
+  .eq-estado.mal { background: rgba(239,68,68,.15); color: var(--red); }
+  .eq-estado.ojo { background: rgba(245,158,11,.15); color: var(--amber); }
+  .eq-cifras { display: flex; gap: 22px; flex-wrap: wrap; margin: 10px 0 12px; }
+  .eq-cifra .l { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .eq-cifra .v { font-size: 22px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .eq-cifra .v.pos { color: var(--pos); } .eq-cifra .v.neg { color: var(--red); }
+  .eq-track { position: relative; height: 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; overflow: visible; }
+  .eq-fill { height: 100%; border-radius: 7px; background: var(--accent); width: 0; transition: width .5s ease; }
+  .eq-fill.bajo { background: var(--amber); }
+  .eq-fill.ne { background: repeating-linear-gradient(45deg, var(--blue) 0 5px, transparent 5px 9px); border: 1px solid var(--blue); border-radius: 0 7px 7px 0; }
+  .eq-marca { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--text); }
+  .eq-marca.tenue { background: var(--muted2); width: 2px; border-radius: 1px; }
+  .eq-leyenda { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted2); margin-top: 8px; gap: 10px; flex-wrap: wrap; }
+  .eq-frase { font-size: 12.5px; color: var(--text); margin-top: 10px; line-height: 1.5; }
+  @media (prefers-reduced-motion: reduce) { .eq-fill { transition: none; } }
+
+  .ul-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 1250px) { .ul-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 800px) { .ul-kpis, .ul-eq, .ul-graf { grid-template-columns: 1fr; } }
+  .k-l { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 6px; }
+  .k-v { font-size: 24px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .k-v.pos { color: var(--pos); } .k-v.neg { color: var(--red); }
+  .k-s { font-size: 11px; color: var(--muted2); margin-top: 4px; }
+
+  .ul-tabla { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .ul-tabla th { text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
+    padding: 8px; border-bottom: 1px solid var(--border); vertical-align: bottom; line-height: 1.3; }
+  .ul-tabla td { text-align: right; padding: 8px; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  .ul-tabla .izq { text-align: left; }
+  .ul-tabla th.grupo-gasto { background: rgba(239,68,68,.06); }
+  .ul-tabla th.col-ul, .ul-tabla td.col-ul { background: var(--surface2); font-weight: 800; }
+  .ul-tabla td.sec { color: var(--muted2); }
+  .ul-tabla th.col-anio { background: rgba(59,130,246,.07); }
+  .ul-tabla td.col-anio { font-weight: 700; }
+  .ul-tabla th.col-anio + th.col-anio, .ul-tabla td.col-anio + td.col-anio { border-left: 0; }
+  .ul-tabla th#th-acum, .ul-tabla td.col-anio:not(.col-anio + .col-anio) { border-left: 1px solid var(--border); }
+  .ul-tabla tr.total td { font-weight: 800; border-top: 2px solid var(--border); border-bottom: 0; }
+  .ul-tabla .mg { display: block; font-size: 10.5px; color: var(--muted2); font-weight: 500; }
+  .ul-wrap { overflow-x: auto; }
+  .pos { color: var(--pos); } .neg { color: var(--red); }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; min-width: 52px; text-align: center; }
+  .pill.alta { background: rgba(34,197,94,.15); color: var(--pos); }
+  .pill.media { background: rgba(59,130,246,.15); color: var(--blue); }
+  .pill.baja { background: rgba(245,158,11,.15); color: var(--amber); }
+  .pill.neg { background: rgba(239,68,68,.15); color: var(--red); }
+
+  .ul-graf { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 16px; }
+  .ul-chart { position: relative; height: 290px; }
+  .ul-notas { font-size: 11.5px; color: var(--muted2); line-height: 1.6; margin-top: 16px; }
+  .ul-notas summary { cursor: pointer; font-weight: 700; color: var(--text); font-size: 12.5px; }
+  .ul-notas ul { margin: 8px 0 0 18px; padding: 0; }
+  .borrador { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    color: var(--amber); border: 1px solid var(--amber); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
+  .vacio { text-align: center; color: var(--muted2); padding: 18px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ul-card">
+  <div class="ul-barra">
+    <div class="ul-f"><span id="lbl-esc">Escenario</span>
+      <div class="seg" role="group" aria-labelledby="lbl-esc">
+        <button data-esc="real" aria-pressed="true">Real 2026</button>
+        <button data-esc="2027" aria-pressed="false">Presupuesto 2027</button>
+      </div></div>
+    <div class="ul-f"><label for="f-periodo">Período</label><select id="f-periodo"></select></div>
+    <div class="ul-f"><span id="lbl-rep">Reparto de indirectas</span>
+      <div class="seg" role="group" aria-labelledby="lbl-rep">
+        <button data-rep="margen" aria-pressed="true">Por margen</button>
+        <button data-rep="venta" aria-pressed="false">Por venta (GG)</button>
+      </div></div>
+    <div class="ul-f" id="f-ne"><span id="lbl-ne">NE por facturar</span>
+      <div class="seg" role="group" aria-labelledby="lbl-ne">
+        <button data-ne="1" aria-pressed="true">Incluir</button>
+        <button data-ne="0" aria-pressed="false">Excluir</button>
+      </div></div>
+    <div class="ul-der" id="ul-der">Cargando…</div>
+  </div>
+</div>
+
+<div class="ul-eq" id="ul-eq">
+  <div class="ul-card" id="eq-mes"></div>
+  <div class="ul-card" id="eq-anio"></div>
+</div>
+
+<div class="ul-kpis">
+  <div class="ul-card"><div class="k-l">Venta</div><div class="k-v" id="k-venta">—</div><div class="k-s" id="k-venta-s"></div></div>
+  <div class="ul-card"><div class="k-l">Margen</div><div class="k-v" id="k-margen">—</div><div class="k-s" id="k-margen-s"></div></div>
+  <div class="ul-card"><div class="k-l">Total gasto</div><div class="k-v" id="k-gasto">—</div><div class="k-s" id="k-gasto-s"></div></div>
+  <div class="ul-card"><div class="k-l">Última línea</div><div class="k-v" id="k-ul">—</div><div class="k-s" id="k-ul-s"></div></div>
+  <div class="ul-card"><div class="k-l">Punto de equilibrio</div><div class="k-v" id="k-pe">—</div><div class="k-s">venta mínima para no perder</div></div>
+  <div class="ul-card"><div class="k-l">Holgura</div><div class="k-v" id="k-holg">—</div><div class="k-s" id="k-holg-s"></div></div>
+</div>
+
+<div class="ul-card">
+  <div class="ul-titulo"><span id="t-etiqueta">Última línea por sucursal</span></div>
+  <div class="ul-sub" id="t-nota">Millones de pesos.</div>
+  <div class="ul-wrap">
+    <table class="ul-tabla">
+      <thead><tr>
+        <th class="izq">Canal</th><th>Venta</th><th>Margen $</th>
+        <th class="grupo-gasto">Rem.<br>directas</th><th class="grupo-gasto">Rem.<br>indirectas</th>
+        <th class="grupo-gasto">Arriendo<br>y GC</th><th class="grupo-gasto">Gastos<br>directos canal</th>
+        <th class="grupo-gasto">Resto de<br>gastos</th><th class="grupo-gasto">Total<br>gasto</th>
+        <th class="col-ul" id="th-ul">Última<br>línea</th><th>% venta</th>
+        <th class="col-anio" id="th-acum">Acumulado<br>año</th><th class="col-anio" id="th-anio">Proyección<br>año</th><th>Punto de<br>equilibrio</th><th>Holgura</th>
+      </tr></thead>
+      <tbody id="tbody"><tr><td colspan="15" class="vacio">Cargando…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="ul-graf">
+  <div class="ul-card"><div class="ul-titulo">Venta vs punto de equilibrio</div>
+    <div class="ul-sub">La barra es la venta; la raya, lo mínimo que la sucursal necesita vender.</div>
+    <div class="ul-chart"><canvas id="ch-pe" role="img" aria-label="Venta y punto de equilibrio por sucursal"></canvas></div></div>
+  <div class="ul-card"><div class="ul-titulo">Última línea de la empresa, mes a mes</div>
+    <div class="ul-sub" id="ch-mes-sub">Margen del mes menos el gasto mensual del GG. El mes en curso va proyectado.</div>
+    <div class="ul-chart"><canvas id="ch-mes" role="img" aria-label="Última línea mensual de la empresa"></canvas></div></div>
+</div>
+
+<details class="ul-card ul-notas">
+  <summary>Cómo se calcula</summary>
+  <ul>
+    <li><strong>Venta y margen</strong>: reales de Musa360 (margen ERP). Digital incluye casamusa.cl, venta asistida y marketplaces.</li>
+    <li><strong>Sueldos y gastos</strong>: montos mensuales del Gerente General. Arriendo, gastos comunes y resto de gastos son de cada sucursal.</li>
+    <li><strong>Rem. indirectas</strong> (gerentes y administrativos): se reparten según el margen que aporta cada sucursal. Con "Por venta (GG)" se reparten como en el archivo original.</li>
+    <li><strong>Punto de equilibrio</strong>: venta con la que el margen paga justo los gastos propios de la sucursal más su parte de indirectas.</li>
+    <li><strong>Holgura</strong>: cuánto puede caer la venta antes de perder plata (venta ÷ punto de equilibrio − 1).</li>
+    <li><strong>Año completo</strong>: meses cerrados reales, mes en curso proyectado por días hábiles y el resto al promedio mensual.</li>
+    <li><strong>NE por facturar</strong>: los negocios ganados de /cargar_ne se suman al cierre proyectado del mes en curso (y al año), con el margen del año de cada sucursal (no el 20% fijo de Proyección). No entran en lo acumulado ni en el "vendido", porque aún no se facturan.</li>
+  </ul>
+</details>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const nf1 = new Intl.NumberFormat('es-CL', {minimumFractionDigits: 1, maximumFractionDigits: 1});
+const nf0 = new Intl.NumberFormat('es-CL', {maximumFractionDigits: 0});
+const mm = v => v == null ? '—' : (Math.abs(v) >= 1000 ? nf0.format(v) : nf1.format(v));
+const mmS = v => v == null ? '—' : '$' + mm(v) + ' MM';
+const pct = v => v == null ? '—' : nf1.format(v) + '%';
+const sgn = v => v == null ? '' : (v < 0 ? 'neg' : 'pos');
+const holgPill = h => {
+  if (h == null) return '<span class="pill">—</span>';
+  const c = h < 0 ? 'neg' : h < 10 ? 'baja' : h < 30 ? 'media' : 'alta';
+  return `<span class="pill ${c}">${h > 0 ? '+' : ''}${nf0.format(h)}%</span>`;
+};
+
+const estado = {escenario: 'real', periodo: 'prom', reparto: 'margen', ne: '1'};
+let chPe, chMes, primeraCarga = true;
+
+function opcionesPeriodo(d) {
+  const sel = document.getElementById('f-periodo');
+  const ops = estado.escenario === '2027'
+    ? [{valor: 'prom', nombre: 'Mensual'}, {valor: 'anio', nombre: 'Año completo'}]
+    : [{valor: 'prom', nombre: 'Promedio mensual (meses cerrados)'}, {valor: 'anio', nombre: 'Año completo (proyectado)'},
+       {valor: 'acum', nombre: 'Acumulado al día'}, ...d.meses_disponibles.slice().reverse()];
+  sel.innerHTML = ops.map(o => `<option value="${o.valor}">${o.nombre}</option>`).join('');
+  sel.value = ops.some(o => o.valor === estado.periodo) ? estado.periodo : ops[0].valor;
+}
+
+async function cargar() {
+  document.getElementById('ul-der').textContent = 'Cargando…';
+  const q = new URLSearchParams(estado);
+  const r = await fetch('/api/ultima_linea?' + q);
+  const d = await r.json();
+  if (!d.ok) { document.getElementById('ul-der').textContent = 'Error: ' + d.msg; return; }
+  if (primeraCarga || document.getElementById('f-periodo').dataset.esc !== estado.escenario) {
+    opcionesPeriodo(d); document.getElementById('f-periodo').dataset.esc = estado.escenario; primeraCarga = false;
+  }
+  estado.periodo = d.periodo;
+  document.getElementById('f-periodo').value = d.periodo;
+  const [a, m, di] = d.corte.split('-');
+  document.getElementById('ul-der').innerHTML = `Venta al <strong>${di}-${m}-${a}</strong><br>Millones de pesos`;
+  document.getElementById('f-ne').style.display = d.escenario === '2027' ? 'none' : '';
+  pintarEquilibrio(d); pintarKpis(d); pintarTabla(d); pintarGraficos(d);
+}
+
+function bloqueEq(cfg) {
+  const max = Math.max(cfg.pe, cfg.venta, cfg.proy || 0) * 1.08;
+  const w = Math.min(cfg.venta / max * 100, 100);
+  const est = cfg.venta >= cfg.pe ? ['ok', 'Equilibrio cubierto']
+            : cfg.proy >= cfg.pe ? ['ok', 'Cierre proyectado sobre el equilibrio'] : ['mal', 'Cierre proyectado bajo el equilibrio'];
+  const wExtra = cfg.extra ? Math.min(cfg.extra / max * 100, 100 - w) : 0;
+  return `
+    <div class="eq-cab"><div class="ul-titulo">${cfg.titulo}</div><span class="eq-estado ${est[0]}">${est[1]}</span></div>
+    <div class="eq-cifras">
+      <div class="eq-cifra"><div class="l">Vendido</div><div class="v">${mmS(cfg.venta)}</div></div>
+      <div class="eq-cifra"><div class="l">Punto de equilibrio</div><div class="v">${mmS(cfg.pe)}</div></div>
+      <div class="eq-cifra"><div class="l">${cfg.tercero[0]}</div><div class="v ${cfg.tercero[2] || ''}">${cfg.tercero[1]}</div></div>
+      ${cfg.cuarto ? `<div class="eq-cifra"><div class="l">${cfg.cuarto[0]}</div><div class="v">${cfg.cuarto[1]}</div></div>` : ''}
+    </div>
+    <div class="eq-track" title="Vendido vs punto de equilibrio">
+      <div style="display:flex;height:100%">
+        <div class="eq-fill ${cfg.proy < cfg.pe ? 'bajo' : ''}" style="width:${w}%"></div>
+        ${wExtra ? `<div class="eq-fill ne" style="width:${wExtra}%" title="NE por facturar"></div>` : ''}
+      </div>
+      ${cfg.ref != null ? `<div class="eq-marca tenue" style="left:${cfg.ref / max * 100}%" title="Equilibrio a la fecha"></div>` : ''}
+      <div class="eq-marca" style="left:${cfg.pe / max * 100}%" title="Punto de equilibrio"></div>
+    </div>
+    <div class="eq-leyenda"><span>${cfg.leyenda}</span><span>${cfg.leyenda2 || ''}</span></div>
+    <div class="eq-frase">${cfg.frase}</div>`;
+}
+
+function pintarEquilibrio(d) {
+  const caja = document.getElementById('ul-eq');
+  if (d.escenario === '2027') {
+    const t = d.total, f = d.periodo === 'anio' ? 1 : 12;
+    caja.style.display = 'grid';
+    document.getElementById('eq-mes').innerHTML = `
+      <div class="ul-titulo">Equilibrio presupuesto 2027 · mensual</div>
+      <div class="eq-cifras">
+        <div class="eq-cifra"><div class="l">Venta ppto</div><div class="v">${mmS(t.venta / (d.periodo === 'anio' ? 12 : 1))}</div></div>
+        <div class="eq-cifra"><div class="l">Punto de equilibrio</div><div class="v">${mmS(t.pe / (d.periodo === 'anio' ? 12 : 1))}</div></div>
+        <div class="eq-cifra"><div class="l">Holgura</div><div class="v pos">${pct(t.holgura)}</div></div></div>
+      <div class="eq-frase">Con el gasto presupuestado, la empresa necesita vender al menos <strong>${mmS(t.pe / (d.periodo === 'anio' ? 12 : 1))}</strong> al mes.</div>`;
+    document.getElementById('eq-anio').innerHTML = `
+      <div class="ul-titulo">Equilibrio presupuesto 2027 · anual</div>
+      <div class="eq-cifras">
+        <div class="eq-cifra"><div class="l">Venta ppto</div><div class="v">${mmS(t.venta * f)}</div></div>
+        <div class="eq-cifra"><div class="l">Punto de equilibrio</div><div class="v">${mmS(t.pe * f)}</div></div>
+        <div class="eq-cifra"><div class="l">vs venta real 2026</div><div class="v">${mmS(d.anual.venta_proyectada)}</div></div></div>
+      <div class="eq-frase">El equilibrio 2027 es <strong>${pct(Math.abs(t.pe * f / d.anual.venta_proyectada - 1) * 100)}</strong> ${t.pe * f >= d.anual.venta_proyectada ? 'más' : 'menos'} que lo que se venderá en 2026 (proyectado).</div>`;
+    return;
+  }
+  const mc = d.mes_curso, an = d.anual;
+  if (mc) {
+    const ulc = mc.ul_proyectada;
+    document.getElementById('eq-mes').innerHTML = bloqueEq({
+      titulo: `Equilibrio del mes · ${mc.mes} ${d.anio}`, venta: mc.venta_al_dia, pe: mc.pe, ref: mc.pe_al_dia, proy: mc.proyeccion,
+      tercero: [d.con_ne && mc.ne ? 'Cierre proyectado con NE' : 'Cierre proyectado', mmS(mc.proyeccion), mc.proyeccion >= mc.pe ? 'pos' : 'neg'],
+      cuarto: d.con_ne && mc.ne ? ['NE por facturar', mmS(mc.ne)] : null,
+      extra: d.con_ne ? mc.ne : 0,
+      leyenda: `${mc.dh_transcurridos} de ${mc.dh_mes} días hábiles · raya clara = equilibrio a la fecha (${mmS(mc.pe_al_dia)})` + (d.con_ne && mc.ne ? ' · rayado azul = NE por facturar' : ''),
+      frase: (mc.falta_para_pe <= 0
+        ? 'El mes ya cubrió su punto de equilibrio.'
+        : d.con_ne && mc.ne
+          ? (mc.falta_con_ne > 0
+              ? `Faltan <strong>${mmS(mc.falta_para_pe)}</strong> para cubrir el mes. Si se facturan los NE (${mmS(mc.ne)}), quedan <strong>${mmS(mc.falta_con_ne)}</strong>: <strong>${mmS(mc.por_dia_necesario)}</strong> por día hábil en los ${mc.dh_restantes} que quedan (hoy se vende ${mmS(mc.ritmo_diario)} por día).`
+              : `Faltan <strong>${mmS(mc.falta_para_pe)}</strong> para cubrir el mes, y los NE por facturar (${mmS(mc.ne)}) alcanzan para cubrirlo.`)
+          : `Faltan <strong>${mmS(mc.falta_para_pe)}</strong> para cubrir el mes: <strong>${mmS(mc.por_dia_necesario)}</strong> por día hábil en los ${mc.dh_restantes} que quedan (hoy se vende ${mmS(mc.ritmo_diario)} por día).`)
+        + ` Al ritmo actual${d.con_ne && mc.ne ? ' y facturando los NE' : ''}, cierra con última línea de <strong class="${sgn(ulc)}">${mmS(ulc)}</strong>.`,
+    });
+  }
+  document.getElementById('eq-anio').innerHTML = bloqueEq({
+    titulo: `Equilibrio del año · ${d.anio}`, venta: an.venta_al_dia, pe: an.pe, ref: an.pe_al_dia, proy: an.venta_proyectada,
+    extra: d.con_ne ? d.ne_total : 0,
+    tercero: ['Cierre proyectado', mmS(an.venta_proyectada), an.venta_proyectada >= an.pe ? 'pos' : 'neg'],
+    leyenda: `Avance: ${pct(an.avance_pe)} del equilibrio anual · raya clara = equilibrio a la fecha (${mmS(an.pe_al_dia)})`, leyenda2: `Holgura del año ${pct(an.holgura)}`,
+    frase: (an.falta_para_pe > 0
+      ? `Faltan <strong>${mmS(an.falta_para_pe)}</strong> de venta para cubrir el gasto de todo ${d.anio}. Proyectado, el año cierra con última línea de <strong class="${sgn(an.ul_proyectada)}">${mmS(an.ul_proyectada)}</strong>.`
+      : `El año ya cubrió su punto de equilibrio. Proyectado, cierra con última línea de <strong class="${sgn(an.ul_proyectada)}">${mmS(an.ul_proyectada)}</strong>.`
+    ) + (d.con_ne && d.ne_total ? ` Incluye los NE por facturar (${mmS(d.ne_total)}).` : ''),
+  });
+}
+
+function pintarKpis(d) {
+  const t = d.total;
+  const set = (id, v, cls) => { const e = document.getElementById(id); e.textContent = v; e.className = 'k-v ' + (cls || ''); };
+  set('k-venta', mmS(t.venta)); document.getElementById('k-venta-s').textContent = d.etiqueta;
+  set('k-margen', mmS(t.margen)); document.getElementById('k-margen-s').textContent = pct(t.mg_pct) + ' de la venta';
+  set('k-gasto', mmS(t.total_gasto)); document.getElementById('k-gasto-s').textContent = pct(t.total_gasto / t.venta * 100) + ' de la venta';
+  set('k-ul', mmS(t.ultima_linea), sgn(t.ultima_linea)); document.getElementById('k-ul-s').textContent = pct(t.ul_pct) + ' de la venta';
+  set('k-pe', mmS(t.pe));
+  set('k-holg', (t.holgura > 0 ? '+' : '') + pct(t.holgura), sgn(t.holgura));
+  document.getElementById('k-holg-s').textContent = t.holgura >= 0 ? `puede caer ${mmS(t.venta - t.pe)} sin perder` : `faltan ${mmS(t.pe - t.venta)} para no perder`;
+}
+
+function pintarTabla(d) {
+  document.getElementById('t-etiqueta').textContent = 'Última línea por sucursal · ' + d.etiqueta;
+  document.getElementById('t-nota').textContent = 'Millones de pesos. ' + d.nota_periodo +
+    (d.reparto === 'margen' ? ' Indirectas repartidas por margen.' : ' Indirectas repartidas por venta, como en el archivo del GG.');
+  const fila = (f, total) => `<tr class="${total ? 'total' : ''}">
+    <td class="izq">${total ? 'Total empresa' : f.nombre}</td>
+    <td>${mm(f.venta)}</td>
+    <td>${mm(f.margen)}<span class="mg">${pct(f.mg_pct)}</span></td>
+    <td class="sec">${mm(f.rem_dir)}</td><td class="sec">${mm(f.rem_ind)}</td><td class="sec">${f.arriendo ? mm(f.arriendo) : '—'}</td>
+    <td class="sec">${f.gastos_canal ? mm(f.gastos_canal) : '—'}</td><td class="sec">${mm(f.resto)}</td>
+    <td>${mm(f.total_gasto)}</td>
+    <td class="col-ul ${sgn(f.ultima_linea)}">${mm(f.ultima_linea)}</td>
+    <td class="${sgn(f.ul_pct)}">${pct(f.ul_pct)}</td>
+    <td class="col-anio ${sgn(f.ul_acum)}">${f.ul_acum == null ? '—' : mm(f.ul_acum)}</td>
+    <td class="col-anio ${sgn(f.ul_anio)}">${mm(f.ul_anio)}</td>
+    <td>${mm(f.pe)}</td><td>${holgPill(f.holgura)}</td></tr>`;
+  const mensual = d.periodo === 'prom' || d.periodo.startsWith('m');
+  document.getElementById('th-ul').innerHTML = d.periodo === 'anio' ? 'Última línea<br>año'
+    : d.periodo === 'acum' ? 'Última línea<br>acumulada' : 'Última línea<br>mensual';
+  document.getElementById('th-acum').innerHTML = d.escenario === '2027' ? 'Acumulado<br>año' : `Acumulado año<br>al ${d.corte_txt}`;
+  document.getElementById('th-anio').innerHTML = d.escenario === '2027' ? 'Total<br>año 2027' : `Proyección<br>cierre ${d.anio}`;
+  document.querySelectorAll('.col-anio').forEach(e => e.style.display = mensual ? '' : 'none');
+  const filas = d.filas.slice().sort((a, b) => b.ultima_linea - a.ultima_linea);
+  document.getElementById('tbody').innerHTML = filas.map(f => fila(f)).join('') + fila(d.total, true);
+  document.querySelectorAll('.col-anio').forEach(e => e.style.display = mensual ? '' : 'none');
+}
+
+function pintarGraficos(d) {
+  Chart.defaults.color = cssVar('--muted2');
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  const grid = cssVar('--border'), pos = cssVar('--pos'), neg = cssVar('--red'), txt = cssVar('--text'), amb = cssVar('--amber');
+  const filas = d.filas.slice().sort((a, b) => b.venta - a.venta);
+  if (chPe) chPe.destroy();
+  chPe = new Chart(document.getElementById('ch-pe'), {
+    type: 'bar',
+    data: {labels: filas.map(f => f.nombre), datasets: [
+      {label: 'Venta', data: filas.map(f => f.venta), backgroundColor: filas.map(f => f.venta >= f.pe ? pos : neg), borderRadius: 4, barPercentage: .7, order: 2},
+      {label: 'Punto de equilibrio', type: 'line', data: filas.map(f => f.pe), showLine: false, pointStyle: 'line', pointRotation: 90,
+       pointRadius: 13, pointBorderWidth: 3, borderColor: txt, backgroundColor: txt, order: 1},
+    ]},
+    options: {indexAxis: 'y', maintainAspectRatio: false,
+      plugins: {legend: {position: 'bottom', labels: {boxWidth: 12}},
+        tooltip: {callbacks: {label: c => `${c.dataset.label}: ${mmS(c.parsed.x)}`}}},
+      scales: {x: {grid: {color: grid}, ticks: {callback: v => nf0.format(v)}}, y: {grid: {display: false}}}},
+  });
+  if (chMes) chMes.destroy();
+  const s = d.serie;
+  document.getElementById('ch-mes-sub').textContent = d.escenario === '2027'
+    ? 'Real 2026, como referencia para el presupuesto 2027 (' + mmS(d.total.ultima_linea / (d.periodo === 'anio' ? 12 : 1)) + ' al mes).'
+    : 'Margen del mes menos el gasto mensual del GG. El mes en curso va proyectado.';
+  chMes = new Chart(document.getElementById('ch-mes'), {
+    type: 'bar',
+    data: {labels: s.map(x => x.nombre + (x.en_curso ? '*' : '')), datasets: [{
+      label: 'Última línea', data: s.map(x => x.ultima_linea),
+      backgroundColor: s.map(x => x.en_curso ? amb : (x.ultima_linea >= 0 ? pos : neg)), borderRadius: 4}]},
+    options: {maintainAspectRatio: false,
+      plugins: {legend: {display: false},
+        tooltip: {callbacks: {label: c => `Última línea: ${mmS(c.parsed.y)}`,
+          afterLabel: c => `Venta: ${mmS(s[c.dataIndex].venta)} · Equilibrio: ${mmS(s[c.dataIndex].pe)}` + (s[c.dataIndex].en_curso ? ' (proyectado)' : '')}}},
+      scales: {y: {grid: {color: grid}, ticks: {callback: v => nf0.format(v)}}, x: {grid: {display: false}}}},
+  });
+}
+
+document.querySelectorAll('[data-esc]').forEach(b => b.addEventListener('click', () => {
+  estado.escenario = b.dataset.esc; estado.periodo = 'prom';
+  document.querySelectorAll('[data-esc]').forEach(x => x.setAttribute('aria-pressed', x === b)); cargar();
+}));
+document.querySelectorAll('[data-rep]').forEach(b => b.addEventListener('click', () => {
+  estado.reparto = b.dataset.rep;
+  document.querySelectorAll('[data-rep]').forEach(x => x.setAttribute('aria-pressed', x === b)); cargar();
+}));
+document.querySelectorAll('[data-ne]').forEach(b => b.addEventListener('click', () => {
+  estado.ne = b.dataset.ne;
+  document.querySelectorAll('[data-ne]').forEach(x => x.setAttribute('aria-pressed', x === b)); cargar();
+}));
+document.getElementById('f-periodo').addEventListener('change', e => { estado.periodo = e.target.value; cargar(); });
+cargar();
+</script>
+{% endblock %}

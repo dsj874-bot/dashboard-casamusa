@@ -80,6 +80,8 @@ import data_loader_solicitudes_pg
 import data_loader_cotizaciones_pg
 # Finanzas > Proveedores: programa de pagos a proveedores (migracion 026)
 import data_loader_finanzas_pg
+# Ultima Linea (area propia, 2026-11-25): estado de resultado por sucursal
+import data_loader_ultima_linea_pg
 # Analista IA (Gemini + herramientas de ventas y compras, migracion 020)
 import agente_ia
 
@@ -321,6 +323,11 @@ USUARIOS_FINANZAS = {"dsepulveda@casamusa.cl"}
 # de la gerencia le sigue mostrando "en construccion").
 PREFIJOS_RESTRINGIDOS_FINANZAS = ("/finanzas/", "/api/finanzas/")
 
+# Ultima Linea (area propia, 2026-11-25): estado de resultado por sucursal con
+# los sueldos del GG -- solo dsepulveda y emusa (pedido del usuario). Para abrirla, sumar aqui.
+USUARIOS_ULTIMA_LINEA = {"dsepulveda@casamusa.cl", "emusa@casamusa.cl"}
+PREFIJOS_RESTRINGIDOS_ULTIMA_LINEA = ("/ultima_linea", "/api/ultima_linea")
+
 PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA = (
     "/forecast/plan_compra", "/api/forecast/plan_compras",
     "/forecast/nivel_servicio", "/api/forecast/nivel_servicio",
@@ -348,6 +355,8 @@ def _restringir_inventario_adquisiciones():
         permitidos = USUARIOS_AGENTE
     elif path.startswith(PREFIJOS_RESTRINGIDOS_FINANZAS):
         permitidos = USUARIOS_FINANZAS
+    elif path.startswith(PREFIJOS_RESTRINGIDOS_ULTIMA_LINEA):
+        permitidos = USUARIOS_ULTIMA_LINEA
     else:
         return None
     if "usuario" not in session:
@@ -460,7 +469,7 @@ def inject_es_admin():
             PREFIJOS_RESTRINGIDOS_INVENTARIO + PREFIJOS_RESTRINGIDOS_ADQUISICIONES + PREFIJOS_SOLO_GERENCIA
             + PREFIJOS_RESTRINGIDOS_SOLICITUDES + PREFIJOS_RESTRINGIDOS_LOGISTICA
             + PREFIJOS_RESTRINGIDOS_COTIZACIONES + PREFIJOS_RESTRINGIDOS_AGENTE
-            + PREFIJOS_RESTRINGIDOS_FINANZAS
+            + PREFIJOS_RESTRINGIDOS_FINANZAS + PREFIJOS_RESTRINGIDOS_ULTIMA_LINEA
         ),
         # Resumen de Adquisiciones tiene su propio "Datos al", separado
         # del de Ventas (ver _fecha_corte_adq_sesion()).
@@ -608,6 +617,7 @@ AREAS = [
     {"slug": "bodega",        "nombre": "Bodega",        "icono": "🏭", "url": "/bodega",        "activo": False},
     {"slug": "forecast",      "nombre": "Forecast",      "icono": "🔮", "url": "/forecast",      "activo": True},
     {"slug": "solicitudes",   "nombre": "Solicitudes de Inventario", "icono": "📝", "url": "/solicitudes",   "activo": True},
+    {"slug": "ultima_linea",  "nombre": "Última Línea",  "icono": "📊", "url": "/ultima_linea",  "activo": True},
 ]
 
 
@@ -628,16 +638,18 @@ def inicio():
             or (a["slug"] == "logistica" and usuario in USUARIOS_LOGISTICA)
             or (a["slug"] == "inventario" and usuario in USUARIOS_INVENTARIO)
             or (a["slug"] == "adquisiciones" and usuario in USUARIOS_ADQUISICIONES)
+            or (a["slug"] == "ultima_linea" and usuario in USUARIOS_ULTIMA_LINEA)
         ]
     else:
         areas_visibles = [
             a for a in AREAS
-            if a["slug"] not in ("inventario", "adquisiciones", "forecast", "solicitudes", "logistica")
+            if a["slug"] not in ("inventario", "adquisiciones", "forecast", "solicitudes", "logistica", "ultima_linea")
             or (a["slug"] == "solicitudes" and usuario in USUARIOS_SOLICITUDES)
             or (a["slug"] == "logistica" and usuario in USUARIOS_LOGISTICA)
             or (a["slug"] == "inventario" and usuario in USUARIOS_INVENTARIO)
             or (a["slug"] == "adquisiciones" and usuario in USUARIOS_ADQUISICIONES)
             or (a["slug"] == "forecast" and usuario in USUARIOS_FORECAST)
+            or (a["slug"] == "ultima_linea" and usuario in USUARIOS_ULTIMA_LINEA)
         ]
     # Finanzas: activa solo para USUARIOS_FINANZAS; el resto de la gerencia
     # la sigue viendo como "en construccion".
@@ -896,6 +908,26 @@ def finanzas_proveedores():
     return render_template("finanzas_proveedores.html", active="finanzas_proveedores",
                            columnas=data_loader_finanzas_pg.COLUMNAS_SAP,
                            session_nombre=session.get("nombre"))
+
+
+@app.route("/ultima_linea")
+@login_requerido
+def ultima_linea():
+    return render_template("ultima_linea.html", active="ultima_linea_panel",
+                           session_nombre=session.get("nombre"))
+
+
+@app.route("/api/ultima_linea")
+@login_requerido
+def api_ultima_linea():
+    try:
+        return jsonify({"ok": True, **data_loader_ultima_linea_pg.get_panel(
+            escenario=request.args.get("escenario") or "real",
+            periodo=request.args.get("periodo") or "prom",
+            reparto=request.args.get("reparto") or "margen",
+            con_ne=request.args.get("ne", "1") != "0")})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
 
 
 def _filtros_finanzas():
