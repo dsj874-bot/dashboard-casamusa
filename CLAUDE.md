@@ -1437,7 +1437,7 @@ Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportu
 - **Oportunidad:** cotizaciones de $5 MM o más desde el 01-09-2026 del mismo cliente + vendedor, con menos
   de 60 días entre versiones (Cliente Boleta: una por cotización). La arma `sincronizar_pg()` al terminar cada
   subida de cotizaciones y en el cron diario. Con pedido o factura pasa sola a **ganada**.
-- **Etapas:** cotizada → seguimiento → negociacion → ganada | perdida (perdida exige motivo). Registrar una
+- **Etapas:** cotizada → seguimiento → negociacion → ganada | perdida (perdida exige motivo). En el tablero las tarjetas se ARRASTRAN entre columnas (pedido del usuario); soltar en Perdida abre un cuadro con motivo y competidor; las ganadas con pedido/factura del ERP no se mueven (la sincronización las volvería a ganar). Registrar una
   gestión mueve "cotizada" a "seguimiento", cumple el compromiso anterior y reinicia el reloj.
 - **Alertas** (se calculan desde las fechas): compromiso vencido, sin gestión (7 días hábiles ≥$20 MM, 10 días
   de 5 a 20 MM; el reloj parte en la última versión, la última gestión o el día que entró al CRM) y sin dueño

@@ -34,6 +34,20 @@
   .crm-card { background: var(--surface2); border: 1px solid var(--border); border-left: 3px solid var(--est); border-radius: 9px;
     padding: 9px 10px; cursor: pointer; text-align: left; color: var(--text); font: inherit; width: 100%; }
   .crm-card:hover { border-color: var(--muted); border-left-color: var(--est); }
+  .crm-card[draggable="true"] { cursor: grab; }
+  .crm-card.arrastrando { opacity: .45; }
+  .crm-col.destino { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(34,163,71,.35) inset; }
+  .crm-col.destino .crm-col-b { background: rgba(34,163,71,.06); }
+  .crm-toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--surface2); color: var(--text);
+    border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 9px; padding: 9px 14px; font-size: 12.5px;
+    z-index: 300; box-shadow: 0 6px 24px rgba(0,0,0,.35); display: none; }
+  .crm-toast.err { border-left-color: var(--red); }
+  .crm-dlg { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; padding: 18px; width: min(380px, 92vw);
+    position: fixed; inset: 0; margin: auto; height: fit-content; }
+  .crm-dlg::backdrop { background: rgba(0,0,0,.5); }
+  .crm-dlg h3 { margin: 0 0 4px; font-size: 15px; color: var(--text-strong); }
+  .crm-dlg p { margin: 0 0 12px; font-size: 12.5px; color: var(--muted2); }
+  .crm-dlg .acc { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
   .crm-card .cl { font-weight: 600; color: var(--text-strong); font-size: 13px; line-height: 1.25; }
   .crm-card .row { display: flex; justify-content: space-between; gap: 6px; margin-top: 4px; font-size: 12px; }
   .crm-card .monto { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 13px; }
@@ -114,7 +128,7 @@
     <label class="crm-f"><span>Monto mínimo</span><select id="f-m"><option value="0">$5 MM</option><option value="20000000">$20 MM</option><option value="50000000">$50 MM</option><option value="100000000">$100 MM</option></select></label>
     <label class="crm-f"><span>Buscar cliente</span><input type="search" id="f-q" placeholder="Nombre del cliente"></label>
   </div>
-  <p class="crm-ley">Cada tarjeta es una oportunidad: las versiones de cotización del mismo cliente con el mismo vendedor. Ganadas y perdidas: últimos 90 días.</p>
+  <p class="crm-ley">Cada tarjeta es una oportunidad: las versiones de cotización del mismo cliente con el mismo vendedor. <strong>Arrástrala</strong> para cambiarla de etapa; haz clic para abrir la ficha. Ganadas y perdidas: últimos 90 días.</p>
   <div class="crm-board" id="board"><div class="vacio">Cargando…</div></div>
 </section>
 
@@ -137,6 +151,18 @@
 </section>
 {% endif %}
 
+<div class="crm-toast" id="toast" role="status" aria-live="polite"></div>
+<dialog class="crm-dlg" id="dlg-perdida">
+  <form method="dialog" id="f-perdida">
+    <h3>Dar por perdida</h3>
+    <p id="dlg-perdida-cl"></p>
+    <div class="campos">
+      <label class="crm-campo full">Motivo<select name="motivo_perdida" id="dlg-motivo" required></select></label>
+      <label class="crm-campo full">Competidor (si se sabe)<input name="competidor" maxlength="200"></label>
+    </div>
+    <div class="acc"><button class="crm-btn sec" value="cancel" formnovalidate>Cancelar</button><button class="crm-btn" value="ok">Guardar</button></div>
+  </form>
+</dialog>
 <div class="velo" id="velo"></div>
 <aside class="ficha" id="ficha" aria-label="Ficha de la oportunidad" role="dialog"></aside>
 {% endblock %}
@@ -195,13 +221,92 @@ function filtradas() {
     && o.monto >= mn && (!q || (o.cliente || '').toLowerCase().includes(q)));
 }
 
+// Una ganada con pedido/factura en el ERP no se mueve: la sincronizacion la volveria a marcar ganada.
+const movible = o => !(o.etapa === 'ganada' && o.monto_ganado > 0);
+let arrastrada = null;
+function toast(txt, err) {
+  const t = document.getElementById('toast');
+  t.textContent = txt; t.className = 'crm-toast' + (err ? ' err' : ''); t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(() => { t.style.display = 'none'; }, 3500);
+}
+function pedirPerdida(o) {
+  return new Promise(res => {
+    const dlg = document.getElementById('dlg-perdida');
+    document.getElementById('dlg-perdida-cl').textContent = `${o.cliente} · ${mm(o.monto).replace(/&nbsp;/g, ' ')}`;
+    document.getElementById('dlg-motivo').innerHTML = '<option value="">Elegir…</option>' + D.motivos_perdida.map(m => `<option>${esc(m)}</option>`).join('');
+    document.getElementById('f-perdida').reset();
+    dlg.onclose = () => {
+      if (dlg.returnValue !== 'ok') return res(null);
+      const fd = Object.fromEntries(new FormData(document.getElementById('f-perdida')));
+      res(fd.motivo_perdida ? fd : null);
+    };
+    dlg.showModal();
+  });
+}
+async function moverEtapa(id, etapa) {
+  const o = D.oportunidades.find(x => x.id === id);
+  if (!o || o.etapa === etapa) return;
+  const cambios = {etapa};
+  if (etapa === 'perdida') {
+    const extra = await pedirPerdida(o);
+    if (!extra) return;
+    Object.assign(cambios, extra);
+  }
+  if (etapa === 'ganada' && !confirm('¿Marcar como ganada? Todavía no aparece pedido ni factura en el ERP.')) return;
+  const antes = o.etapa;
+  o.etapa = etapa; o.probabilidad = D.etapas.find(e => e.k === etapa).p;   // se ve al tiro; si falla, vuelve atras
+  tablero();
+  try {
+    await post(`/api/crm/oportunidad/${id}`, cambios);
+    toast(`${o.cliente}: ${D.etapas.find(e => e.k === antes).n} → ${D.etapas.find(e => e.k === etapa).n}`);
+    cargar();
+  } catch (e) {
+    o.etapa = antes; tablero();
+    toast(e.message, true);
+  }
+}
+const board = document.getElementById('board');
+board.addEventListener('dragstart', e => {
+  const c = e.target.closest('.crm-card');
+  if (!c || c.getAttribute('draggable') !== 'true') return e.preventDefault();
+  arrastrada = +c.dataset.id;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', c.dataset.id);
+  requestAnimationFrame(() => c.classList.add('arrastrando'));
+});
+board.addEventListener('dragend', () => {
+  arrastrada = null;
+  board.querySelectorAll('.arrastrando').forEach(x => x.classList.remove('arrastrando'));
+  board.querySelectorAll('.destino').forEach(x => x.classList.remove('destino'));
+});
+board.addEventListener('dragover', e => {
+  const col = e.target.closest('.crm-col');
+  if (!col || arrastrada == null) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+  board.querySelectorAll('.destino').forEach(x => x !== col && x.classList.remove('destino'));
+  col.classList.add('destino');
+});
+board.addEventListener('dragleave', e => {
+  const col = e.target.closest('.crm-col');
+  if (col && !col.contains(e.relatedTarget)) col.classList.remove('destino');
+});
+board.addEventListener('drop', e => {
+  const col = e.target.closest('.crm-col');
+  if (!col || arrastrada == null) return;
+  e.preventDefault();
+  const id = arrastrada;
+  col.classList.remove('destino');
+  moverEtapa(id, col.dataset.k);
+});
+
 function tablero() {
   const L = filtradas();
   document.getElementById('board').innerHTML = D.etapas.map(e => {
     const c = L.filter(o => o.etapa === e.k);
     const tot = c.reduce((s, o) => s + (e.k === 'ganada' ? (o.monto_ganado || o.monto) : o.monto), 0);
-    return `<div class="crm-col"><div class="crm-col-h"><div class="t"><span>${e.n}</span><span>${c.length}</span></div><div class="m">${mm(tot)}</div></div>
-      <div class="crm-col-b">${c.map(o => `<button class="crm-card" style="--est:${COLOR[o.etapa]}" data-id="${o.id}">
+    return `<div class="crm-col" data-k="${e.k}"><div class="crm-col-h"><div class="t"><span>${e.n}</span><span>${c.length}</span></div><div class="m">${mm(tot)}</div></div>
+      <div class="crm-col-b">${c.map(o => `<button class="crm-card" style="--est:${COLOR[o.etapa]}" data-id="${o.id}"
+        draggable="${movible(o)}" title="${movible(o) ? 'Arrastra la tarjeta para cambiarla de etapa' : 'Ganada con pedido o factura en el ERP'}">
         <div class="cl">${nom(o.cliente)}</div>
         <div class="row"><span class="monto">${mm(o.monto)}</span><span class="sub">${o.probabilidad}%</span></div>
         <div class="sub">${nom(o.dueno)} · últ. versión ${hace(o.ultima_cot)}</div>
