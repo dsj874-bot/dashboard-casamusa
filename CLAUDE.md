@@ -1491,3 +1491,6 @@ Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportu
   muestra los más vendidos; excluye códigos 6 y sin precio) con casillas; el requerimiento del cliente es un atajo que
   marca productos con su cantidad. 2) **Cantidades**. 3) **Cotización rápida**: líneas, neto, IVA 19%, total y
   "Copiar códigos para SAP" (+ Excel, Nueva). Borrador en localStorage `musa360_cotizador_v3`.
+- **Asistente IA en el paso 1:** botón "✨ Asistente IA" junto al buscador; una frase/pregunta (con ?, " y ", 7+ palabras
+  o varias líneas) va sola a la IA al apretar Enter. Muestra un grupo por cada cosa pedida ("Pidió: «…»") con sus
+  opciones y 3 alternativas, y deja marcada la recomendada con la cantidad del cliente. Sin cuota de IA cae a reglas.
