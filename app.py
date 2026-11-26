@@ -324,8 +324,12 @@ USUARIOS_FINANZAS = {"dsepulveda@casamusa.cl"}
 PREFIJOS_RESTRINGIDOS_FINANZAS = ("/finanzas/", "/api/finanzas/")
 
 # Ultima Linea (area propia, 2026-11-25): estado de resultado por sucursal con
-# los sueldos del GG -- solo dsepulveda y emusa (pedido del usuario). Para abrirla, sumar aqui.
-USUARIOS_ULTIMA_LINEA = {"dsepulveda@casamusa.cl", "emusa@casamusa.cl"}
+# los sueldos del GG. Partio con dsepulveda y emusa; desde 2026-11-26 toda la
+# gerencia (pedido del usuario). Misma lista que USUARIOS_GERENCIA.
+USUARIOS_ULTIMA_LINEA = {
+    "dsepulveda@casamusa.cl", "emusa@casamusa.cl", "fmusa@casamusa.cl",
+    "malvarado@casamusa.cl", "jsantana@casamusa.cl",
+}
 PREFIJOS_RESTRINGIDOS_ULTIMA_LINEA = ("/ultima_linea", "/api/ultima_linea")
 
 PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA = (

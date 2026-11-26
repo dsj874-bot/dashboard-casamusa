@@ -1414,7 +1414,7 @@ if(d.error) { /* manejar error */ return; }
 - Mosaico propio en `/inicio` (slug `ultima_linea`, NO dentro de Finanzas). Ruta
   `/ultima_linea` + `/api/ultima_linea`, template `ultima_linea.html`, sidebar
   `_ultima_linea_sidebar.html`, lógica `data_loader_ultima_linea_pg.py`.
-- Acceso: `USUARIOS_ULTIMA_LINEA` = dsepulveda y emusa (muestra sueldos del GG).
+- Acceso: `USUARIOS_ULTIMA_LINEA` = toda la gerencia (dsepulveda, emusa, fmusa, malvarado, jsantana) desde 2026-11-26; partió solo dsepulveda y emusa (muestra sueldos del GG).
 - Columnas del Gerente General (archivo `data/Ultima Linea/...Ppto 2026...xlsx`,
   hoja Ppto26). Venta y margen reales (margen ERP); Digital = canal digital +
   casamusa.cl + venta asistida + marketplaces; OF fuera.
