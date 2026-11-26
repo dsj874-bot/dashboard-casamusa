@@ -1428,7 +1428,7 @@ if(d.error) { /* manejar error */ return; }
 
 
 ## CRM de Proyectos (migración 027, 2026-11-26) — piloto: solo Jorge Santana
-**Piloto (decisión del usuario):** desde el 26-11 TODOS los vendedores de San Isidro (partió solo con Jorge; `VENDEDORES_PILOTO` en
+**Piloto (decisión del usuario):** oportunidades de TODOS los vendedores de San Isidro, pero la pantalla SOLO para la gerencia del CRM (Jorge, E. Musa, dsepulveda): `ACCESO_VENDEDORES = False`, las alertas parten en Jorge (nivel 0). Partió solo con Jorge (`VENDEDORES_PILOTO` en
 `data_loader_crm_pg`). Vaciar ese set abre San Isidro completo (`SUCURSALES_PILOTO`), que es el paso siguiente;
 lo de abajo describe el diseño para San Isidro.
 Área propia "CRM Proyectos" en /inicio (NO dentro de Comercial, pedido del usuario), con menú `_crm_sidebar.html` (Tablero / Alertas / Vista gerencia, por #hash). Las cuentas de vendedor del piloto lo ven en su menú "Mi venta". Campana de alertas en la barra superior.

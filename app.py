@@ -368,6 +368,8 @@ def _crm_perfil():
         return None
     if u in USUARIOS_CRM_GERENCIA:
         return {"usuario": u, "ver_todo": True, "vendedor": CRM_VENDEDOR_DE_CUENTA.get(u), "sucursales": set()}
+    if not data_loader_crm_pg.ACCESO_VENDEDORES:
+        return None      # por ahora solo la gerencia del CRM (Jorge) usa la pantalla
     vendedor = session.get("vendedor") or CRM_VENDEDOR_DE_CUENTA.get(u)
     suc = session.get("sucursal")
     sucursales = set(suc if isinstance(suc, list) else [suc] if suc else []) & data_loader_crm_pg.SUCURSALES_PILOTO

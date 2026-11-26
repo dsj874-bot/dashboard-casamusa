@@ -50,6 +50,10 @@ SUCURSALES_PILOTO = {"CMD", "SE", "CANAL DIGITAL"}
 # El piloto partio solo con Jorge Santana; desde el 2026-11-26 (pedido del usuario) son todos
 # los vendedores de San Isidro (SUCURSALES_PILOTO). Un set con nombres vuelve a acotarlo.
 VENDEDORES_PILOTO = set()
+# Pedido del usuario 2026-11-26: las oportunidades de TODOS los vendedores de San Isidro, pero la
+# pantalla SOLO para la gerencia del CRM (Jorge Santana; tambien E. Musa y dsepulveda). Los vendedores
+# no entran y las alertas parten en Jorge. True = cada vendedor del piloto ve y gestiona lo suyo.
+ACCESO_VENDEDORES = False
 JEFE_SUCURSAL = {
     "MT": "gcarrasco@casamusa.cl", "LC": "sarjona@casamusa.cl", "MR": "evalera@casamusa.cl",
     "CH": "jvillegas@casamusa.cl", "MP": "jvillegas@casamusa.cl",
@@ -468,8 +472,9 @@ NIVELES = ["Vendedor", "Jefe de sucursal", "Líder de ventas", "Gerente General"
 
 
 def _cadena(op):
-    return [CUENTAS_VENDEDOR.get(op["dueno"]) if not retirado(op["dueno"]) else None,
-            JEFE_SUCURSAL.get(op["sucursal"]), LIDER_VENTAS, GERENTE_GENERAL]
+    # Sin acceso de vendedores, el primer aviso (nivel 0) le llega directo al lider de ventas.
+    vendedor = CUENTAS_VENDEDOR.get(op["dueno"]) if ACCESO_VENDEDORES and not retirado(op["dueno"]) else LIDER_VENTAS
+    return [vendedor, JEFE_SUCURSAL.get(op["sucursal"]), LIDER_VENTAS, GERENTE_GENERAL]
 
 
 def _destinatarios(op, nivel):
