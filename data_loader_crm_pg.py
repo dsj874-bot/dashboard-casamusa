@@ -1,7 +1,8 @@
 """
-CRM de proyectos (migracion 027, 2026-11-26). Piloto: solo San Isidro
-(vendedores de CMD, SE y CANAL DIGITAL en vendedor_home), que incluye las
-oportunidades del propio Jorge Santana (vendedor de CMD).
+CRM de proyectos (migracion 027, 2026-11-26). Piloto: SOLO las
+oportunidades de Jorge Santana (VENDEDORES_PILOTO, decision del usuario).
+El siguiente paso previsto es San Isidro completo (SUCURSALES_PILOTO:
+vendedores de CMD, SE y CANAL DIGITAL en vendedor_home).
 
 Que hace:
 - sincronizar_pg(): arma las oportunidades desde cotizacion_linea. Toda
@@ -45,6 +46,9 @@ DIAS_AGRUPAR = 60
 COTIZACIONES_EXCLUIDAS = (627636,)   # RUT digitado como precio (ver project-cotizaciones)
 
 SUCURSALES_PILOTO = {"CMD", "SE", "CANAL DIGITAL"}
+# Decision del usuario 2026-11-26: el piloto parte SOLO con las oportunidades
+# de Jorge Santana. Vaciar este set para abrirlo a toda SUCURSALES_PILOTO.
+VENDEDORES_PILOTO = {"JORGE SANTANA ANABALON"}
 JEFE_SUCURSAL = {
     "MT": "gcarrasco@casamusa.cl", "LC": "sarjona@casamusa.cl", "MR": "evalera@casamusa.cl",
     "CH": "jvillegas@casamusa.cl", "MP": "jvillegas@casamusa.cl",
@@ -96,13 +100,15 @@ def sucursales_vendedores():
     return _home_cache["d"]
 
 
-def vendedores_piloto():
-    return sorted(v for v, s in sucursales_vendedores().items()
-                  if s in SUCURSALES_PILOTO and not v.upper().startswith("VENTA"))
-
-
 def vendedor_en_piloto(vendedor):
+    if VENDEDORES_PILOTO:
+        return vendedor in VENDEDORES_PILOTO
     return sucursales_vendedores().get(vendedor) in SUCURSALES_PILOTO
+
+
+def vendedores_piloto():
+    return sorted(v for v in sucursales_vendedores()
+                  if vendedor_en_piloto(v) and not v.upper().startswith("VENTA"))
 
 
 # ── calendario de dias habiles ─────────────────────────────────────────
@@ -147,7 +153,7 @@ def sincronizar_pg():
             ORDER BY min(fecha), nro_cotizacion""",
         (CRM_DESDE, list(COTIZACIONES_EXCLUIDAS), MONTO_MIN))
     home = sucursales_vendedores()
-    cot = [c for c in cot if home.get(c["vendedor"]) in SUCURSALES_PILOTO]
+    cot = [c for c in cot if vendedor_en_piloto(c["vendedor"])]
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT nro_cotizacion FROM crm_oportunidad_cotizacion")
