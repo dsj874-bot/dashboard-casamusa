@@ -36,7 +36,14 @@
   .cz-vista { display: none; } .cz-vista.on { display: block; }
 
   /* Paso 1: selector */
-  .cz-filtros { display: grid; grid-template-columns: 2fr 1.2fr 1.2fr 1fr 1fr; gap: 10px; align-items: end; }
+  .cz-filtros { display: grid; grid-template-columns: 1.2fr 1.2fr 1fr 1fr; gap: 10px; align-items: end; }
+  .cz-filtros > .cz-f:first-child { grid-column: 1 / -1; }
+  .cz-busq input { font-size: 14px !important; padding: 10px 12px !important; }
+  .cz-busq { display: flex; gap: 6px; } .cz-busq input { flex: 1; }
+  .cz-ia { background: linear-gradient(135deg, #7c3aed, #2563eb); padding: 8px 12px; font-size: 12.5px; }
+  .cz-grupo td { background: var(--surface2); font-size: 12px; color: var(--text); padding: 7px 10px !important; cursor: default; }
+  .cz-grupo td b { color: var(--text-strong); }
+  .cz-tipo { font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--accent); font-weight: 800; margin-right: 6px; }
   .cz-chk { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text); cursor: pointer; padding-bottom: 8px; }
   .cz-chk input, .cz-t input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
   .cz-barra { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 12px 0 8px; flex-wrap: wrap; }
@@ -106,7 +113,9 @@
 <section class="cz-vista on" id="v1">
   <div class="cz-card">
     <div class="cz-filtros">
-      <label class="cz-f"><span>Buscar</span><input id="f-q" autocomplete="off" placeholder="Código, referencia o descripción"></label>
+      <div class="cz-f"><span>Buscar o preguntar a la IA</span>
+        <div class="cz-busq"><input id="f-q" autocomplete="off" placeholder="Código, descripción o la pregunta del cliente: ¿tienes cable negro 4mm y 10/12 awg?">
+          <button class="cz-btn cz-ia" id="btn-asis" title="La IA interpreta lo que pidió el cliente y marca los productos">✨ Asistente IA</button></div></div>
       <label class="cz-f"><span>Familia</span><select id="f-fam"><option value="">Todas</option></select></label>
       <label class="cz-f"><span>Subfamilia</span><select id="f-sub"><option value="">Todas</option></select></label>
       <label class="cz-f"><span>Marca</span><select id="f-marca"><option value="">Todas</option></select></label>
@@ -197,7 +206,7 @@
 {% block extra_scripts %}
 <script>
 (() => {
-const TIPO = {aprendido: 'Aprendido', exacto: 'Código exacto', importado: 'Importado', marca: 'Marca pedida', nacional: 'Nacional', otra_linea: 'Otra línea', parecido: 'Parecido'};
+const TIPO = {aprendido: 'Aprendido', exacto: 'Código exacto', importado: 'Importado', marca: 'Marca pedida', nacional: 'Nacional', otra_linea: 'Otra línea', parecido: 'Alternativa'};
 const CLAVE = 'musa360_cotizador_v3';
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -279,14 +288,67 @@ function pintarCatalogo() {
 $('catalogo').addEventListener('click', e => {
   const tr = e.target.closest('tr[data-cod]'); if (!tr) return;
   const cod = +tr.dataset.cod, f = CAT.find(x => x.codigo === cod), i = idx(cod);
-  if (i >= 0) SEL.splice(i, 1); else SEL.push({ficha: f, cantidad: 1});
+  const g = tr.dataset.grupo !== undefined ? GRUPOS[tr.dataset.grupo] : null;     // fila del asistente
+  if (i >= 0) SEL.splice(i, 1);
+  else SEL.push(g ? {ficha: f, cantidad: g.cantidad, texto: g.descripcion, opciones: g.opciones, confianza: g.confianza, tocada: true}
+                  : {ficha: f, cantidad: 1});
   tr.classList.toggle('sel', i < 0); tr.querySelector('input').checked = i < 0;
   contar(); guardar();
 });
 function contar() { $('n-sel').textContent = SEL.length; $('a-paso2').disabled = !SEL.length; }
 ['f-sub', 'f-marca', 'f-stock'].forEach(id => $(id).addEventListener('change', buscarCatalogo));
-$('f-q').addEventListener('input', () => { clearTimeout(tCat); tCat = setTimeout(buscarCatalogo, 350); });
-$('f-q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tCat); buscarCatalogo(); } });
+// Una pregunta o frase del cliente ("¿tienes cable negro 4mm y 10/12 awg?") va al asistente de IA;
+// un codigo o unas pocas palabras, al buscador normal.
+const esPregunta = t => /[?¿]/.test(t) || /\s(y|e|mas|más|tambien|también)\s/i.test(t) || t.split(/\s+/).length >= 7 || /\r|\n/.test(t);
+$('f-q').addEventListener('input', () => { clearTimeout(tCat); if (!esPregunta($('f-q').value)) tCat = setTimeout(buscarCatalogo, 350); });
+$('f-q').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault(); clearTimeout(tCat);
+  if (esPregunta($('f-q').value)) asistente($('f-q').value); else buscarCatalogo();
+});
+$('btn-asis').onclick = () => asistente($('f-q').value);
+
+// Asistente: interpreta el texto, muestra por cada cosa pedida sus opciones y deja marcada la recomendada.
+async function asistente(texto, origenBtn) {
+  texto = (texto || '').trim();
+  if (!texto) return toast('Escribe lo que pide el cliente o pega su lista.', true);
+  const b = origenBtn || $('btn-asis'), txt = b.textContent;
+  b.disabled = true; b.textContent = '✨ Pensando…'; $('info').textContent = 'El asistente está leyendo el requerimiento…';
+  let r, conIA = true;
+  try { r = await api('/api/cotizador/reconocer', {texto, ia: true, lista: lista(), sucursal: suc()}); }
+  catch (e) {           // sin cuota de IA o error: se lee con reglas, sin perder el pedido
+    conIA = false;
+    try { r = await api('/api/cotizador/reconocer', {texto, ia: false, lista: lista(), sucursal: suc()}); }
+    catch (e2) { b.disabled = false; b.textContent = txt; $('info').textContent = e2.message; return toast(e2.message, true); }
+  }
+  b.disabled = false; b.textContent = txt;
+  CAT = []; const filas = []; let marcadas = 0;
+  r.lineas.forEach((l, k) => {
+    const ops = l.opciones.concat((l.otras || []).slice(0, 3).map(o => ({...o, tipo: 'parecido'})));
+    filas.push(`<tr class="cz-grupo"><td colspan="7">🔎 Pidió: <b>«${esc(l.descripcion)}»</b> · cantidad ${num(l.cantidad)}${l.cantidad_detectada === false ? ' (revisar)' : ''}${l.marca_detectada ? ' · marca ' + esc(l.marca_detectada) : ''}${ops.length ? '' : ' · <span style="color:var(--red)">no encontré este producto: búscalo arriba</span>'}</td></tr>`);
+    ops.forEach(o => {
+      CAT.push(o);
+      filas.push(`<tr class="${idx(o.codigo) >= 0 ? 'sel' : ''}" data-cod="${o.codigo}" data-grupo="${k}">
+        <td><input type="checkbox" ${idx(o.codigo) >= 0 ? 'checked' : ''} aria-label="Seleccionar ${o.codigo}"></td>
+        <td>${o.codigo}</td><td class="d"><span class="cz-tipo">${TIPO[o.tipo] || ''}</span>${esc(o.descripcion)}</td><td>${esc(o.marca || '')}</td><td>${proc(o)}</td>
+        <td class="r">${stockCelda(o)}</td><td class="r">${pesos(o.precio)}</td></tr>`);
+    });
+    // La recomendada (primera opcion) queda marcada con la cantidad que pidio el cliente.
+    const f = l.opciones.find(o => o.codigo === l.elegida);
+    if (f && idx(f.codigo) < 0) {
+      SEL.push({ficha: f, cantidad: l.cantidad, texto: l.descripcion, opciones: l.opciones, confianza: l.confianza});
+      marcadas++;
+    }
+  });
+  GRUPOS = Object.fromEntries(r.lineas.map((l, k) => [k, l]));
+  $('catalogo').innerHTML = filas.join('') || '<tr><td colspan="7" class="cz-vacio">No encontré productos en el texto.</td></tr>';
+  document.querySelectorAll('#catalogo tr[data-cod]').forEach(tr => {
+    const sel = idx(+tr.dataset.cod) >= 0; tr.classList.toggle('sel', sel); tr.querySelector('input').checked = sel;
+  });
+  $('info').textContent = `${conIA ? 'Asistente IA' : 'Lectura sin IA (cuota agotada)'}: ${r.lineas.length} productos pedidos, ${marcadas} recomendados ya marcados. Cambia la marca si prefieres otra opción.`;
+  contar(); guardar();
+}
+let GRUPOS = {};
 
 // Requerimiento del cliente: marca los productos reconocidos con su cantidad
 async function reconocer(ia) {
@@ -313,7 +375,7 @@ async function reconocer(ia) {
   finally { b1.disabled = b2.disabled = false; b1.textContent = 'Reconocer y seleccionar'; b2.textContent = '✨ Interpretar con IA'; }
 }
 $('btn-rec').onclick = () => reconocer(false);
-$('btn-ia').onclick = () => reconocer(true);
+$('btn-ia').onclick = () => { const t = $('texto').value; if (!t.trim()) return toast('Pega primero la lista del cliente.', true); $('texto').value = ''; asistente(t, $('btn-ia')); };
 
 // ── Paso 2: cantidades ──
 function pintarCantidades() {
