@@ -1,5 +1,5 @@
 """
-Área Última Línea (2026-11-25). Acceso: USUARIOS_ULTIMA_LINEA en app.py (dsepulveda y emusa).
+Área Última Línea (2026-11-25). Acceso: USUARIOS_ULTIMA_LINEA en app.py (toda la gerencia).
 
 Estado de resultado por sucursal/canal con las columnas del Gerente General
 (archivo "Ppto 2026 proy CM 261124.xlsx", hoja Ppto26):
@@ -9,7 +9,12 @@ Estado de resultado por sucursal/canal con las columnas del Gerente General
 
 Reglas acordadas con el usuario:
 - Venta y margen REALES de Musa360 (v_ventas, margen ERP = utilidad_bruta).
-  Digital = canal digital + casamusa.cl + venta asistida + marketplaces. OF fuera.
+  Digital = canal digital + casamusa.cl + venta asistida + marketplaces.
+- OF (rebates y servicios facturados a proveedores, ej. 30,4 MM de Legrand en ene-2026)
+  va como línea aparte "Rebates y otros": suma venta y margen (puro) al total de la
+  empresa, sin gastos propios y sin cargar indirectas (decisión del usuario 2026-11-26:
+  "entra como facturación y pago a Casa Musa, es margen puro"). No se proyecta a meses
+  futuros ni se escala por días hábiles: un rebate no es ritmo de venta.
 - Sueldos y gastos: los montos mensuales del GG tal cual (son reales).
   Arriendo/GC y resto de gastos son propios de cada sucursal.
 - Solo las remuneraciones indirectas (gerentes y administrativos) se reparten,
@@ -31,7 +36,9 @@ import db
 CANALES = [
     ("MT", "Matta"), ("LC", "Las Condes"), ("MR", "Manuel Rodríguez"), ("SE", "Santiago Empresas"),
     ("CMD", "CMD"), ("CH", "Chicureo"), ("MP", "Maipú"), ("QL", "Quilín"), ("DIG", "Digital"),
+    ("OF", "Rebates y otros (OF)"),
 ]
+ESPECIAL = "OF"  # sin gastos, fuera del reparto de indirectas y del equilibrio por sucursal
 NOMBRE = dict(CANALES)
 
 # Gastos mensuales del GG, ritmo 2026 (millones $): directas, indirectas, arriendo y GC,
@@ -45,6 +52,7 @@ GASTOS_2026 = {
     "CH":  (3.469312,  2.397976, 1.313547, 0.0,      4.429252),
     "MP":  (1.257644,  0.451867, 1.233931, 0.0,      0.834634),
     "DIG": (4.878166,  2.752280, 0.0,      9.333585, 5.083681),
+    "OF":  (0.0,       0.0,      0.0,      0.0,      0.0),
 }
 
 # Presupuesto 2027 del GG (mensual, millones $): venta, % margen, directas, indirectas,
@@ -120,15 +128,18 @@ def _dias_habiles_mes(cur, corte):
 def _calcular(base, reparto):
     """base: {canal: dict(v, m, d, i, a, gdc, r)} -> filas con las columnas del GG."""
     activos = {c: b for c, b in base.items() if b["v"] > 0}
-    pool = sum(b["i"] for b in activos.values())
-    tot_m = sum(b["m"] for b in activos.values())
-    tot_v = sum(b["v"] for b in activos.values())
+    suc = {c: b for c, b in activos.items() if c != ESPECIAL}   # OF no absorbe indirectas
+    pool = sum(b["i"] for b in suc.values())
+    tot_m = sum(b["m"] for b in suc.values())
+    tot_v = sum(b["v"] for b in suc.values())
     filas = []
     for c, _ in CANALES:
         b = activos.get(c)
         if not b:
             continue
-        if reparto == "venta":
+        if c == ESPECIAL:
+            ind, denom = 0.0, 0.0
+        elif reparto == "venta":
             ind = pool * b["v"] / tot_v if tot_v else 0
             tasa = pool / tot_v if tot_v else 0              # indirectas por $ de venta
             denom = (b["m"] / b["v"]) - tasa
@@ -148,6 +159,7 @@ def _calcular(base, reparto):
             "contribucion": b["m"] - propio, "ultima_linea": ul,
             "ul_pct": ul / b["v"] * 100 if b["v"] else None,
             "pe": pe, "holgura": (b["v"] / pe - 1) * 100 if pe else None,
+            "especial": c == ESPECIAL,
         })
     tot = {k: sum(f[k] for f in filas) for k in
            ("venta", "margen", "rem_dir", "rem_ind", "arriendo", "gastos_canal", "resto",
@@ -196,12 +208,13 @@ def get_panel(escenario="real", periodo="prom", reparto="margen", con_ne=True):
     for md_ in datos.values():
         for c, (v, u) in md_.items():
             v_ytd[c] += v; u_ytd[c] += u
-    tot_v, tot_u = sum(v_ytd.values()), sum(u_ytd.values())
+    tot_v = sum(v for c, v in v_ytd.items() if c != ESPECIAL)
+    tot_u = sum(u for c, u in u_ytd.items() if c != ESPECIAL)
     mg_ne = {c: (u_ytd[c] / v_ytd[c] if v_ytd[c] > 0 else tot_u / tot_v) for c in ne}
 
     def proyectar(md):
         """Mes en curso al cierre: venta al día x hábiles del mes / transcurridos + NE por facturar."""
-        out = {c: (v * dh_m / dh_t, u * dh_m / dh_t) for c, (v, u) in md.items()}
+        out = {c: ((v, u) if c == ESPECIAL else (v * dh_m / dh_t, u * dh_m / dh_t)) for c, (v, u) in md.items()}
         for c, n in ne.items():
             v, u = out.get(c, (0.0, 0.0))
             out[c] = (v + n, u + n * mg_ne[c])
@@ -245,6 +258,8 @@ def get_panel(escenario="real", periodo="prom", reparto="margen", con_ne=True):
     # faltan al promedio de los cerrados (por canal).
     prom_canal = {}
     for c in GASTOS_2026:
+        if c == ESPECIAL:
+            continue  # los rebates no se proyectan a los meses que faltan
         vals = [datos[m][c] for m in cerrados if c in datos[m] and datos[m][c][0] > 0]
         if vals:
             prom_canal[c] = (sum(v for v, _ in vals) / len(vals), sum(u for _, u in vals) / len(vals))
@@ -304,7 +319,7 @@ def get_panel(escenario="real", periodo="prom", reparto="margen", con_ne=True):
         periodo = "prom"
         base = _base_real(datos, cerrados)
         for c, b in base.items():
-            n = b["meses"] or 1
+            n = (len(cerrados) if c == ESPECIAL else b["meses"]) or 1  # rebates: promedio sobre todos los meses
             base[c] = {k: (x / n if k != "meses" else n) for k, x in b.items()}
         etiqueta = f"Promedio mensual ene–{MESES[cerrados[-1] - 1].lower() if cerrados else ''} {anio}"
         nota_periodo = "Promedio de los meses cerrados con venta (Maipú desde su apertura)."

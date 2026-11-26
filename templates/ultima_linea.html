@@ -156,6 +156,7 @@
   <summary>Cómo se calcula</summary>
   <ul>
     <li><strong>Venta y margen</strong>: reales de Musa360 (margen ERP). Digital incluye casamusa.cl, venta asistida y marketplaces.</li>
+    <li><strong>Rebates y otros (OF)</strong>: rebates y servicios facturados a proveedores (ej. 30,4 MM de Legrand en enero). Son margen puro: suman al total de la empresa, pero no cargan gastos ni indirectas y no se proyectan a los meses que faltan.</li>
     <li><strong>Sueldos y gastos</strong>: montos mensuales del Gerente General. Arriendo, gastos comunes y resto de gastos son de cada sucursal.</li>
     <li><strong>Rem. indirectas</strong> (gerentes y administrativos): se reparten según el margen que aporta cada sucursal. Con "Por venta (GG)" se reparten como en el archivo original.</li>
     <li><strong>Punto de equilibrio</strong>: venta con la que el margen paga justo los gastos propios de la sucursal más su parte de indirectas.</li>
@@ -316,14 +317,16 @@ function pintarTabla(d) {
     <td class="${sgn(f.ul_pct)}">${pct(f.ul_pct)}</td>
     <td class="col-anio ${sgn(f.ul_acum)}">${f.ul_acum == null ? '—' : mm(f.ul_acum)}</td>
     <td class="col-anio ${sgn(f.ul_anio)}">${mm(f.ul_anio)}</td>
-    <td>${mm(f.pe)}</td><td>${holgPill(f.holgura)}</td></tr>`;
+    <td>${f.especial ? '—' : mm(f.pe)}</td><td>${f.especial ? '<span class="mg">margen puro</span>' : holgPill(f.holgura)}</td></tr>`;
   const mensual = d.periodo === 'prom' || d.periodo.startsWith('m');
   document.getElementById('th-ul').innerHTML = d.periodo === 'anio' ? 'Última línea<br>año'
     : d.periodo === 'acum' ? 'Última línea<br>acumulada' : 'Última línea<br>mensual';
   document.getElementById('th-acum').innerHTML = d.escenario === '2027' ? 'Acumulado<br>año' : `Acumulado año<br>al ${d.corte_txt}`;
   document.getElementById('th-anio').innerHTML = d.escenario === '2027' ? 'Total<br>año 2027' : `Proyección<br>cierre ${d.anio}`;
   document.querySelectorAll('.col-anio').forEach(e => e.style.display = mensual ? '' : 'none');
-  const filas = d.filas.slice().sort((a, b) => b.ultima_linea - a.ultima_linea);
+  // Rebates y otros (OF) va al final, justo antes del total: no es una sucursal.
+  const filas = d.filas.filter(f => !f.especial).sort((a, b) => b.ultima_linea - a.ultima_linea)
+    .concat(d.filas.filter(f => f.especial));
   document.getElementById('tbody').innerHTML = filas.map(f => fila(f)).join('') + fila(d.total, true);
   document.querySelectorAll('.col-anio').forEach(e => e.style.display = mensual ? '' : 'none');
 }
@@ -332,7 +335,7 @@ function pintarGraficos(d) {
   Chart.defaults.color = cssVar('--muted2');
   Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
   const grid = cssVar('--border'), pos = cssVar('--pos'), neg = cssVar('--red'), txt = cssVar('--text'), amb = cssVar('--amber');
-  const filas = d.filas.slice().sort((a, b) => b.venta - a.venta);
+  const filas = d.filas.filter(f => !f.especial).sort((a, b) => b.venta - a.venta);
   if (chPe) chPe.destroy();
   chPe = new Chart(document.getElementById('ch-pe'), {
     type: 'bar',

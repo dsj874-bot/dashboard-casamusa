@@ -1414,6 +1414,7 @@ if(d.error) { /* manejar error */ return; }
 - Mosaico propio en `/inicio` (slug `ultima_linea`, NO dentro de Finanzas). Ruta
   `/ultima_linea` + `/api/ultima_linea`, template `ultima_linea.html`, sidebar
   `_ultima_linea_sidebar.html`, lógica `data_loader_ultima_linea_pg.py`.
+- OF (rebates y servicios a proveedores, ej. 30,4 MM Legrand ene-2026) = línea aparte "Rebates y otros (OF)": suma venta y margen puro al total, sin gastos ni indirectas, no se proyecta (decisión 2026-11-26).
 - Acceso: `USUARIOS_ULTIMA_LINEA` = toda la gerencia (dsepulveda, emusa, fmusa, malvarado, jsantana) desde 2026-11-26; partió solo dsepulveda y emusa (muestra sueldos del GG).
 - Columnas del Gerente General (archivo `data/Ultima Linea/...Ppto 2026...xlsx`,
   hoja Ppto26). Venta y margen reales (margen ERP); Digital = canal digital +
