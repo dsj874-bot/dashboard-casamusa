@@ -17,6 +17,10 @@
     {
       "path": "/api/cron/confirmar_fecha",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/crm_alertas",
+      "schedule": "30 11 * * 1-5"
     }
   ]
 }

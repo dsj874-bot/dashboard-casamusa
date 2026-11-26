@@ -82,6 +82,8 @@ import data_loader_cotizaciones_pg
 import data_loader_finanzas_pg
 # Ultima Linea (area propia, 2026-11-25): estado de resultado por sucursal
 import data_loader_ultima_linea_pg
+# CRM de proyectos (migracion 027, piloto San Isidro)
+import data_loader_crm_pg
 # Analista IA (Gemini + herramientas de ventas y compras, migracion 020)
 import agente_ia
 
@@ -332,6 +334,44 @@ USUARIOS_ULTIMA_LINEA = {
 }
 PREFIJOS_RESTRINGIDOS_ULTIMA_LINEA = ("/ultima_linea", "/api/ultima_linea")
 
+# CRM de proyectos (migracion 027, 2026-11-26): piloto SOLO San Isidro
+# (vendedores de CMD, SE y CANAL DIGITAL en vendedor_home, incluido Jorge
+# Santana). La gerencia del CRM ve todo; cada vendedor del piloto ve solo
+# lo suyo. Para abrirlo a otra sucursal: SUCURSALES_PILOTO en
+# data_loader_crm_pg (y sus jefes ya estan en JEFE_SUCURSAL).
+USUARIOS_CRM_GERENCIA = {"dsepulveda@casamusa.cl", "emusa@casamusa.cl", "jsantana@casamusa.cl"}
+# Cuentas de gerencia/canal que ademas venden con su nombre en el ERP.
+CRM_VENDEDOR_DE_CUENTA = {
+    "jsantana@casamusa.cl": "JORGE SANTANA ANABALON",
+    "fmusa@casamusa.cl": "FERNANDO MUSA BOZZO",
+    "eperez@casamusa.cl": "ELENNYS PEREZ GUEDEZ",
+    "dsepulveda@casamusa.cl": "DAVID SEPULVEDA JIMENEZ",
+}
+PREFIJOS_CRM = ("/crm", "/api/crm")
+data_loader_crm_pg.CUENTAS_VENDEDOR = {
+    **{g["vendedor"]: u for u, g in GERENTES.items() if g.get("vendedor")},
+    **{v: u for u, v in CRM_VENDEDOR_DE_CUENTA.items()},
+}
+
+
+def _crm_perfil():
+    """Que puede ver el usuario en el CRM, o None si no entra (ver data_loader_crm_pg)."""
+    u = session.get("usuario")
+    if not u:
+        return None
+    if u in USUARIOS_CRM_GERENCIA:
+        return {"usuario": u, "ver_todo": True, "vendedor": CRM_VENDEDOR_DE_CUENTA.get(u), "sucursales": set()}
+    vendedor = session.get("vendedor") or CRM_VENDEDOR_DE_CUENTA.get(u)
+    suc = session.get("sucursal")
+    sucursales = set(suc if isinstance(suc, list) else [suc] if suc else []) & data_loader_crm_pg.SUCURSALES_PILOTO
+    try:
+        en_piloto = bool(vendedor) and data_loader_crm_pg.vendedor_en_piloto(vendedor)
+    except Exception:
+        en_piloto = False
+    if not en_piloto and not sucursales:
+        return None
+    return {"usuario": u, "ver_todo": False, "vendedor": vendedor if en_piloto else None, "sucursales": sucursales}
+
 PREFIJOS_RESTRINGIDOS_FORECAST_DSEPULVEDA = (
     "/forecast/plan_compra", "/api/forecast/plan_compras",
     "/forecast/nivel_servicio", "/api/forecast/nivel_servicio",
@@ -419,6 +459,8 @@ PREFIJOS_PERMITIDOS_VENDEDOR = (
     "/vta_mes_mg", "/api/vta_mes_mg",
     "/api/fecha_corte", "/api/estado_datos", "/api/ping",
     "/login", "/logout", "/static/",
+    # CRM de proyectos: la ruta misma revisa que el vendedor este en el piloto.
+    "/crm", "/api/crm",
 )
 
 
@@ -473,7 +515,7 @@ def inject_es_admin():
             PREFIJOS_RESTRINGIDOS_INVENTARIO + PREFIJOS_RESTRINGIDOS_ADQUISICIONES + PREFIJOS_SOLO_GERENCIA
             + PREFIJOS_RESTRINGIDOS_SOLICITUDES + PREFIJOS_RESTRINGIDOS_LOGISTICA
             + PREFIJOS_RESTRINGIDOS_COTIZACIONES + PREFIJOS_RESTRINGIDOS_AGENTE
-            + PREFIJOS_RESTRINGIDOS_FINANZAS + PREFIJOS_RESTRINGIDOS_ULTIMA_LINEA
+            + PREFIJOS_RESTRINGIDOS_FINANZAS + PREFIJOS_RESTRINGIDOS_ULTIMA_LINEA + PREFIJOS_CRM
         ),
         # Resumen de Adquisiciones tiene su propio "Datos al", separado
         # del de Ventas (ver _fecha_corte_adq_sesion()).
@@ -496,6 +538,7 @@ def inject_es_admin():
         "es_vendedor": bool(session.get("vendedor")),
         "puede_ver_cotizaciones": session.get("usuario") in USUARIOS_COTIZACIONES,
         "puede_ver_agente": session.get("usuario") in USUARIOS_AGENTE,
+        "puede_ver_crm": _crm_perfil() is not None,
     }
 
 
@@ -932,6 +975,121 @@ def api_ultima_linea():
             con_ne=request.args.get("ne", "1") != "0")})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)}), 500
+
+
+# ══════════════════════════════════════════════════════
+#  CRM DE PROYECTOS (migracion 027, piloto San Isidro)
+# ══════════════════════════════════════════════════════
+def _crm_requerido(f):
+    @wraps(f)
+    def decorado(*args, **kwargs):
+        perfil = _crm_perfil()
+        if perfil is None:
+            if request.path.startswith("/api/"):
+                return jsonify({"ok": False, "msg": "No tienes acceso al CRM."}), 403
+            return redirect(url_for("vta_mes_mg" if session.get("vendedor") else "inicio"))
+        return f(perfil, *args, **kwargs)
+    return decorado
+
+
+def _crm_json(funcion, *args, **kwargs):
+    try:
+        return jsonify({"ok": True, **funcion(*args, **kwargs)})
+    except PermissionError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    except Exception as e:
+        app.logger.exception("CRM fallo")
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+@app.route("/crm")
+@login_requerido
+@_crm_requerido
+def crm(perfil):
+    return render_template("crm.html", active="crm", session_nombre=session.get("nombre"),
+                           crm_gerencia=perfil["ver_todo"], crm_vendedor=perfil.get("vendedor"))
+
+
+@app.route("/api/crm/oportunidades")
+@login_requerido
+@_crm_requerido
+def api_crm_oportunidades(perfil):
+    return _crm_json(data_loader_crm_pg.listar_pg, perfil)
+
+
+@app.route("/api/crm/oportunidad/<int:op_id>", methods=["GET", "POST"])
+@login_requerido
+@_crm_requerido
+def api_crm_oportunidad(perfil, op_id):
+    if request.method == "POST":
+        return _crm_json(data_loader_crm_pg.actualizar_pg, op_id, perfil,
+                         request.get_json(silent=True) or {}, session.get("usuario"))
+    d = data_loader_crm_pg.detalle_pg(op_id, perfil)
+    if d is None:
+        return jsonify({"ok": False, "msg": "No existe o no tienes acceso."}), 404
+    return jsonify({"ok": True, "oportunidad": d})
+
+
+@app.route("/api/crm/oportunidad/<int:op_id>/gestion", methods=["POST"])
+@login_requerido
+@_crm_requerido
+def api_crm_gestion(perfil, op_id):
+    return _crm_json(data_loader_crm_pg.registrar_gestion_pg, op_id, perfil,
+                     request.get_json(silent=True) or {}, session.get("usuario"))
+
+
+@app.route("/api/crm/alertas")
+@login_requerido
+@_crm_requerido
+def api_crm_alertas(perfil):
+    return _crm_json(lambda: {"alertas": data_loader_crm_pg.alertas_pg(perfil)})
+
+
+@app.route("/api/crm/alertas/conteo")
+@login_requerido
+@_crm_requerido
+def api_crm_alertas_conteo(perfil):
+    return _crm_json(lambda: {"n": data_loader_crm_pg.conteo_alertas_pg(perfil)})
+
+
+@app.route("/api/crm/resumen")
+@login_requerido
+@_crm_requerido
+def api_crm_resumen(perfil):
+    if not perfil["ver_todo"]:
+        return jsonify({"ok": False, "msg": "Solo para la gerencia."}), 403
+    return _crm_json(data_loader_crm_pg.resumen_pg, perfil)
+
+
+@app.route("/api/crm/sincronizar", methods=["POST"])
+@admin_requerido
+def api_crm_sincronizar():
+    return _crm_json(data_loader_crm_pg.sincronizar_pg)
+
+
+@app.route("/api/cron/crm_alertas")
+def api_cron_crm_alertas():
+    """Cron diario del CRM (vercel.json, dias habiles 8:30 de Chile en
+    horario de verano): sincroniza oportunidades con las cotizaciones,
+    sube de nivel las alertas y manda el resumen por correo. Sin
+    @login_requerido: lo invoca Vercel con CRON_SECRET (igual que los otros crons)."""
+    secreto_esperado = os.environ.get("CRON_SECRET")
+    if secreto_esperado and request.headers.get("Authorization", "") != f"Bearer {secreto_esperado}":
+        return jsonify({"ok": False, "msg": "No autorizado."}), 401
+    resultado = {"ok": True}
+    try:
+        resultado["sincronizacion"] = data_loader_crm_pg.sincronizar_pg()
+    except Exception as e:
+        app.logger.warning("CRM: sincronizacion fallo en el cron: %s", e)
+        resultado["sincronizacion"] = {"error": str(e)}
+    try:
+        resultado["alertas"] = data_loader_crm_pg.registrar_alertas_pg()
+    except Exception as e:
+        app.logger.exception("CRM: alertas fallaron en el cron")
+        return jsonify({"ok": False, "msg": str(e), **resultado}), 500
+    return jsonify(resultado)
 
 
 def _filtros_finanzas():
@@ -2433,7 +2591,14 @@ def api_subir_cotizaciones_fin():
             d.get("fecha_min"), d.get("fecha_max"), session.get("usuario"))
     except Exception as e:
         return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
-    return jsonify({"ok": True})
+    # CRM: las cotizaciones nuevas entran a sus oportunidades y las que ya
+    # tienen pedido/factura pasan a ganadas. Si falla, la carga ya quedo.
+    try:
+        crm = data_loader_crm_pg.sincronizar_pg()
+    except Exception as e:
+        app.logger.warning("CRM: sincronizacion fallo tras subir cotizaciones: %s", e)
+        crm = {"error": str(e)}
+    return jsonify({"ok": True, "crm": crm})
 
 
 # ══════════════════════════════════════════════════════

@@ -1426,3 +1426,26 @@ if(d.error) { /* manejar error */ return; }
 - Mes en curso proyectado por días hábiles + NE x Facturar (margen del año de cada
   sucursal, no el 20% de Proyección). Resto del año al promedio de meses cerrados.
 
+
+## CRM de Proyectos (migración 027, 2026-11-26) — piloto San Isidro
+Pantalla `/crm` (Comercial → Análisis y menú del vendedor) + campana de alertas en la barra superior.
+Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportunidad_cotizacion`,
+`crm_gestion`, `crm_alerta`.
+- **Oportunidad:** cotizaciones de $5 MM o más desde el 01-09-2026 del mismo cliente + vendedor, con menos
+  de 60 días entre versiones (Cliente Boleta: una por cotización). La arma `sincronizar_pg()` al terminar cada
+  subida de cotizaciones y en el cron diario. Con pedido o factura pasa sola a **ganada**.
+- **Etapas:** cotizada → seguimiento → negociacion → ganada | perdida (perdida exige motivo). Registrar una
+  gestión mueve "cotizada" a "seguimiento", cumple el compromiso anterior y reinicia el reloj.
+- **Alertas** (se calculan desde las fechas): compromiso vencido, sin gestión (7 días hábiles ≥$20 MM, 10 días
+  de 5 a 20 MM; el reloj parte en la última versión, la última gestión o el día que entró al CRM) y sin dueño
+  (vendedor retirado, va directo a Jorge). Escalera: vendedor → jefe de sucursal (+1 día hábil) → Jorge Santana
+  (+3) → Enrique Musa (+5); ≥$100 MM: +1/+2/+3. San Isidro no tiene jefe → directo a Jorge.
+- **Acceso:** `USUARIOS_CRM_GERENCIA` (dsepulveda, emusa, jsantana) ve todo; vendedores con cuenta y
+  `vendedor_home` en CMD/SE/CANAL DIGITAL ven lo suyo (`/crm` está en `PREFIJOS_PERMITIDOS_VENDEDOR`, la ruta
+  revisa el piloto). `CRM_VENDEDOR_DE_CUENTA` liga cuentas de gerencia/canal a su nombre de vendedor.
+  Para abrir otra sucursal: `SUCURSALES_PILOTO` (sus jefes ya están en `JEFE_SUCURSAL`).
+- **Cron:** `/api/cron/crm_alertas` (vercel.json, 11:30 UTC lun-vie = 8:30 Chile en horario de verano):
+  sincroniza, registra niveles en `crm_alerta` y manda el resumen por correo si existen `CRM_SMTP_USER` y
+  `CRM_SMTP_PASSWORD` (opcionales `CRM_SMTP_HOST`/`PORT`/`CRM_MAIL_FROM`; Gmail por defecto). Las cuentas de
+  vendedor no son correos: a ellos solo les llega dentro de Musa360.
+- Vendedores del piloto SIN cuenta en Musa360 (no ven sus alertas): Carmen Orellana, Daniel Gatica, Marianna Salas.

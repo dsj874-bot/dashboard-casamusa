@@ -1,0 +1,343 @@
+{% extends "base.html" %}
+
+{% block title %}CRM de Proyectos{% endblock %}
+{% block page_title %}CRM de Proyectos{% endblock %}
+{% block page_subtitle %}Seguimiento de cotizaciones de $5 MM o más · piloto San Isidro{% endblock %}
+{% block boton_actualizar %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .crm-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; overflow-x: auto; }
+  .crm-tab { background: none; border: 0; color: var(--muted2); padding: 9px 14px; font: inherit; font-size: 13px; font-weight: 600;
+    cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .crm-tab[aria-selected="true"] { color: var(--text-strong); border-bottom-color: var(--accent); }
+  .crm-tab .cnt { background: var(--red); color: #fff; border-radius: 9px; padding: 0 6px; font-size: 11px; margin-left: 4px; }
+  .crm-panel { display: none; } .crm-panel.on { display: block; }
+  .crm-filtros { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 12px; }
+  .crm-f { display: flex; flex-direction: column; gap: 4px; }
+  .crm-f > span { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .crm-f select, .crm-f input, .crm-campo input, .crm-campo select, .crm-campo textarea {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 8px;
+    padding: 7px 9px; font: inherit; font-size: 12.5px; }
+  .crm-f input[type=search] { min-width: 200px; }
+  .crm-ley { font-size: 12px; color: var(--muted2); margin: 0 0 10px; }
+  :is(.crm-tab, .crm-card, .crm-btn, select, input, textarea, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .crm-board { display: grid; grid-template-columns: repeat(5, minmax(230px, 1fr)); gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+  .crm-col { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; max-height: 74vh; min-height: 160px; }
+  .crm-col-h { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .crm-col-h .t { font-weight: 700; color: var(--text-strong); display: flex; justify-content: space-between; font-size: 13px; }
+  .crm-col-h .m { font-size: 12px; color: var(--muted2); font-variant-numeric: tabular-nums; }
+  .crm-col-b { padding: 8px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+  .crm-card { background: var(--surface2); border: 1px solid var(--border); border-left: 3px solid var(--est); border-radius: 9px;
+    padding: 9px 10px; cursor: pointer; text-align: left; color: var(--text); font: inherit; width: 100%; }
+  .crm-card:hover { border-color: var(--muted); border-left-color: var(--est); }
+  .crm-card .cl { font-weight: 600; color: var(--text-strong); font-size: 13px; line-height: 1.25; }
+  .crm-card .row { display: flex; justify-content: space-between; gap: 6px; margin-top: 4px; font-size: 12px; }
+  .crm-card .monto { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .crm-card .sub { font-size: 11.5px; color: var(--muted2); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: var(--surface); color: var(--muted2); font-weight: 600; border: 1px solid var(--border); }
+  .chip.red { background: rgba(239,68,68,.14); color: var(--red); border-color: transparent; }
+  .chip.amb { background: rgba(245,158,11,.15); color: var(--amber); border-color: transparent; }
+  .chip.ok { background: rgba(34,197,94,.14); color: var(--pos); border-color: transparent; }
+  .chip.blue { background: rgba(59,130,246,.14); color: var(--blue-light); border-color: transparent; }
+  .vacio { color: var(--muted); font-size: 12px; padding: 8px; }
+
+  .crm-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .crm-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .crm-kpi .l { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .crm-kpi .v { font-size: 22px; font-weight: 800; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+  .crm-kpi .s { font-size: 11.5px; color: var(--muted2); }
+  .crm-grid2 { display: grid; grid-template-columns: 1fr 1.6fr; gap: 12px; }
+  .crm-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .crm-box h3 { margin: 0 0 2px; font-size: 13px; color: var(--text-strong); }
+  .crm-box .d { font-size: 11.5px; color: var(--muted2); margin-bottom: 10px; }
+  .emb { display: flex; flex-direction: column; gap: 8px; }
+  .emb-r { display: grid; grid-template-columns: 120px 1fr 64px; gap: 8px; align-items: center; font-size: 12.5px; }
+  .emb-bar { height: 16px; border-radius: 4px; background: var(--est); min-width: 2px; }
+  .emb-r .n { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted2); }
+  .crm-tw { overflow-x: auto; }
+  .crm-t { border-collapse: collapse; width: 100%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .crm-t th { text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .crm-t td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .crm-t th:first-child, .crm-t td:first-child { text-align: left; }
+
+  .alertas { display: flex; flex-direction: column; gap: 8px; }
+  .alerta { display: grid; grid-template-columns: 130px 1fr auto; gap: 12px; align-items: center; background: var(--surface);
+    border: 1px solid var(--border); border-left: 3px solid var(--sev); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
+  .alerta .cl { font-weight: 600; color: var(--text-strong); }
+  .alerta .niv { font-weight: 700; color: var(--sev); font-size: 12px; }
+  .crm-h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 14px 0 8px; font-weight: 700; }
+
+  .crm-btn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .crm-btn.sec { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .crm-btn:disabled { opacity: .6; cursor: default; }
+
+  .velo { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; z-index: 200; }
+  .ficha { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100%); background: var(--surface); border-left: 1px solid var(--border);
+    z-index: 201; transform: translateX(100%); transition: transform .2s ease; overflow-y: auto; padding: 18px; }
+  body.ficha-abierta .velo { display: block; } body.ficha-abierta .ficha { transform: none; }
+  @media (prefers-reduced-motion: reduce) { .ficha { transition: none; } }
+  .ficha h2 { margin: 0; font-size: 17px; color: var(--text-strong); line-height: 1.3; padding-right: 70px; }
+  .ficha .cerrar { position: absolute; top: 16px; right: 16px; }
+  .sec { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .sec-t { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+  .campos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .crm-campo { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--muted2); }
+  .crm-campo.full { grid-column: 1 / -1; }
+  .dato { font-size: 13px; color: var(--text); }
+  .msg { font-size: 12px; margin-top: 6px; min-height: 16px; }
+  .msg.err { color: var(--red); } .msg.ok { color: var(--pos); }
+  .tl { display: flex; flex-direction: column; gap: 10px; border-left: 2px solid var(--border); margin-left: 4px; padding-left: 12px; font-size: 12.5px; }
+  .tl .f { font-size: 11px; color: var(--muted); }
+  .cots { font-size: 12.5px; }
+  @media (max-width: 900px) { .crm-grid2 { grid-template-columns: 1fr; } .crm-board { grid-template-columns: repeat(5, 250px); }
+    .alerta { grid-template-columns: 1fr; } .campos { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="crm-tabs" role="tablist">
+  <button class="crm-tab" role="tab" aria-selected="true" data-p="tablero">Tablero</button>
+  <button class="crm-tab" role="tab" aria-selected="false" data-p="alertas">Alertas<span class="cnt" id="cnt-alertas" hidden></span></button>
+  {% if crm_gerencia %}<button class="crm-tab" role="tab" aria-selected="false" data-p="gerencia">Vista gerencia</button>{% endif %}
+</div>
+
+<section class="crm-panel on" id="p-tablero">
+  <div class="crm-filtros">
+    {% if crm_gerencia %}
+    <label class="crm-f"><span>Vendedor</span><select id="f-ve"><option value="">Todos</option>{% if crm_vendedor %}<option value="__mias">Mis oportunidades</option>{% endif %}</select></label>
+    {% endif %}
+    <label class="crm-f"><span>Monto mínimo</span><select id="f-m"><option value="0">$5 MM</option><option value="20000000">$20 MM</option><option value="50000000">$50 MM</option><option value="100000000">$100 MM</option></select></label>
+    <label class="crm-f"><span>Buscar cliente</span><input type="search" id="f-q" placeholder="Nombre del cliente"></label>
+  </div>
+  <p class="crm-ley">Cada tarjeta es una oportunidad: las versiones de cotización del mismo cliente con el mismo vendedor. Ganadas y perdidas: últimos 90 días.</p>
+  <div class="crm-board" id="board"><div class="vacio">Cargando…</div></div>
+</section>
+
+<section class="crm-panel" id="p-alertas">
+  <p class="crm-ley">Se avisa al vendedor; si no hay gestión sube al jefe de sucursal, luego a Jorge Santana y luego a Enrique Musa. En San Isidro pasa directo a Jorge. Se resuelve registrando una gestión.</p>
+  <div id="alertas"><div class="vacio">Cargando…</div></div>
+</section>
+
+{% if crm_gerencia %}
+<section class="crm-panel" id="p-gerencia">
+  <div class="crm-kpis" id="kpis"></div>
+  <div class="crm-grid2">
+    <div class="crm-box"><h3>Embudo</h3><div class="d">Monto por etapa (MM). Ganadas y perdidas: últimos 90 días.</div><div class="emb" id="emb"></div></div>
+    <div class="crm-box"><h3>Por vendedor</h3><div class="d">Oportunidades abiertas y cerradas en los últimos 90 días.</div><div class="crm-tw"><table class="crm-t" id="tv"></table></div></div>
+  </div>
+  <div class="crm-grid2" style="margin-top:12px">
+    <div class="crm-box"><h3>Por qué perdemos</h3><div class="d">Motivo registrado al dar por perdida.</div><div id="motivos"></div></div>
+    <div class="crm-box"><h3>Sin dueño</h3><div class="d">Oportunidades de vendedores que ya no están: reasignar desde la ficha.</div><div id="sindueno"></div></div>
+  </div>
+</section>
+{% endif %}
+
+<div class="velo" id="velo"></div>
+<aside class="ficha" id="ficha" aria-label="Ficha de la oportunidad" role="dialog"></aside>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(() => {
+const GERENCIA = {{ 'true' if crm_gerencia else 'false' }};
+const MI_VENDEDOR = {{ (crm_vendedor or '')|tojson }};
+const COLOR = {cotizada: 'var(--blue)', seguimiento: '#8b5cf6', negociacion: 'var(--amber)', ganada: 'var(--pos)', perdida: 'var(--red)'};
+const NIVEL_COLOR = ['var(--blue)', 'var(--amber)', 'var(--red)', 'var(--red)'];
+let D = null;
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const nom = s => esc((s || '').toLowerCase().replace(/(^|[\s.&(-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()));
+const mm = v => '$' + (v / 1e6).toLocaleString('es-CL', {minimumFractionDigits: 1, maximumFractionDigits: 1}) + ' MM';
+const fecha = s => s ? s.slice(0, 10).split('-').reverse().join('-') : '—';
+const hace = s => { if (!s) return ''; const d = Math.round((new Date(D.hoy) - new Date(s.slice(0, 10))) / 864e5); return d <= 0 ? 'hoy' : `hace ${d} d`; };
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  const j = await r.json().catch(() => ({ok: false, msg: 'Respuesta inválida del servidor.'}));
+  if (!j.ok) throw new Error(j.msg || 'Error');
+  return j;
+}
+const post = (url, body) => api(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+
+async function cargar() {
+  D = await api('/api/crm/oportunidades');
+  if (GERENCIA) {
+    const sel = document.getElementById('f-ve');
+    const actual = sel.value;
+    sel.querySelectorAll('option.v').forEach(o => o.remove());
+    D.vendedores.forEach(v => { const o = document.createElement('option'); o.className = 'v'; o.value = v; o.textContent = nom(v).replace(/&amp;/g, '&'); sel.appendChild(o); });
+    sel.value = actual;
+  }
+  tablero(); alertas();
+  if (GERENCIA) gerencia();
+}
+
+function chips(o) {
+  const c = [];
+  if (o.sin_dueno) c.push('<span class="chip red">Sin dueño</span>');
+  o.alertas.forEach(a => c.push(`<span class="chip ${a.nivel >= 2 ? 'red' : 'amb'}">${a.motivo === 'compromiso_vencido' ? 'Compromiso' : a.motivo === 'sin_gestion' ? 'Sin gestión' : 'Reasignar'} · nivel ${a.nivel}</span>`));
+  if (o.fecha_compromiso && !o.alertas.length) c.push(`<span class="chip ok">Próx. ${fecha(o.fecha_compromiso)}</span>`);
+  if (o.versiones > 1) c.push(`<span class="chip blue">${o.versiones} versiones</span>`);
+  (o.marcas || []).slice(0, 3).forEach(m => c.push(`<span class="chip">${esc(m)}</span>`));
+  return c.join('');
+}
+
+function filtradas() {
+  const ve = GERENCIA ? document.getElementById('f-ve').value : '';
+  const mn = +document.getElementById('f-m').value;
+  const q = document.getElementById('f-q').value.trim().toLowerCase();
+  return D.oportunidades.filter(o => (!ve || (ve === '__mias' ? o.dueno === MI_VENDEDOR : o.dueno === ve))
+    && o.monto >= mn && (!q || (o.cliente || '').toLowerCase().includes(q)));
+}
+
+function tablero() {
+  const L = filtradas();
+  document.getElementById('board').innerHTML = D.etapas.map(e => {
+    const c = L.filter(o => o.etapa === e.k);
+    const tot = c.reduce((s, o) => s + (e.k === 'ganada' ? (o.monto_ganado || o.monto) : o.monto), 0);
+    return `<div class="crm-col"><div class="crm-col-h"><div class="t"><span>${e.n}</span><span>${c.length}</span></div><div class="m">${mm(tot)}</div></div>
+      <div class="crm-col-b">${c.map(o => `<button class="crm-card" style="--est:${COLOR[o.etapa]}" data-id="${o.id}">
+        <div class="cl">${nom(o.cliente)}</div>
+        <div class="row"><span class="monto">${mm(o.monto)}</span><span class="sub">${o.probabilidad}%</span></div>
+        <div class="sub">${nom(o.dueno)} · últ. versión ${hace(o.ultima_cot)}</div>
+        <div class="chips">${chips(o)}</div></button>`).join('') || '<div class="vacio">Sin oportunidades</div>'}</div></div>`;
+  }).join('');
+}
+
+function alertas() {
+  const A = D.oportunidades.flatMap(o => o.alertas.map(a => ({...a, o})));
+  // alertas_pg ya filtra por permiso; "para mí" se pide aparte para el contador.
+  api('/api/crm/alertas').then(r => {
+    const mias = r.alertas.filter(a => a.para_mi), otras = r.alertas.filter(a => !a.para_mi);
+    const cnt = document.getElementById('cnt-alertas');
+    cnt.hidden = !mias.length; cnt.textContent = mias.length;
+    const fila = a => `<div class="alerta" style="--sev:${NIVEL_COLOR[a.nivel]}">
+      <div><div class="niv">Nivel ${a.nivel}</div><div class="sub" style="font-size:11px;color:var(--muted2)">${esc(a.nivel_txt)}</div></div>
+      <div><div class="cl">${nom(a.cliente)} · ${mm(a.monto)}</div><div>${esc(a.texto)}</div><div style="font-size:11.5px;color:var(--muted2)">${nom(a.dueno)}</div></div>
+      <button class="crm-btn sec" data-id="${a.oportunidad_id}">Abrir</button></div>`;
+    document.getElementById('alertas').innerHTML =
+      `<div class="crm-h4">Para mí (${mias.length})</div><div class="alertas">${mias.map(fila).join('') || '<div class="vacio">No tienes alertas pendientes.</div>'}</div>` +
+      (otras.length ? `<div class="crm-h4">Otras alertas del equipo (${otras.length})</div><div class="alertas">${otras.map(fila).join('')}</div>` : '');
+  }).catch(e => { document.getElementById('alertas').innerHTML = `<div class="vacio">${esc(e.message)}</div>`; });
+}
+
+async function gerencia() {
+  const r = await api('/api/crm/resumen');
+  const k = [
+    ['Pipeline abierto', mm(r.abierto), `${r.n_abiertas} oportunidades`],
+    ['Pronóstico ponderado', mm(r.ponderado), 'monto × probabilidad'],
+    ['Ganadas (90 días)', r.ganadas, mm(r.monto_ganado) + ' con pedido o factura'],
+    ['Perdidas (90 días)', r.perdidas, Object.keys(r.motivos_perdida).length ? 'con motivo registrado' : 'aún sin registrar'],
+    ['Alertas activas', r.alertas, 'compromisos y falta de gestiones'],
+    ['Sin dueño', r.sin_dueno.length, mm(r.sin_dueno.reduce((s, o) => s + o.monto, 0))],
+  ];
+  document.getElementById('kpis').innerHTML = k.map(([l, v, s]) => `<div class="crm-kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+  const mx = Math.max(1, ...Object.values(r.por_etapa));
+  document.getElementById('emb').innerHTML = D.etapas.map(e => `<div class="emb-r"><span>${e.n}</span>
+    <div class="emb-bar" style="--est:${COLOR[e.k]};width:${r.por_etapa[e.k] / mx * 100}%"></div><span class="n">${Math.round(r.por_etapa[e.k] / 1e6).toLocaleString('es-CL')}</span></div>`).join('');
+  document.getElementById('tv').innerHTML = '<tr><th>Vendedor</th><th>Oport.</th><th>Abierto MM</th><th>Ganadas</th><th>Perdidas</th><th>Alertas</th></tr>' +
+    r.por_vendedor.map(v => `<tr><td>${nom(v.vendedor)}${v.sin_dueno ? ' <span class="chip red">se fue</span>' : ''}</td><td>${v.n}</td>
+      <td>${Math.round(v.abierto / 1e6).toLocaleString('es-CL')}</td><td>${v.ganadas}</td><td>${v.perdidas}</td>
+      <td style="color:${v.alertas ? 'var(--red)' : 'inherit'}">${v.alertas}</td></tr>`).join('');
+  const mot = Object.entries(r.motivos_perdida).sort((a, b) => b[1] - a[1]);
+  document.getElementById('motivos').innerHTML = mot.length ? `<table class="crm-t">${mot.map(([m, n]) => `<tr><td>${esc(m)}</td><td>${n}</td></tr>`).join('')}</table>`
+    : '<div class="vacio">Todavía no hay oportunidades perdidas con motivo.</div>';
+  document.getElementById('sindueno').innerHTML = r.sin_dueno.length ? `<table class="crm-t">${r.sin_dueno.map(o => `<tr><td><a href="#" data-id="${o.id}" style="color:var(--text)">${nom(o.cliente)}</a></td><td>${nom(o.dueno)}</td><td>${mm(o.monto)}</td></tr>`).join('')}</table>`
+    : '<div class="vacio">Ninguna.</div>';
+}
+
+// ── Ficha ──────────────────────────────────────────
+async function abrir(id) {
+  const f = document.getElementById('ficha');
+  f.innerHTML = '<div class="vacio">Cargando…</div>';
+  document.body.classList.add('ficha-abierta');
+  let o;
+  try { o = (await api('/api/crm/oportunidad/' + id)).oportunidad; }
+  catch (e) { f.innerHTML = `<button class="crm-btn sec cerrar" id="cerrar">Cerrar</button><div class="vacio">${esc(e.message)}</div>`; document.getElementById('cerrar').onclick = cerrar; return; }
+  const opt = (lista, val) => lista.map(([k, n]) => `<option value="${esc(k)}" ${k === val ? 'selected' : ''}>${esc(n)}</option>`).join('');
+  const etapas = D.etapas.map(e => [e.k, e.n]);
+  const tipos = Object.entries(D.tipos_gestion);
+  const motivos = [['', '—'], ...D.motivos_perdida.map(m => [m, m])];
+  const manana = new Date(new Date(D.hoy).getTime() + 864e5).toISOString().slice(0, 10);
+  f.innerHTML = `
+    <button class="crm-btn sec cerrar" id="cerrar">Cerrar</button>
+    <h2>${nom(o.cliente)}</h2>
+    <div class="chips" style="margin-top:8px"><span class="chip" style="color:${COLOR[o.etapa]}">${esc(o.etapa_txt)}</span>${chips(o)}</div>
+    ${o.alertas.length ? `<div style="margin-top:10px">${o.alertas.map(a => `<div class="msg err">⚠ ${esc(a.texto)} (nivel ${a.nivel}: ${esc(a.nivel_txt)})</div>`).join('')}</div>` : ''}
+
+    <div class="sec"><div class="sec-t">Registrar gestión</div>
+      <form id="fg" class="campos">
+        <label class="crm-campo">Tipo<select name="tipo" required><option value="">Elegir…</option>${opt(tipos)}</select></label>
+        <span></span>
+        <label class="crm-campo full">Qué se hizo<textarea name="nota" rows="2" maxlength="2000" required placeholder="Ej. llamé al jefe de obra, pide rebaja en el cable"></textarea></label>
+        <label class="crm-campo">Próximo compromiso<input name="proxima_accion" maxlength="200" placeholder="Ej. enviar versión con precio nuevo"></label>
+        <label class="crm-campo">Fecha<input type="date" name="fecha_compromiso" min="${D.hoy}" value="${manana}"></label>
+        <div class="crm-campo full"><button class="crm-btn" type="submit">Guardar gestión</button><div class="msg" id="mg"></div></div>
+      </form></div>
+
+    <div class="sec"><div class="sec-t">Datos de la oportunidad</div>
+      <form id="fd" class="campos">
+        <label class="crm-campo">Etapa<select name="etapa">${opt(etapas, o.etapa)}</select></label>
+        <label class="crm-campo">Probabilidad (%)<input type="number" name="probabilidad" min="0" max="100" step="5" value="${o.probabilidad ?? ''}"></label>
+        <label class="crm-campo">Cierre estimado<input type="date" name="fecha_cierre_est" value="${o.fecha_cierre_est || ''}"></label>
+        <label class="crm-campo">Comuna<input name="comuna" maxlength="200" value="${esc(o.comuna)}"></label>
+        <label class="crm-campo full">Obra / mandante<input name="obra" maxlength="200" value="${esc(o.obra)}"></label>
+        <label class="crm-campo">Competidor<input name="competidor" maxlength="200" value="${esc(o.competidor)}"></label>
+        <label class="crm-campo">Motivo de pérdida<select name="motivo_perdida">${opt(motivos, o.motivo_perdida || '')}</select></label>
+        ${D.puede_reasignar ? `<label class="crm-campo full">Dueño<select name="dueno">${opt(D.vendedores.map(v => [v, nom(v).replace(/&amp;/g, '&')]), o.dueno)}${D.vendedores.includes(o.dueno) ? '' : `<option value="${esc(o.dueno)}" selected>${nom(o.dueno)} (ya no está)</option>`}</select></label>` : ''}
+        <label class="crm-campo full">Notas<textarea name="notas" rows="2" maxlength="2000">${esc(o.notas)}</textarea></label>
+        <div class="crm-campo full"><button class="crm-btn" type="submit">Guardar cambios</button><div class="msg" id="md"></div></div>
+      </form></div>
+
+    <div class="sec"><div class="sec-t">Desde el ERP</div>
+      <div class="campos">
+        <div class="crm-campo">Monto última versión<div class="dato">${mm(o.monto)}</div></div>
+        <div class="crm-campo">Vendedor original<div class="dato">${nom(o.vendedor)}</div></div>
+        <div class="crm-campo">Primera versión<div class="dato">${fecha(o.primera_cot)}</div></div>
+        <div class="crm-campo">Última versión<div class="dato">${fecha(o.ultima_cot)}</div></div>
+      </div>
+      <table class="crm-t cots" style="margin-top:8px"><tr><th>Cotización</th><th>Fecha</th><th>Monto</th><th>Pedido / factura</th></tr>
+        ${o.cotizaciones.map(c => `<tr><td>N° ${c.nro}</td><td>${fecha(c.fecha)}</td><td>${mm(c.monto)}</td><td>${c.convertida ? `<span style="color:var(--pos)">Sí · ${mm(c.monto_convertido)}</span>` : 'No'}</td></tr>`).join('')}
+      </table></div>
+
+    <div class="sec"><div class="sec-t">Historial</div>
+      <div class="tl">${o.gestiones.map(g => `<div><div class="f">${fecha(g.creada_en)} · ${esc(g.tipo_txt)} · ${esc(g.usuario === 'sistema' ? 'Musa360' : g.usuario)}</div>
+        ${esc(g.nota)}${g.proxima_accion ? `<div class="f">Compromiso: ${esc(g.proxima_accion)} para el ${fecha(g.fecha_compromiso)}</div>` : ''}</div>`).join('') || '<div class="vacio">Sin gestiones.</div>'}</div></div>`;
+  document.getElementById('cerrar').onclick = cerrar;
+  document.getElementById('cerrar').focus();
+  document.getElementById('fg').onsubmit = async ev => {
+    ev.preventDefault();
+    const fd = Object.fromEntries(new FormData(ev.target));
+    if (!fd.proxima_accion) fd.fecha_compromiso = '';
+    const m = document.getElementById('mg'), b = ev.target.querySelector('button'); b.disabled = true;
+    try { await post(`/api/crm/oportunidad/${id}/gestion`, fd); m.className = 'msg ok'; m.textContent = 'Gestión guardada.'; await cargar(); abrir(id); }
+    catch (e) { m.className = 'msg err'; m.textContent = e.message; b.disabled = false; }
+  };
+  document.getElementById('fd').onsubmit = async ev => {
+    ev.preventDefault();
+    const fd = Object.fromEntries(new FormData(ev.target));
+    const m = document.getElementById('md'), b = ev.target.querySelector('button'); b.disabled = true;
+    try { await post(`/api/crm/oportunidad/${id}`, fd); m.className = 'msg ok'; m.textContent = 'Cambios guardados.'; await cargar(); abrir(id); }
+    catch (e) { m.className = 'msg err'; m.textContent = e.message; b.disabled = false; }
+  };
+}
+function cerrar() { document.body.classList.remove('ficha-abierta'); }
+document.getElementById('velo').onclick = cerrar;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrar(); });
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-id]');
+  if (t && !t.closest('.ficha')) { e.preventDefault(); abrir(+t.dataset.id); }
+});
+document.querySelectorAll('.crm-tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.crm-tab').forEach(x => x.setAttribute('aria-selected', x === t));
+  document.querySelectorAll('.crm-panel').forEach(p => p.classList.toggle('on', p.id === 'p-' + t.dataset.p));
+}));
+['f-m', 'f-q'].concat(GERENCIA ? ['f-ve'] : []).forEach(id => document.getElementById(id).addEventListener('input', () => D && tablero()));
+if (location.hash === '#alertas') document.querySelector('.crm-tab[data-p="alertas"]').click();
+if (location.hash.startsWith('#op-')) { cargar().then(() => abrir(+location.hash.slice(4))); } else { cargar().catch(e => { document.getElementById('board').innerHTML = `<div class="vacio">${esc(e.message)}</div>`; }); }
+})();
+</script>
+{% endblock %}

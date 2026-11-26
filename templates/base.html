@@ -724,6 +724,12 @@
     .aviso-datos[hidden] { display: none; }
     .aviso-datos-icono { font-size: 15px; line-height: 1; }
   </style>
+  <style>
+    .crm-campana { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px;
+      border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); text-decoration: none; font-size: 16px; }
+    .crm-campana span { position: absolute; top: -6px; right: -6px; background: var(--red); color: #fff; font-size: 10.5px; font-weight: 700;
+      border-radius: 9px; padding: 0 5px; min-width: 18px; text-align: center; line-height: 17px; }
+  </style>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -752,6 +758,11 @@
     <a href="/vta_mes_mg" class="nav-item {% if active == 'vta_mes_mg' %}active{% endif %}">
       <span class="nav-icon">📊</span><span class="nav-label"> Vta del Mes</span>
     </a>
+    {% if puede_ver_crm %}
+    <a href="/crm" class="nav-item {% if active == 'crm' %}active{% endif %}">
+      <span class="nav-icon">🤝</span><span class="nav-label"> CRM Proyectos</span>
+    </a>
+    {% endif %}
     {% else %}
     <a href="/inicio" class="nav-item" style="border:1px solid var(--border);border-radius:8px;margin-bottom:14px;">
       <span class="nav-icon">🏠</span><span class="nav-label"> Todas las áreas</span>
@@ -818,6 +829,11 @@
       <span class="nav-icon">📝</span><span class="nav-label"> Cotizaciones</span>
     </a>
     {% endif %}
+    {% if puede_ver_crm %}
+    <a href="/crm" class="nav-item {% if active == 'crm' %}active{% endif %}">
+      <span class="nav-icon">🤝</span><span class="nav-label"> CRM Proyectos</span>
+    </a>
+    {% endif %}
 
     {% if es_admin %}
     <div class="nav-section-title">Administración</div>
@@ -882,6 +898,9 @@
       <div class="topbar-meta">{% block page_subtitle %}{% endblock %}</div>
     </div>
     <div class="topbar-right">
+      {% if puede_ver_crm %}
+      <a href="/crm#alertas" class="crm-campana" id="crm-campana" title="Alertas del CRM de proyectos" aria-label="Alertas del CRM de proyectos">🔔<span id="crm-campana-n" hidden></span></a>
+      {% endif %}
       {% block boton_actualizar %}
       <button id="btn-descargar-excel" class="btn-filter" style="padding:8px 14px;font-size:12px;"
               onclick="descargarExcel()"
@@ -1141,6 +1160,14 @@ fetch('/api/estado_datos')
   })
   .catch(() => {});
 </script>
+{% if puede_ver_crm %}
+<script>
+  fetch('/api/crm/alertas/conteo').then(r => r.json()).then(j => {
+    const n = document.getElementById('crm-campana-n');
+    if (j.ok && j.n > 0 && n) { n.textContent = j.n; n.hidden = false; }
+  }).catch(() => {});
+</script>
+{% endif %}
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>
