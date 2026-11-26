@@ -71,6 +71,14 @@
   .cz-toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--surface2); color: var(--text);
     border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 9px; padding: 9px 14px; font-size: 12.5px; z-index: 300; display: none; }
   .cz-toast.err { border-left-color: var(--red); }
+  .cz-n { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .cz-n input[type=checkbox], .cz-todas input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+  .cz-todas { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted2); cursor: pointer; }
+  .cz-l.off { opacity: .5; }
+  .cz-quitar { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; padding: 0; line-height: 1; }
+  .cz-quitar:hover { color: var(--red); }
+  .cz-agregar { margin-top: 10px; }
+  .chip.suc { font-size: 11.5px; padding: 2px 9px; }
   @media (max-width: 1000px) { .cz-entrada { grid-template-columns: 1fr; } .cz-l { grid-template-columns: 1fr; } .cz-num { align-items: flex-start; text-align: left; } }
 </style>
 {% endblock %}
@@ -91,6 +99,10 @@ Tubo LED T8 18W 120cm 6500K - 30 un
       <label class="cz-f"><span>Lista de precios</span><select id="lista">
         {% for k, n in listas.items() %}<option value="{{ k }}" {% if k == lista_defecto %}selected{% endif %}>{{ n }}</option>{% endfor %}
       </select></label>
+      <label class="cz-f"><span>Stock de mi sucursal</span><select id="sucursal">
+        <option value="">Todas las sucursales</option>
+        {% for s in sucursales %}<option value="{{ s }}" {% if s == sucursal_defecto %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select></label>
       <button class="cz-btn" id="btn-rec">Reconocer productos</button>
       <button class="cz-btn sec" id="btn-ia" title="Usa Gemini para leer textos desordenados (correos, PDF copiados)">✨ Interpretar con IA</button>
       <div class="cz-ayuda">Sugiere <strong>importado primero</strong>, luego la marca que pidió el cliente y luego nacional. Lo que confirmes al descargar queda aprendido.</div>
@@ -98,17 +110,24 @@ Tubo LED T8 18W 120cm 6500K - 30 un
   </div>
 </div>
 
-<div id="resultado" hidden>
+<div id="resultado">
   <div class="cz-resumen">
-    <div class="cz-k"><div class="l">Líneas</div><div class="v" id="k-n">0</div></div>
-    <div class="cz-k"><div class="l">Reconocidas con confianza</div><div class="v" id="k-conf">0</div></div>
-    <div class="cz-k"><div class="l">Total neto</div><div class="v" id="k-total">$0</div></div>
+    <div class="cz-k"><div class="l">Líneas seleccionadas</div><div class="v" id="k-n">0</div></div>
+    <div class="cz-k"><div class="l">Reconocidas con confianza</div><div class="v" id="k-conf">—</div></div>
+    <div class="cz-k"><div class="l">Total neto seleccionado</div><div class="v" id="k-total">$0</div></div>
     <div class="cz-acc">
-      <button class="cz-btn sec" id="btn-copiar" title="Copia solo los códigos, uno por línea, para pegar en la grilla de SAP">📋 Copiar códigos para SAP</button>
+      <label class="cz-todas"><input type="checkbox" id="sel-todas" checked> Todas</label>
+      <button class="cz-btn sec" id="btn-copiar" title="Copia los códigos de las líneas marcadas, uno por línea, para pegar en la grilla de SAP">📋 Copiar códigos seleccionados</button>
       <button class="cz-btn" id="btn-excel">⬇ Descargar Excel</button>
     </div>
   </div>
   <div class="cz-lineas" id="lineas"></div>
+  <div class="cz-card cz-agregar">
+    <div class="cz-f"><span>Agregar producto a la cotización</span></div>
+    <div class="cz-buscar"><input class="cz-in" id="agregar-q" placeholder="Busca por código, referencia o descripción (ej. 164063, diferencial 2P 25A)"><button class="cz-btn sec" id="agregar-btn">Buscar</button></div>
+    <div class="cz-otras" id="agregar-res"></div>
+  </div>
+  <p class="cz-ayuda" style="margin-top:10px">Musa360 no cierra la cotización: marca las líneas, copia los códigos y pégalos en SAP para generar la cotización allá.</p>
 </div>
 <div class="cz-toast" id="toast" role="status" aria-live="polite"></div>
 {% endblock %}
@@ -134,51 +153,70 @@ async function api(url, body) {
   return j;
 }
 
+const suc = () => document.getElementById('sucursal').value;
+const lista = () => document.getElementById('lista').value;
+
 async function reconocer(ia) {
   const texto = document.getElementById('texto').value;
-  if (!texto.trim()) return toast('Pega primero el requerimiento del cliente.', true);
+  if (!texto.trim()) return toast('Pega primero el requerimiento del cliente, o agrega productos abajo.', true);
   const b1 = document.getElementById('btn-rec'), b2 = document.getElementById('btn-ia');
   b1.disabled = b2.disabled = true;
   (ia ? b2 : b1).textContent = ia ? '✨ Leyendo con IA…' : 'Reconociendo…';
   try {
-    const r = await api('/api/cotizador/reconocer', {texto, ia, lista: document.getElementById('lista').value});
-    L = r.lineas.map(l => {
+    const r = await api('/api/cotizador/reconocer', {texto, ia, lista: lista(), sucursal: suc()});
+    const nuevas = r.lineas.map(l => {
       const f = l.opciones.find(o => o.codigo === l.elegida) || null;
-      return {...l, ficha: f, precio: f ? f.precio : 0};
+      return {...l, ficha: f, precio: f ? f.precio : 0, origen: 'texto', sel: true};
     });
+    // Un requerimiento nuevo reemplaza lo leido antes, pero conserva lo agregado a mano.
+    L = nuevas.concat(L.filter(l => l.origen === 'manual'));
     pintar();
-    if (r.modelo_ia) toast(`Leído con ${r.modelo_ia}: ${L.length} productos.`);
+    if (r.modelo_ia) toast(`Leído con ${r.modelo_ia}: ${nuevas.length} productos.`);
   } catch (e) { toast(e.message, true); }
   finally { b1.disabled = b2.disabled = false; b1.textContent = 'Reconocer productos'; b2.textContent = '✨ Interpretar con IA'; }
 }
 
 function stockTxt(f) {
-  const s = Object.entries(f.stock || {}).map(([k, v]) => `${k} ${num(v)}`).join(' · ');
-  return s || 'sin stock en sucursales';
+  const s = Object.entries(f.stock || {}).filter(([k]) => k !== suc()).map(([k, v]) => `${k} ${num(v)}`).join(' · ');
+  return s ? (suc() ? 'Otras sucursales: ' : '') + s : (suc() ? 'Sin stock en otras sucursales' : 'Sin stock en sucursales');
+}
+function stockChip(f) {
+  if (suc()) {
+    const v = (f.stock || {})[suc()] || 0;
+    return `<span class="chip suc ${v > 0 ? 'ok' : 'mal'}">${esc(suc())}: ${num(v)}</span>`;
+  }
+  return `<span class="chip ${f.stock_total > 0 ? 'ok' : 'mal'}">stock ${num(f.stock_total)}</span>`;
+}
+function stockCorto(f) {
+  return suc() ? `${esc(suc())} ${num((f.stock || {})[suc()] || 0)} · total ${num(f.stock_total)}` : `stock ${num(f.stock_total)}`;
 }
 function proc(f) {
   return `<span class="chip ${f.procedencia === 'Importado' ? 'imp' : f.procedencia === 'Especial' ? 'esp' : 'nac'}">${esc(f.procedencia)}</span>`;
+}
+function opcionBtn(o) {
+  return `<button class="cz-otra" data-cod="${o.codigo}"><span>${o.codigo} · ${esc(o.descripcion)} ${proc(o)}</span><span>${pesos(o.precio)} · ${stockCorto(o)}</span></button>`;
 }
 function fila(l, i) {
   const f = l.ficha;
   const sub = f ? l.cantidad * l.precio : 0;
   const caja = f && f.embalaje > 1 && l.cantidad % f.embalaje !== 0 ? `<span class="chip esp">embalaje de ${num(f.embalaje)}</span>` : '';
-  return `<div class="cz-l" style="--conf:${CONF[l.confianza]}" data-i="${i}">
-    <div class="cz-n">${i + 1}</div>
+  const manual = l.origen === 'manual';
+  return `<div class="cz-l ${l.sel ? '' : 'off'}" style="--conf:${manual ? 'var(--blue)' : CONF[l.confianza]}" data-i="${i}">
+    <div class="cz-n"><span>${i + 1}</span><input type="checkbox" data-sel ${l.sel ? 'checked' : ''} aria-label="Incluir línea ${i + 1}">
+      <button class="cz-quitar" data-accion="quitar" title="Quitar línea" aria-label="Quitar línea ${i + 1}">✕</button></div>
     <div class="cz-pidio">
       <div class="t">${esc(l.descripcion)}</div>
-      <div class="s">${l.marca_detectada ? 'Marca pedida: ' + esc(l.marca_detectada) + ' · ' : ''}Confianza ${esc(l.confianza)}</div>
-      <label class="cz-cant">Cantidad <input class="cz-in" type="number" min="0" step="any" value="${l.cantidad}" data-campo="cantidad">${l.cantidad_detectada ? '' : '<span class="chip esp">revisar</span>'}</label>
+      <div class="s">${manual ? 'Agregado a mano' : (l.marca_detectada ? 'Marca pedida: ' + esc(l.marca_detectada) + ' · ' : '') + 'Confianza ' + esc(l.confianza)}</div>
+      <label class="cz-cant">Cantidad <input class="cz-in" type="number" min="0" step="any" value="${l.cantidad}" data-campo="cantidad">${l.cantidad_detectada === false ? '<span class="chip esp">revisar</span>' : ''}</label>
     </div>
     <div>
-      <div class="cz-ops">${l.opciones.map(o => `<button class="cz-op" data-cod="${o.codigo}" aria-pressed="${f && f.codigo === o.codigo}"><span class="tp">${TIPO[o.tipo] || ''}</span>${o.codigo}</button>`).join('')}</div>
+      ${manual ? '' : `<div class="cz-ops">${l.opciones.map(o => `<button class="cz-op" data-cod="${o.codigo}" aria-pressed="${f && f.codigo === o.codigo}"><span class="tp">${TIPO[o.tipo] || ''}</span>${o.codigo}</button>`).join('')}</div>`}
       ${f ? `<div class="cz-prod"><div class="d">${esc(f.descripcion)}</div>
-        <div class="m"><b>${f.codigo}</b> · ${esc(f.marca || '')} ${proc(f)}
-          <span class="chip ${f.stock_total > 0 ? 'ok' : 'mal'}" title="${esc(stockTxt(f))}">stock ${num(f.stock_total)}</span>${caja}</div>
+        <div class="m"><b>${f.codigo}</b> · ${esc(f.marca || '')} ${proc(f)} ${stockChip(f)}${caja}</div>
         <div class="m">${esc(stockTxt(f))}</div></div>`
         : '<div class="cz-vacio" style="padding:6px;text-align:left">No encontré este producto. Búscalo abajo.</div>'}
-      <details class="cz-mas" ${f ? '' : 'open'}><summary>Otras alternativas y búsqueda</summary>
-        <div class="cz-otras">${(l.otras || []).map(o => `<button class="cz-otra" data-cod="${o.codigo}"><span>${o.codigo} · ${esc(o.descripcion)} ${proc(o)}</span><span>${pesos(o.precio)} · stock ${num(o.stock_total)}</span></button>`).join('')}</div>
+      <details class="cz-mas" ${f ? '' : 'open'}><summary>${manual ? 'Cambiar producto' : 'Otras alternativas y búsqueda'}</summary>
+        <div class="cz-otras">${(l.otras || []).map(opcionBtn).join('')}</div>
         <div class="cz-buscar"><input class="cz-in" placeholder="Buscar por código, referencia o descripción" data-buscar><button class="cz-btn sec" data-accion="buscar">Buscar</button></div>
         <div class="cz-otras" data-resultados></div>
       </details>
@@ -190,31 +228,40 @@ function fila(l, i) {
   </div>`;
 }
 function pintar() {
-  document.getElementById('resultado').hidden = !L.length;
-  document.getElementById('lineas').innerHTML = L.map(fila).join('');
+  document.getElementById('lineas').innerHTML = L.length ? L.map(fila).join('')
+    : '<div class="cz-vacio">Pega el requerimiento del cliente arriba, o agrega productos uno a uno aquí abajo.</div>';
   totales();
 }
 function totales() {
-  const con = L.filter(l => l.ficha);
-  const total = con.reduce((s, l) => s + l.cantidad * l.precio, 0);
-  document.getElementById('k-n').textContent = L.length;
-  document.getElementById('k-conf').textContent = `${L.filter(l => l.confianza === 'alta' || l.confianza === 'media').length} de ${L.length}`;
-  document.getElementById('k-total').textContent = pesos(total);
+  const sel = L.filter(l => l.sel && l.ficha);
+  const leidas = L.filter(l => l.origen === 'texto');
+  document.getElementById('k-n').textContent = `${sel.length} de ${L.length}`;
+  document.getElementById('k-conf').textContent = leidas.length ? `${leidas.filter(l => l.confianza === 'alta' || l.confianza === 'media').length} de ${leidas.length}` : '—';
+  document.getElementById('k-total').textContent = pesos(sel.reduce((s, l) => s + l.cantidad * l.precio, 0));
+  document.getElementById('sel-todas').checked = L.length > 0 && L.every(l => l.sel);
+}
+function repintarFila(i) {
+  document.querySelector(`.cz-l[data-i="${i}"]`).outerHTML = fila(L[i], i);
+  totales();
 }
 function elegir(i, ficha) {
   // Solo se aprende lo que el vendedor eligio a mano: aceptar una sugerencia de baja confianza
   // sin mirarla no debe quedar como "correcto" para la proxima vez.
-  L[i].ficha = ficha; L[i].precio = ficha.precio; L[i].elegida = ficha.codigo; L[i].tocada = true;
+  L[i].ficha = ficha; L[i].precio = ficha.precio; L[i].elegida = ficha.codigo;
+  if (L[i].origen === 'texto') L[i].tocada = true; else L[i].descripcion = ficha.descripcion;
   if (!L[i].opciones.some(o => o.codigo === ficha.codigo)) L[i].opciones.push({...ficha, tipo: 'manual'});
-  const div = document.querySelector(`.cz-l[data-i="${i}"]`);
-  div.outerHTML = fila(L[i], i);
-  totales();
+  repintarFila(i);
+}
+async function buscarProductos(q) {
+  const r = await api(`/api/cotizador/buscar?q=${encodeURIComponent(q)}&lista=${lista()}&sucursal=${suc()}`);
+  return r.resultados;
 }
 
 const cont = document.getElementById('lineas');
 cont.addEventListener('click', async e => {
   const row = e.target.closest('.cz-l'); if (!row) return;
   const i = +row.dataset.i, l = L[i];
+  if (e.target.closest('[data-accion="quitar"]')) { L.splice(i, 1); pintar(); return; }
   const b = e.target.closest('[data-cod]');
   if (b) {
     const cod = +b.dataset.cod;
@@ -226,42 +273,67 @@ cont.addEventListener('click', async e => {
     const q = row.querySelector('[data-buscar]').value.trim();
     if (q.length < 2) return;
     try {
-      const r = await api(`/api/cotizador/buscar?q=${encodeURIComponent(q)}&lista=${document.getElementById('lista').value}`);
-      l._busqueda = r.resultados;
-      row.querySelector('[data-resultados]').innerHTML = r.resultados.map(o => `<button class="cz-otra" data-cod="${o.codigo}"><span>${o.codigo} · ${esc(o.descripcion)} ${proc(o)}</span><span>${pesos(o.precio)} · stock ${num(o.stock_total)}</span></button>`).join('') || '<div class="cz-vacio">Sin resultados.</div>';
+      l._busqueda = await buscarProductos(q);
+      row.querySelector('[data-resultados]').innerHTML = l._busqueda.map(opcionBtn).join('') || '<div class="cz-vacio">Sin resultados.</div>';
     } catch (err) { toast(err.message, true); }
   }
 });
 cont.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('[data-buscar]')) { e.preventDefault(); e.target.closest('.cz-l').querySelector('[data-accion="buscar"]').click(); } });
 cont.addEventListener('change', e => {
-  const row = e.target.closest('.cz-l'); if (!row || !e.target.dataset.campo) return;
+  const row = e.target.closest('.cz-l'); if (!row) return;
   const i = +row.dataset.i;
+  if (e.target.matches('[data-sel]')) { L[i].sel = e.target.checked; row.classList.toggle('off', !L[i].sel); totales(); return; }
+  if (!e.target.dataset.campo) return;
   L[i][e.target.dataset.campo] = Math.max(0, +e.target.value || 0);
-  row.outerHTML = fila(L[i], i);
-  totales();
+  repintarFila(i);
+});
+document.getElementById('sel-todas').onchange = e => { L.forEach(l => { l.sel = e.target.checked; }); pintar(); };
+
+// Agregar productos a mano (cotizacion completa, no solo lo que pidio el cliente)
+async function buscarAgregar() {
+  const q = document.getElementById('agregar-q').value.trim();
+  if (q.length < 2) return;
+  try {
+    const res = await buscarProductos(q);
+    buscarAgregar.res = res;
+    document.getElementById('agregar-res').innerHTML = res.map(opcionBtn).join('') || '<div class="cz-vacio">Sin resultados.</div>';
+  } catch (err) { toast(err.message, true); }
+}
+document.getElementById('agregar-btn').onclick = buscarAgregar;
+document.getElementById('agregar-q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); buscarAgregar(); } });
+document.getElementById('agregar-res').addEventListener('click', e => {
+  const b = e.target.closest('[data-cod]'); if (!b) return;
+  const f = (buscarAgregar.res || []).find(o => o.codigo === +b.dataset.cod); if (!f) return;
+  L.push({descripcion: f.descripcion, cantidad: 1, cantidad_detectada: true, opciones: [{...f, tipo: 'manual'}], otras: [],
+          confianza: 'alta', ficha: f, precio: f.precio, elegida: f.codigo, origen: 'manual', sel: true});
+  pintar();
+  document.getElementById('agregar-res').innerHTML = '';
+  document.getElementById('agregar-q').value = '';
+  toast(`Agregado ${f.codigo}. Ajusta la cantidad en la línea ${L.length}.`);
+  document.querySelector(`.cz-l[data-i="${L.length - 1}"] [data-campo="cantidad"]`).focus();
 });
 
 function lineasElegidas() {
-  return L.filter(l => l.ficha && l.cantidad > 0).map(l => ({codigo: l.ficha.codigo, descripcion: l.ficha.descripcion, marca: l.ficha.marca,
+  return L.filter(l => l.sel && l.ficha && l.cantidad > 0).map(l => ({codigo: l.ficha.codigo, descripcion: l.ficha.descripcion, marca: l.ficha.marca,
     cantidad: l.cantidad, precio: Math.round(l.precio), texto: l.descripcion, aprender: !!l.tocada}));
 }
 document.getElementById('btn-excel').onclick = async () => {
   const lineas = lineasElegidas();
-  if (!lineas.length) return toast('No hay líneas con producto elegido.', true);
+  if (!lineas.length) return toast('Marca al menos una línea con producto.', true);
   const r = await fetch('/api/cotizador/excel', {method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({lineas, cliente: document.getElementById('cliente').value})});
   if (!r.ok) { const j = await r.json().catch(() => ({})); return toast(j.msg || 'No se pudo generar el Excel.', true); }
   const blob = await r.blob(); const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = 'cotizacion_musa360.xlsx'; a.click(); URL.revokeObjectURL(a.href);
-  toast(`Excel descargado con ${lineas.length} líneas. Lo elegido quedó aprendido.`);
+  toast(`Excel descargado con ${lineas.length} líneas.`);
 };
 document.getElementById('btn-copiar').onclick = async () => {
   const lineas = lineasElegidas();
-  if (!lineas.length) return toast('No hay líneas con producto elegido.', true);
+  if (!lineas.length) return toast('Marca al menos una línea con producto.', true);
   // En SAP basta con pegar el codigo (decision del usuario): uno por linea, en el orden de la cotizacion.
-  const tsv = lineas.map(l => l.codigo).join('\n');
+  const codigos = lineas.map(l => l.codigo).join(String.fromCharCode(10));
   try {
-    await navigator.clipboard.writeText(tsv);
+    await navigator.clipboard.writeText(codigos);
     const pares = lineas.filter(l => l.aprender).map(l => ({texto: l.texto, codigo: l.codigo}));
     if (pares.length) api('/api/cotizador/aprender', {pares}).catch(() => {});
     toast(`Copiados ${lineas.length} códigos. Pégalos en la grilla de SAP.`);
@@ -269,8 +341,10 @@ document.getElementById('btn-copiar').onclick = async () => {
 };
 document.getElementById('btn-rec').onclick = () => reconocer(false);
 document.getElementById('btn-ia').onclick = () => reconocer(true);
-// Cambiar la lista recalcula los precios con la misma lectura (no vuelve a gastar una consulta de IA).
-document.getElementById('lista').onchange = () => { if (L.length) reconocer(false); };
+// Cambiar la lista o la sucursal vuelve a leer el requerimiento (sin gastar IA) para recalcular precios y stock.
+document.getElementById('lista').onchange = () => { if (L.some(l => l.origen === 'texto')) reconocer(false); };
+document.getElementById('sucursal').onchange = () => { if (L.some(l => l.origen === 'texto')) reconocer(false); else pintar(); };
+pintar();
 })();
 </script>
 {% endblock %}

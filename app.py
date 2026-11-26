@@ -1090,11 +1090,29 @@ def api_crm_sincronizar():
 # ══════════════════════════════════════════════════════
 #  COTIZADOR (migracion 028, demo solo dsepulveda)
 # ══════════════════════════════════════════════════════
+def _cotizador_sucursal():
+    """Bodega cuyo stock ve primero el usuario: la de su sucursal (jefe) o la de vendedor_home
+    (vendedor); None = todas (gerencia)."""
+    suc = session.get("sucursal")
+    if isinstance(suc, list):
+        suc = suc[0] if suc else None
+    if not suc and session.get("usuario") in USUARIOS_GERENCIA:
+        return None      # la gerencia parte viendo todas las sucursales (puede elegir una)
+    if not suc and (session.get("vendedor") or CRM_VENDEDOR_DE_CUENTA.get(session.get("usuario"))):
+        v = session.get("vendedor") or CRM_VENDEDOR_DE_CUENTA.get(session.get("usuario"))
+        try:
+            suc = data_loader_crm_pg.sucursales_vendedores().get(v)
+        except Exception:
+            suc = None
+    return data_loader_cotizador_pg.BODEGA_DE_SUCURSAL.get(suc) if suc else None
+
+
 @app.route("/cotizador")
 @login_requerido
 def cotizador():
     return render_template("cotizador.html", active="cotizador", session_nombre=session.get("nombre"),
-                           listas=data_loader_cotizador_pg.LISTAS, lista_defecto=data_loader_cotizador_pg.LISTA_DEFECTO)
+                           listas=data_loader_cotizador_pg.LISTAS, lista_defecto=data_loader_cotizador_pg.LISTA_DEFECTO,
+                           sucursales=data_loader_cotizador_pg.SUCURSALES_STOCK, sucursal_defecto=_cotizador_sucursal())
 
 
 @app.route("/api/cotizador/reconocer", methods=["POST"])
@@ -1118,7 +1136,7 @@ def api_cotizador_reconocer():
         if not lineas:
             return jsonify({"ok": False, "msg": "No encontré productos en el texto."}), 400
         return jsonify({"ok": True, "modelo_ia": modelo,
-                        **data_loader_cotizador_pg.reconocer(lineas, d.get("lista"))})
+                        **data_loader_cotizador_pg.reconocer(lineas, d.get("lista"), d.get("sucursal"))})
     except RuntimeError as e:
         return jsonify({"ok": False, "msg": str(e)}), 502
     except Exception as e:
@@ -1132,7 +1150,8 @@ def api_cotizador_buscar():
     q = (request.args.get("q") or "").strip()
     if len(q) < 2:
         return jsonify({"ok": True, "resultados": []})
-    return jsonify({"ok": True, **data_loader_cotizador_pg.buscar_manual(q[:200], request.args.get("lista"))})
+    return jsonify({"ok": True, **data_loader_cotizador_pg.buscar_manual(q[:200], request.args.get("lista"),
+                                                                         request.args.get("sucursal"))})
 
 
 @app.route("/api/cotizador/excel", methods=["POST"])

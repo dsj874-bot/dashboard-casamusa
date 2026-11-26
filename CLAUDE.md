@@ -1477,3 +1477,7 @@ Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportu
   con "10 pares 24AWG"; "10/12 awg" se separa en dos líneas (`_expandir`); opción "Otra línea" cuando el cliente nombra
   dos familias (cable + alambre). **Aprendizaje: solo lo que el vendedor eligió a mano** (`tocada`), y lo nuevo
   reemplaza lo aprendido antes para ese texto. Se borraron 3 aprendizajes equivocados de la prueba del usuario.
+- **Cotizador, cotización completa (26-11):** se pueden agregar productos a mano (buscador "Agregar producto"), quitar
+  y marcar/desmarcar líneas; total y copia solo de lo marcado. Musa360 NO cierra la cotización: se copian los códigos
+  marcados y se pegan en SAP. **Stock de mi sucursal** (`_cotizador_sucursal`): jefe → su sucursal; vendedor →
+  `vendedor_home` (CMD/SE/digital → SI); gerencia → todas. Ordena las sugerencias con stock en esa sucursal primero.

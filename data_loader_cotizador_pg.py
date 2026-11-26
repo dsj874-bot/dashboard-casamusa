@@ -35,6 +35,10 @@ LISTAS = {
 LISTA_DEFECTO = "lp_d1_cm"     # lo vendido en noviembre calza con D1 (0,99)
 BODEGAS = ["San Isidro", "Matta", "Las Condes", "Manuel Rodríguez", "Chicureo", "Maipú"]
 CORTO = {"San Isidro": "SI", "Matta": "MT", "Las Condes": "LC", "Manuel Rodríguez": "MR", "Chicureo": "CH", "Maipú": "MP"}
+SUCURSALES_STOCK = ["SI", "MT", "LC", "MR", "CH", "MP"]
+# vendedor_home -> bodega cuyo stock usa ese vendedor (CMD, SE y digital despachan desde San Isidro)
+BODEGA_DE_SUCURSAL = {"CMD": "SI", "SE": "SI", "CANAL DIGITAL": "SI", "MT": "MT", "LC": "LC", "MR": "MR",
+                      "CH": "CH", "MP": "MP", "SI": "SI"}
 IMPORTADOS = {3, 7}
 ESPECIALES = {6}
 MAX_LINEAS = 200
@@ -320,7 +324,7 @@ def buscar(descripcion, referencia=None, limite=30):
     return [(s, c) for s, c in res[:limite]], exactos
 
 
-def _ficha(c, s, lista, tipo=None):
+def _ficha(c, s, lista, tipo=None, sucursal=None):
     p = _catalogo()["P"][c]
     precio = float(p[lista] or 0) if p.get(lista) is not None else 0.0
     # Sin costo ni margen (decision del usuario 2026-11-26: el cotizador es para vendedores, y a ellos
@@ -330,6 +334,7 @@ def _ficha(c, s, lista, tipo=None):
         "procedencia": "Importado" if p["id_procedencia"] in IMPORTADOS else
                        ("Especial" if p["id_procedencia"] in ESPECIALES else "Nacional"),
         "embalaje": float(p["embalaje"] or 1), "stock": p["stock"], "stock_total": sum(p["stock"].values()),
+        "stock_suc": p["stock"].get(sucursal, 0.0) if sucursal else None,
         "precio": precio, "score": round(s, 3), "tipo": tipo,
     }
 
@@ -393,8 +398,9 @@ def _expandir(lineas):
     return out[:MAX_LINEAS]
 
 
-def reconocer(lineas, lista=LISTA_DEFECTO):
+def reconocer(lineas, lista=LISTA_DEFECTO, sucursal=None):
     lista = lista if lista in LISTAS else LISTA_DEFECTO
+    sucursal = sucursal if sucursal in SUCURSALES_STOCK else None
     lineas = _expandir(lineas)
     cat = _catalogo()
     aprendido = _aprendidos([l["descripcion"] for l in lineas])
@@ -407,7 +413,7 @@ def reconocer(lineas, lista=LISTA_DEFECTO):
 
         def agregar(c, s, tipo):
             if c not in usados and c in cat["P"]:
-                usados.add(c); opciones.append(_ficha(c, s, lista, tipo))
+                usados.add(c); opciones.append(_ficha(c, s, lista, tipo, sucursal))
 
         if clave in aprendido:
             agregar(aprendido[clave], 2.0, "aprendido")
@@ -423,7 +429,8 @@ def reconocer(lineas, lista=LISTA_DEFECTO):
                      and t not in MARCAS_ALIAS and t.upper() not in cat["marcas"]), None)
         if tipo and any(tipo in cat["P"][c]["toks"] for _, c in pool):
             pool = [(s, c) for s, c in pool if tipo in cat["P"][c]["toks"]]
-        orden = lambda x: (bool(cat["P"][x[1]]["stock"]), x[0])   # con stock primero, luego parecido
+        # Con stock en la sucursal del vendedor primero, luego con stock en cualquier sucursal, luego parecido.
+        orden = lambda x: (bool(sucursal and cat["P"][x[1]]["stock"].get(sucursal)), bool(cat["P"][x[1]]["stock"]), x[0])
         imp = sorted([x for x in pool if cat["P"][x[1]]["id_procedencia"] in IMPORTADOS], key=orden, reverse=True)
         # Equivalente importado declarado en obligatorios para el mejor nacional
         if not imp and res:
@@ -443,7 +450,7 @@ def reconocer(lineas, lista=LISTA_DEFECTO):
         # CABLE libre de halogeno o ALAMBRE NYA; se muestran las dos.
         qset = set(_tokens(l["descripcion"]))
         primeras = {_primera(cat["P"][o["codigo"]]["descripcion"]) for o in opciones}
-        for s, c in sorted(res, key=orden, reverse=True):
+        for s, c in res:     # por parecido: aqui importa que sea el mismo producto, no donde hay stock
             pw = _primera(cat["P"][c]["descripcion"])
             if s >= max(0.35, top * 0.6) and pw in qset and pw not in primeras \
                     and cat["P"][c]["id_procedencia"] not in ESPECIALES:
@@ -451,19 +458,20 @@ def reconocer(lineas, lista=LISTA_DEFECTO):
                 break
         if not opciones and res:
             agregar(res[0][1], res[0][0], "parecido")
-        otras = [_ficha(c, s, lista) for s, c in res[:10] if c not in usados][:6]
+        otras = [_ficha(c, s, lista, None, sucursal) for s, c in res[:10] if c not in usados][:6]
         mejor = max((o["score"] for o in opciones), default=0)
         conf = "alta" if mejor >= 1.0 or (opciones and opciones[0]["tipo"] == "aprendido") else \
                "media" if mejor >= 0.7 else "baja" if opciones else "sin"
         out.append({**l, "marca_detectada": marca, "opciones": opciones, "otras": otras, "confianza": conf,
                     "elegida": opciones[0]["codigo"] if opciones else None})
-    return {"lista": lista, "listas": LISTAS, "lineas": out}
+    return {"lista": lista, "listas": LISTAS, "sucursal": sucursal, "lineas": out}
 
 
-def buscar_manual(q, lista=LISTA_DEFECTO):
+def buscar_manual(q, lista=LISTA_DEFECTO, sucursal=None):
     lista = lista if lista in LISTAS else LISTA_DEFECTO
+    sucursal = sucursal if sucursal in SUCURSALES_STOCK else None
     res, _ = buscar(q, limite=12)
-    return {"resultados": [_ficha(c, s, lista) for s, c in res]}
+    return {"resultados": [_ficha(c, s, lista, None, sucursal) for s, c in res]}
 
 
 def aprender(pares, usuario):
