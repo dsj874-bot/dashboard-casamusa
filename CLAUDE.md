@@ -1481,3 +1481,8 @@ Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportu
   y marcar/desmarcar líneas; total y copia solo de lo marcado. Musa360 NO cierra la cotización: se copian los códigos
   marcados y se pegan en SAP. **Stock de mi sucursal** (`_cotizador_sucursal`): jefe → su sucursal; vendedor →
   `vendedor_home` (CMD/SE/digital → SI); gerencia → todas. Ordena las sugerencias con stock en esa sucursal primero.
+- **Cotizador como cotización (26-11, "quiero cotizar, no solo reconocer"):** la pantalla parte por la cotización:
+  cliente, lista, sucursal y fila rápida "código/descripción + cantidad + Agregar" (código exacto se agrega directo;
+  descripción → lista con flechas + Enter; el mismo código suma cantidad). Tabla con cantidad, precio, total, quitar
+  y casilla; neto + IVA 19% + total (asume precios de lista NETOS, pendiente confirmar). "Pegar requerimiento" quedó
+  como ayuda desplegable que AGREGA líneas. Borrador en localStorage (`musa360_cotizador_borrador`), botón "Nueva".

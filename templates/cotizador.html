@@ -2,133 +2,164 @@
 
 {% block title %}Cotizador{% endblock %}
 {% block page_title %}Cotizador{% endblock %}
-{% block page_subtitle %}Pega el requerimiento del cliente: Musa360 reconoce cada producto y sugiere importado primero{% endblock %}
+{% block page_subtitle %}Arma la cotización, copia los códigos y genérala en SAP{% endblock %}
 {% block boton_actualizar %}{% endblock %}
 
 {% block sidebar_nav %}
 <div class="nav-section-title">Cotizador</div>
-<a href="/cotizador" class="nav-item active"><span class="nav-icon">🧾</span><span class="nav-label"> Nueva cotización</span></a>
+<a href="/cotizador" class="nav-item active"><span class="nav-icon">🧾</span><span class="nav-label"> Cotización</span></a>
 {% endblock %}
 
 {% block extra_head %}
 <style>
-  .cz-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
-  .cz-entrada { display: grid; grid-template-columns: 1fr 260px; gap: 16px; }
-  .cz-entrada textarea { width: 100%; min-height: 170px; resize: vertical; background: var(--surface2); color: var(--text);
-    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font: 13px/1.5 ui-monospace, Consolas, monospace; }
-  .cz-lado { display: flex; flex-direction: column; gap: 10px; }
+  .cz-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
   .cz-f { display: flex; flex-direction: column; gap: 4px; }
   .cz-f > span { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
-  .cz-f input, .cz-f select, .cz-in { background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  .cz-in, .cz-f input, .cz-f select { background: var(--surface2); border: 1px solid var(--border); color: var(--text);
     border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 12.5px; }
-  .cz-btn { background: var(--accent); color: #fff; border: 0; border-radius: 9px; padding: 9px 14px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .cz-btn { background: var(--accent); color: #fff; border: 0; border-radius: 9px; padding: 9px 14px; font: inherit; font-size: 13px;
+    font-weight: 700; cursor: pointer; white-space: nowrap; }
   .cz-btn.sec { background: var(--surface2); color: var(--text); border: 1px solid var(--border); font-weight: 600; }
   .cz-btn:disabled { opacity: .6; cursor: default; }
   .cz-ayuda { font-size: 11.5px; color: var(--muted2); line-height: 1.5; }
-  :is(.cz-btn, .cz-op, textarea, input, select, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  :is(.cz-btn, .cz-op, textarea, input, select, button, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  .cz-resumen { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 10px; align-items: stretch; }
-  .cz-k { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; min-width: 130px; }
-  .cz-k .l { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
-  .cz-k .v { font-size: 20px; font-weight: 800; color: var(--text-strong); font-variant-numeric: tabular-nums; }
-  .cz-acc { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  /* Encabezado de la cotizacion */
+  .cz-cab { display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; gap: 12px; align-items: end; }
+  .cz-acc { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
-  .cz-lineas { display: flex; flex-direction: column; gap: 8px; }
-  .cz-l { display: grid; grid-template-columns: 28px minmax(180px, 1fr) minmax(320px, 2.2fr) 120px; gap: 12px; align-items: start;
-    background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--conf); border-radius: 12px; padding: 12px 14px; }
+  /* Fila rapida para agregar */
+  .cz-rapida { display: grid; grid-template-columns: 1fr 110px auto; gap: 8px; margin-top: 12px; position: relative; }
+  .cz-rapida .cz-in { font-size: 13.5px; padding: 10px 12px; }
+  .cz-sug { position: absolute; top: 100%; left: 0; right: 0; z-index: 50; margin-top: 4px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.35); max-height: 360px; overflow-y: auto; display: none; }
+  .cz-sug.on { display: block; }
+
+  /* Tabla de la cotizacion */
+  .cz-tabla { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .cz-enc, .cz-l { display: grid; grid-template-columns: 30px 26px minmax(260px, 1fr) 96px 116px 116px 26px; gap: 10px; align-items: start; }
+  .cz-enc { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); padding: 0 12px; }
+  .cz-enc .r, .cz-l .r { text-align: right; }
+  .cz-l { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--conf); border-radius: 11px; padding: 10px 12px; }
+  .cz-l.off { opacity: .5; }
+  .cz-l input[type=checkbox], .cz-todas input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; margin-top: 2px; }
   .cz-n { font-size: 12px; color: var(--muted); font-weight: 700; padding-top: 2px; }
-  .cz-pidio .t { font-size: 13px; color: var(--text-strong); font-weight: 600; line-height: 1.35; word-break: break-word; }
-  .cz-pidio .s { font-size: 11.5px; color: var(--muted2); margin-top: 4px; }
-  .cz-cant { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--muted2); }
-  .cz-cant input { width: 86px; }
-  .cz-ops { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-  .cz-op { background: var(--surface2); border: 1px solid var(--border); color: var(--muted2); border-radius: 8px; padding: 5px 9px;
-    font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
-  .cz-op[aria-pressed="true"] { border-color: var(--accent); color: var(--text-strong); background: rgba(34,163,71,.14); }
-  .cz-op .tp { text-transform: uppercase; letter-spacing: .4px; font-size: 10px; margin-right: 4px; color: var(--muted); }
-  .cz-op[aria-pressed="true"] .tp { color: var(--accent); }
-  .cz-prod .d { font-size: 13px; color: var(--text); line-height: 1.35; }
+  .cz-prod .d { font-size: 13px; color: var(--text-strong); font-weight: 600; line-height: 1.35; }
   .cz-prod .m { font-size: 11.5px; color: var(--muted2); margin-top: 3px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .cz-prod .pidio { font-size: 11.5px; color: var(--muted2); margin-top: 4px; font-style: italic; }
+  .cz-l .cz-in { width: 100%; text-align: right; padding: 7px 8px; }
+  .cz-l .tot { font-size: 14px; font-weight: 800; color: var(--text-strong); font-variant-numeric: tabular-nums; padding-top: 6px; text-align: right; }
+  .cz-quitar { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; padding: 4px 0 0; line-height: 1; }
+  .cz-quitar:hover { color: var(--red); }
+  .cz-ops { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .cz-op { background: var(--surface2); border: 1px solid var(--border); color: var(--muted2); border-radius: 8px; padding: 4px 8px;
+    font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; }
+  .cz-op[aria-pressed="true"] { border-color: var(--accent); color: var(--text-strong); background: rgba(34,163,71,.14); }
+  .cz-op .tp { text-transform: uppercase; letter-spacing: .4px; font-size: 9.5px; margin-right: 4px; color: var(--muted); }
+  .cz-op[aria-pressed="true"] .tp { color: var(--accent); }
   .chip { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; font-weight: 700; background: var(--surface2); color: var(--muted2); border: 1px solid var(--border); }
   .chip.imp { background: rgba(59,130,246,.15); color: var(--blue-light); border-color: transparent; }
   .chip.nac { background: rgba(148,163,184,.15); color: var(--muted-light); border-color: transparent; }
   .chip.esp { background: rgba(245,158,11,.15); color: var(--amber); border-color: transparent; }
   .chip.ok { background: rgba(34,197,94,.14); color: var(--pos); border-color: transparent; }
   .chip.mal { background: rgba(239,68,68,.14); color: var(--red); border-color: transparent; }
-  .cz-num { text-align: right; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
-  .cz-num input { width: 110px; text-align: right; }
-  .cz-num .sub { font-size: 14px; font-weight: 800; color: var(--text-strong); font-variant-numeric: tabular-nums; }
-  .cz-num .mg { font-size: 11.5px; font-variant-numeric: tabular-nums; }
-  .cz-mas { margin-top: 8px; }
+  .cz-mas { margin-top: 6px; }
   .cz-mas summary { font-size: 11.5px; color: var(--muted2); cursor: pointer; }
   .cz-otras { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
   .cz-otra { display: flex; justify-content: space-between; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
-    padding: 6px 9px; font-size: 12px; color: var(--text); cursor: pointer; text-align: left; font-family: inherit; }
-  .cz-otra:hover { border-color: var(--muted); }
+    padding: 7px 10px; font-size: 12px; color: var(--text); cursor: pointer; text-align: left; font-family: inherit; width: 100%; }
+  .cz-otra:hover, .cz-otra.act { border-color: var(--accent); }
   .cz-buscar { display: flex; gap: 6px; margin-top: 6px; }
   .cz-buscar input { flex: 1; }
-  .cz-vacio { color: var(--muted); font-size: 12.5px; padding: 18px; text-align: center; }
+  .cz-vacio { color: var(--muted); font-size: 12.5px; padding: 22px; text-align: center; background: var(--surface); border: 1px dashed var(--border); border-radius: 11px; }
+
+  /* Totales */
+  .cz-pie { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 10px; }
+  .cz-todas { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted2); cursor: pointer; }
+  .cz-totales { display: grid; grid-template-columns: auto 130px; gap: 4px 16px; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .cz-totales .l { color: var(--muted2); text-align: right; }
+  .cz-totales .v { text-align: right; color: var(--text); }
+  .cz-totales .t { font-size: 18px; font-weight: 800; color: var(--text-strong); }
+
+  /* Requerimiento del cliente (ayuda opcional) */
+  .cz-req { margin-top: 14px; }
+  .cz-req summary { font-size: 13px; font-weight: 700; color: var(--text); cursor: pointer; }
+  .cz-req-g { display: grid; grid-template-columns: 1fr 220px; gap: 12px; margin-top: 10px; }
+  .cz-req textarea { width: 100%; min-height: 120px; resize: vertical; background: var(--surface2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+  .cz-req-b { display: flex; flex-direction: column; gap: 8px; }
+
   .cz-toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--surface2); color: var(--text);
     border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 9px; padding: 9px 14px; font-size: 12.5px; z-index: 300; display: none; }
   .cz-toast.err { border-left-color: var(--red); }
-  .cz-n { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-  .cz-n input[type=checkbox], .cz-todas input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
-  .cz-todas { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted2); cursor: pointer; }
-  .cz-l.off { opacity: .5; }
-  .cz-quitar { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; padding: 0; line-height: 1; }
-  .cz-quitar:hover { color: var(--red); }
-  .cz-agregar { margin-top: 10px; }
-  .chip.suc { font-size: 11.5px; padding: 2px 9px; }
-  @media (max-width: 1000px) { .cz-entrada { grid-template-columns: 1fr; } .cz-l { grid-template-columns: 1fr; } .cz-num { align-items: flex-start; text-align: left; } }
+
+  @media (max-width: 1000px) {
+    .cz-cab { grid-template-columns: 1fr 1fr; } .cz-acc { grid-column: 1 / -1; justify-content: flex-start; }
+    .cz-enc { display: none; }
+    .cz-l { grid-template-columns: 26px 1fr 1fr 26px; }
+    .cz-l .cz-n { display: none; } .cz-l .cz-prod { grid-column: 2 / -1; } .cz-l .tot { grid-column: 2 / 4; }
+    .cz-req-g { grid-template-columns: 1fr; }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="cz-card">
-  <div class="cz-entrada">
-    <div>
-      <label class="cz-f"><span>Requerimiento del cliente</span>
-        <textarea id="texto" spellcheck="false" placeholder="Pega aquí lo que mandó el cliente, una línea por producto. Ejemplos:
-10 cable libre halógeno 2,5mm blanco rollo 100 mts
-5 interruptor automático 2x16A schneider
-Tubo LED T8 18W 120cm 6500K - 30 un
-(también sirven filas copiadas desde Excel)"></textarea></label>
+  <div class="cz-cab">
+    <label class="cz-f"><span>Cliente</span><input id="cliente" maxlength="120" placeholder="Nombre del cliente (opcional)"></label>
+    <label class="cz-f"><span>Lista de precios</span><select id="lista">
+      {% for k, n in listas.items() %}<option value="{{ k }}" {% if k == lista_defecto %}selected{% endif %}>{{ n }}</option>{% endfor %}
+    </select></label>
+    <label class="cz-f"><span>Stock de mi sucursal</span><select id="sucursal">
+      <option value="">Todas las sucursales</option>
+      {% for s in sucursales %}<option value="{{ s }}" {% if s == sucursal_defecto %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select></label>
+    <div class="cz-acc">
+      <button class="cz-btn sec" id="btn-nueva" title="Vacía la cotización para empezar otra">Nueva</button>
+      <button class="cz-btn sec" id="btn-excel">⬇ Excel</button>
+      <button class="cz-btn" id="btn-copiar" title="Copia los códigos de las líneas marcadas, uno por línea, para pegar en SAP">📋 Copiar códigos para SAP</button>
     </div>
-    <div class="cz-lado">
-      <label class="cz-f"><span>Cliente (opcional)</span><input id="cliente" maxlength="120" placeholder="Nombre del cliente"></label>
-      <label class="cz-f"><span>Lista de precios</span><select id="lista">
-        {% for k, n in listas.items() %}<option value="{{ k }}" {% if k == lista_defecto %}selected{% endif %}>{{ n }}</option>{% endfor %}
-      </select></label>
-      <label class="cz-f"><span>Stock de mi sucursal</span><select id="sucursal">
-        <option value="">Todas las sucursales</option>
-        {% for s in sucursales %}<option value="{{ s }}" {% if s == sucursal_defecto %}selected{% endif %}>{{ s }}</option>{% endfor %}
-      </select></label>
-      <button class="cz-btn" id="btn-rec">Reconocer productos</button>
-      <button class="cz-btn sec" id="btn-ia" title="Usa Gemini para leer textos desordenados (correos, PDF copiados)">✨ Interpretar con IA</button>
-      <div class="cz-ayuda">Sugiere <strong>importado primero</strong>, luego la marca que pidió el cliente y luego nacional. Lo que confirmes al descargar queda aprendido.</div>
-    </div>
+  </div>
+
+  <div class="cz-rapida">
+    <input class="cz-in" id="q" autocomplete="off" placeholder="Agregar producto: código, referencia o descripción (ej. 164063 · diferencial 2P 25A · cable thhn 12 awg negro)">
+    <input class="cz-in" id="q-cant" type="number" min="0" step="any" value="1" aria-label="Cantidad" title="Cantidad">
+    <button class="cz-btn" id="q-btn">Agregar</button>
+    <div class="cz-sug" id="sug" role="listbox"></div>
+  </div>
+  <div class="cz-ayuda" style="margin-top:6px">Con el código exacto se agrega directo. Si escribes una descripción, elige de la lista (flechas + Enter).</div>
+</div>
+
+<div class="cz-tabla">
+  <div class="cz-enc"><span></span><span>#</span><span>Producto</span><span class="r">Cantidad</span><span class="r">Precio unit.</span><span class="r">Total</span><span></span></div>
+  <div id="lineas"></div>
+</div>
+
+<div class="cz-pie">
+  <label class="cz-todas"><input type="checkbox" id="sel-todas" checked> Marcar todas</label>
+  <div class="cz-totales">
+    <span class="l">Líneas marcadas</span><span class="v" id="k-n">0</span>
+    <span class="l">Neto</span><span class="v" id="k-neto">$0</span>
+    <span class="l">IVA 19%</span><span class="v" id="k-iva">$0</span>
+    <span class="l t">Total</span><span class="v t" id="k-total">$0</span>
   </div>
 </div>
 
-<div id="resultado">
-  <div class="cz-resumen">
-    <div class="cz-k"><div class="l">Líneas seleccionadas</div><div class="v" id="k-n">0</div></div>
-    <div class="cz-k"><div class="l">Reconocidas con confianza</div><div class="v" id="k-conf">—</div></div>
-    <div class="cz-k"><div class="l">Total neto seleccionado</div><div class="v" id="k-total">$0</div></div>
-    <div class="cz-acc">
-      <label class="cz-todas"><input type="checkbox" id="sel-todas" checked> Todas</label>
-      <button class="cz-btn sec" id="btn-copiar" title="Copia los códigos de las líneas marcadas, uno por línea, para pegar en la grilla de SAP">📋 Copiar códigos seleccionados</button>
-      <button class="cz-btn" id="btn-excel">⬇ Descargar Excel</button>
+<details class="cz-card cz-req">
+  <summary>📩 Pegar requerimiento del cliente (opcional): Musa360 reconoce los productos y los agrega a la cotización</summary>
+  <div class="cz-req-g">
+    <textarea id="texto" spellcheck="false" placeholder="Pega lo que mandó el cliente: una línea por producto, filas de Excel o el correo completo.
+10 cable libre halógeno 2,5mm blanco rollo 100 mts
+5 interruptor automático 2x16A schneider"></textarea>
+    <div class="cz-req-b">
+      <button class="cz-btn" id="btn-rec">Reconocer y agregar</button>
+      <button class="cz-btn sec" id="btn-ia" title="Usa Gemini para leer correos o textos desordenados">✨ Interpretar con IA</button>
+      <div class="cz-ayuda">Sugiere <strong>importado primero</strong>, luego la marca que pidió el cliente y luego nacional. Puedes cambiar la opción en cada línea.</div>
     </div>
   </div>
-  <div class="cz-lineas" id="lineas"></div>
-  <div class="cz-card cz-agregar">
-    <div class="cz-f"><span>Agregar producto a la cotización</span></div>
-    <div class="cz-buscar"><input class="cz-in" id="agregar-q" placeholder="Busca por código, referencia o descripción (ej. 164063, diferencial 2P 25A)"><button class="cz-btn sec" id="agregar-btn">Buscar</button></div>
-    <div class="cz-otras" id="agregar-res"></div>
-  </div>
-  <p class="cz-ayuda" style="margin-top:10px">Musa360 no cierra la cotización: marca las líneas, copia los códigos y pégalos en SAP para generar la cotización allá.</p>
-</div>
+</details>
+
+<p class="cz-ayuda" style="margin-top:12px">Musa360 no cierra la cotización: marca las líneas, copia los códigos y genérala en SAP. Los precios son de la lista de SAP elegida (netos).</p>
 <div class="cz-toast" id="toast" role="status" aria-live="polite"></div>
 {% endblock %}
 
@@ -137,13 +168,17 @@ Tubo LED T8 18W 120cm 6500K - 30 un
 (() => {
 const TIPO = {aprendido: 'Aprendido', exacto: 'Código exacto', importado: 'Importado', marca: 'Marca pedida', nacional: 'Nacional', otra_linea: 'Otra línea', parecido: 'Parecido', manual: 'Elegido'};
 const CONF = {alta: 'var(--pos)', media: 'var(--amber)', baja: 'var(--red)', sin: 'var(--red)'};
-let L = [];   // lineas con estado: elegida (ficha), cantidad, precio
+const CLAVE = 'musa360_cotizador_borrador';
+let L = [];
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const pesos = v => '$' + Math.round(v || 0).toLocaleString('es-CL');
 const num = v => (+v || 0).toLocaleString('es-CL', {maximumFractionDigits: 2});
+const $ = id => document.getElementById(id);
+const suc = () => $('sucursal').value;
+const lista = () => $('lista').value;
 function toast(t, err) {
-  const e = document.getElementById('toast'); e.textContent = t; e.className = 'cz-toast' + (err ? ' err' : ''); e.style.display = 'block';
+  const e = $('toast'); e.textContent = t; e.className = 'cz-toast' + (err ? ' err' : ''); e.style.display = 'block';
   clearTimeout(toast.t); toast.t = setTimeout(() => { e.style.display = 'none'; }, 3500);
 }
 async function api(url, body) {
@@ -153,111 +188,139 @@ async function api(url, body) {
   return j;
 }
 
-const suc = () => document.getElementById('sucursal').value;
-const lista = () => document.getElementById('lista').value;
-
-async function reconocer(ia) {
-  const texto = document.getElementById('texto').value;
-  if (!texto.trim()) return toast('Pega primero el requerimiento del cliente, o agrega productos abajo.', true);
-  const b1 = document.getElementById('btn-rec'), b2 = document.getElementById('btn-ia');
-  b1.disabled = b2.disabled = true;
-  (ia ? b2 : b1).textContent = ia ? '✨ Leyendo con IA…' : 'Reconociendo…';
+// ── Borrador en el navegador (solo comodidad: si falla, la pantalla funciona igual) ──
+function guardar() {
+  try { localStorage.setItem(CLAVE, JSON.stringify({L, cliente: $('cliente').value, lista: lista(), sucursal: suc()})); } catch (e) {}
+}
+function restaurar() {
   try {
-    const r = await api('/api/cotizador/reconocer', {texto, ia, lista: lista(), sucursal: suc()});
-    const nuevas = r.lineas.map(l => {
-      const f = l.opciones.find(o => o.codigo === l.elegida) || null;
-      return {...l, ficha: f, precio: f ? f.precio : 0, origen: 'texto', sel: true};
-    });
-    // Un requerimiento nuevo reemplaza lo leido antes, pero conserva lo agregado a mano.
-    L = nuevas.concat(L.filter(l => l.origen === 'manual'));
-    pintar();
-    if (r.modelo_ia) toast(`Leído con ${r.modelo_ia}: ${nuevas.length} productos.`);
-  } catch (e) { toast(e.message, true); }
-  finally { b1.disabled = b2.disabled = false; b1.textContent = 'Reconocer productos'; b2.textContent = '✨ Interpretar con IA'; }
+    const b = JSON.parse(localStorage.getItem(CLAVE) || 'null');
+    if (!b || !Array.isArray(b.L)) return;
+    L = b.L; $('cliente').value = b.cliente || '';
+    if (b.lista) $('lista').value = b.lista;
+    if (b.sucursal !== undefined) $('sucursal').value = b.sucursal;
+  } catch (e) {}
 }
 
-function stockTxt(f) {
+// ── Pintado ──
+function stockOtras(f) {
   const s = Object.entries(f.stock || {}).filter(([k]) => k !== suc()).map(([k, v]) => `${k} ${num(v)}`).join(' · ');
   return s ? (suc() ? 'Otras sucursales: ' : '') + s : (suc() ? 'Sin stock en otras sucursales' : 'Sin stock en sucursales');
 }
 function stockChip(f) {
-  if (suc()) {
-    const v = (f.stock || {})[suc()] || 0;
-    return `<span class="chip suc ${v > 0 ? 'ok' : 'mal'}">${esc(suc())}: ${num(v)}</span>`;
-  }
+  if (suc()) { const v = (f.stock || {})[suc()] || 0; return `<span class="chip ${v > 0 ? 'ok' : 'mal'}">${esc(suc())}: ${num(v)}</span>`; }
   return `<span class="chip ${f.stock_total > 0 ? 'ok' : 'mal'}">stock ${num(f.stock_total)}</span>`;
 }
-function stockCorto(f) {
-  return suc() ? `${esc(suc())} ${num((f.stock || {})[suc()] || 0)} · total ${num(f.stock_total)}` : `stock ${num(f.stock_total)}`;
-}
-function proc(f) {
-  return `<span class="chip ${f.procedencia === 'Importado' ? 'imp' : f.procedencia === 'Especial' ? 'esp' : 'nac'}">${esc(f.procedencia)}</span>`;
-}
-function opcionBtn(o) {
-  return `<button class="cz-otra" data-cod="${o.codigo}"><span>${o.codigo} · ${esc(o.descripcion)} ${proc(o)}</span><span>${pesos(o.precio)} · ${stockCorto(o)}</span></button>`;
-}
+const stockCorto = f => suc() ? `${esc(suc())} ${num((f.stock || {})[suc()] || 0)} · total ${num(f.stock_total)}` : `stock ${num(f.stock_total)}`;
+const proc = f => `<span class="chip ${f.procedencia === 'Importado' ? 'imp' : f.procedencia === 'Especial' ? 'esp' : 'nac'}">${esc(f.procedencia)}</span>`;
+const opcionBtn = o => `<button class="cz-otra" data-cod="${o.codigo}"><span>${o.codigo} · ${esc(o.descripcion)} ${proc(o)}</span><span>${pesos(o.precio)} · ${stockCorto(o)}</span></button>`;
+
 function fila(l, i) {
-  const f = l.ficha;
-  const sub = f ? l.cantidad * l.precio : 0;
+  const f = l.ficha, leida = l.origen === 'texto';
   const caja = f && f.embalaje > 1 && l.cantidad % f.embalaje !== 0 ? `<span class="chip esp">embalaje de ${num(f.embalaje)}</span>` : '';
-  const manual = l.origen === 'manual';
-  return `<div class="cz-l ${l.sel ? '' : 'off'}" style="--conf:${manual ? 'var(--blue)' : CONF[l.confianza]}" data-i="${i}">
-    <div class="cz-n"><span>${i + 1}</span><input type="checkbox" data-sel ${l.sel ? 'checked' : ''} aria-label="Incluir línea ${i + 1}">
-      <button class="cz-quitar" data-accion="quitar" title="Quitar línea" aria-label="Quitar línea ${i + 1}">✕</button></div>
-    <div class="cz-pidio">
-      <div class="t">${esc(l.descripcion)}</div>
-      <div class="s">${manual ? 'Agregado a mano' : (l.marca_detectada ? 'Marca pedida: ' + esc(l.marca_detectada) + ' · ' : '') + 'Confianza ' + esc(l.confianza)}</div>
-      <label class="cz-cant">Cantidad <input class="cz-in" type="number" min="0" step="any" value="${l.cantidad}" data-campo="cantidad">${l.cantidad_detectada === false ? '<span class="chip esp">revisar</span>' : ''}</label>
-    </div>
-    <div>
-      ${manual ? '' : `<div class="cz-ops">${l.opciones.map(o => `<button class="cz-op" data-cod="${o.codigo}" aria-pressed="${f && f.codigo === o.codigo}"><span class="tp">${TIPO[o.tipo] || ''}</span>${o.codigo}</button>`).join('')}</div>`}
-      ${f ? `<div class="cz-prod"><div class="d">${esc(f.descripcion)}</div>
-        <div class="m"><b>${f.codigo}</b> · ${esc(f.marca || '')} ${proc(f)} ${stockChip(f)}${caja}</div>
-        <div class="m">${esc(stockTxt(f))}</div></div>`
-        : '<div class="cz-vacio" style="padding:6px;text-align:left">No encontré este producto. Búscalo abajo.</div>'}
-      <details class="cz-mas" ${f ? '' : 'open'}><summary>${manual ? 'Cambiar producto' : 'Otras alternativas y búsqueda'}</summary>
+  return `<div class="cz-l ${l.sel ? '' : 'off'}" style="--conf:${leida ? CONF[l.confianza] : 'var(--accent)'}" data-i="${i}">
+    <input type="checkbox" data-sel ${l.sel ? 'checked' : ''} aria-label="Incluir línea ${i + 1}">
+    <span class="cz-n">${i + 1}</span>
+    <div class="cz-prod">
+      ${f ? `<div class="d">${esc(f.descripcion)}</div>
+        <div class="m"><b>${f.codigo}</b> · ${esc(f.marca || '')} ${proc(f)} ${stockChip(f)} ${caja}</div>
+        <div class="m">${esc(stockOtras(f))}</div>`
+        : `<div class="d" style="color:var(--red)">Sin producto: búscalo en "Cambiar producto"</div>`}
+      ${leida ? `<div class="pidio">Pidió: «${esc(l.descripcion)}» · confianza ${esc(l.confianza)}${l.cantidad_detectada === false ? ' · revisar cantidad' : ''}</div>
+        <div class="cz-ops">${l.opciones.map(o => `<button class="cz-op" data-cod="${o.codigo}" aria-pressed="${f && f.codigo === o.codigo}"><span class="tp">${TIPO[o.tipo] || ''}</span>${o.codigo}</button>`).join('')}</div>` : ''}
+      <details class="cz-mas" ${f ? '' : 'open'}><summary>Cambiar producto</summary>
         <div class="cz-otras">${(l.otras || []).map(opcionBtn).join('')}</div>
-        <div class="cz-buscar"><input class="cz-in" placeholder="Buscar por código, referencia o descripción" data-buscar><button class="cz-btn sec" data-accion="buscar">Buscar</button></div>
+        <div class="cz-buscar"><input class="cz-in" style="text-align:left" placeholder="Buscar por código, referencia o descripción" data-buscar><button class="cz-btn sec" data-accion="buscar">Buscar</button></div>
         <div class="cz-otras" data-resultados></div>
       </details>
     </div>
-    <div class="cz-num">
-      <label style="font-size:11px;color:var(--muted)">Precio unitario<br><input class="cz-in" type="number" min="0" step="1" value="${Math.round(l.precio)}" data-campo="precio" ${f ? '' : 'disabled'}></label>
-      <div class="sub">${pesos(sub)}</div>
-    </div>
+    <input class="cz-in" type="number" min="0" step="any" value="${l.cantidad}" data-campo="cantidad" aria-label="Cantidad línea ${i + 1}">
+    <input class="cz-in" type="number" min="0" step="1" value="${Math.round(l.precio)}" data-campo="precio" aria-label="Precio línea ${i + 1}" ${f ? '' : 'disabled'}>
+    <div class="tot">${pesos(f ? l.cantidad * l.precio : 0)}</div>
+    <button class="cz-quitar" data-accion="quitar" title="Quitar línea" aria-label="Quitar línea ${i + 1}">✕</button>
   </div>`;
 }
 function pintar() {
-  document.getElementById('lineas').innerHTML = L.length ? L.map(fila).join('')
-    : '<div class="cz-vacio">Pega el requerimiento del cliente arriba, o agrega productos uno a uno aquí abajo.</div>';
+  $('lineas').innerHTML = L.length ? L.map(fila).join('')
+    : '<div class="cz-vacio">La cotización está vacía. Agrega productos arriba o pega el requerimiento del cliente abajo.</div>';
   totales();
 }
 function totales() {
   const sel = L.filter(l => l.sel && l.ficha);
-  const leidas = L.filter(l => l.origen === 'texto');
-  document.getElementById('k-n').textContent = `${sel.length} de ${L.length}`;
-  document.getElementById('k-conf').textContent = leidas.length ? `${leidas.filter(l => l.confianza === 'alta' || l.confianza === 'media').length} de ${leidas.length}` : '—';
-  document.getElementById('k-total').textContent = pesos(sel.reduce((s, l) => s + l.cantidad * l.precio, 0));
-  document.getElementById('sel-todas').checked = L.length > 0 && L.every(l => l.sel);
+  const neto = sel.reduce((s, l) => s + l.cantidad * l.precio, 0);
+  $('k-n').textContent = `${sel.length} de ${L.length}`;
+  $('k-neto').textContent = pesos(neto);
+  $('k-iva').textContent = pesos(neto * 0.19);
+  $('k-total').textContent = pesos(neto * 1.19);
+  $('sel-todas').checked = L.length > 0 && L.every(l => l.sel);
+  guardar();
 }
-function repintarFila(i) {
-  document.querySelector(`.cz-l[data-i="${i}"]`).outerHTML = fila(L[i], i);
-  totales();
+function repintarFila(i) { document.querySelector(`.cz-l[data-i="${i}"]`).outerHTML = fila(L[i], i); totales(); }
+
+function agregarFicha(f, cantidad) {
+  const ya = L.findIndex(l => l.ficha && l.ficha.codigo === f.codigo);
+  if (ya >= 0) {                  // el mismo codigo dos veces: suma la cantidad
+    L[ya].cantidad = (+L[ya].cantidad || 0) + cantidad; L[ya].sel = true;
+    pintar(); toast(`${f.codigo} ya estaba: cantidad ${num(L[ya].cantidad)}.`); return;
+  }
+  L.push({descripcion: f.descripcion, cantidad, cantidad_detectada: true, opciones: [{...f, tipo: 'manual'}], otras: [],
+          confianza: 'alta', ficha: f, precio: f.precio, elegida: f.codigo, origen: 'manual', sel: true});
+  pintar(); toast(`Agregado ${f.codigo} × ${num(cantidad)}.`);
 }
 function elegir(i, ficha) {
-  // Solo se aprende lo que el vendedor eligio a mano: aceptar una sugerencia de baja confianza
-  // sin mirarla no debe quedar como "correcto" para la proxima vez.
+  // Solo se aprende lo que el vendedor eligio a mano (no aceptar sugerencias sin mirarlas).
   L[i].ficha = ficha; L[i].precio = ficha.precio; L[i].elegida = ficha.codigo;
   if (L[i].origen === 'texto') L[i].tocada = true; else L[i].descripcion = ficha.descripcion;
   if (!L[i].opciones.some(o => o.codigo === ficha.codigo)) L[i].opciones.push({...ficha, tipo: 'manual'});
   repintarFila(i);
 }
 async function buscarProductos(q) {
-  const r = await api(`/api/cotizador/buscar?q=${encodeURIComponent(q)}&lista=${lista()}&sucursal=${suc()}`);
-  return r.resultados;
+  return (await api(`/api/cotizador/buscar?q=${encodeURIComponent(q)}&lista=${lista()}&sucursal=${suc()}`)).resultados;
 }
 
-const cont = document.getElementById('lineas');
+// ── Fila rapida: codigo / descripcion + cantidad ──
+let sug = [], act = -1, tBusca;
+function cerrarSug() { $('sug').classList.remove('on'); sug = []; act = -1; }
+function pintarSug() {
+  $('sug').innerHTML = sug.length ? sug.map((o, k) => opcionBtn(o).replace('class="cz-otra"', `class="cz-otra${k === act ? ' act' : ''}" data-k="${k}"`)).join('')
+    : '<div class="cz-vacio" style="border:0">Sin resultados.</div>';
+  $('sug').classList.add('on');
+}
+async function buscarRapida() {
+  const q = $('q').value.trim();
+  if (q.length < 2) return cerrarSug();
+  try { sug = await buscarProductos(q); act = sug.length ? 0 : -1; pintarSug(); } catch (e) { toast(e.message, true); }
+}
+function cantRapida() { return Math.max(0, +$('q-cant').value || 1); }
+function confirmarRapida(o) {
+  agregarFicha(o, cantRapida());
+  $('q').value = ''; $('q-cant').value = 1; cerrarSug(); $('q').focus();
+}
+async function agregarRapida() {
+  const q = $('q').value.trim();
+  if (!q) return;
+  if (sug.length && act >= 0) return confirmarRapida(sug[act]);
+  try {
+    const r = await buscarProductos(q);
+    const exacto = /^\d{6}$/.test(q) ? r.find(o => String(o.codigo) === q) : null;
+    if (exacto) return confirmarRapida(exacto);
+    sug = r; act = r.length ? 0 : -1; pintarSug();
+  } catch (e) { toast(e.message, true); }
+}
+$('q').addEventListener('input', () => { clearTimeout(tBusca); tBusca = setTimeout(buscarRapida, 300); });
+$('q').addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown' && sug.length) { e.preventDefault(); act = (act + 1) % sug.length; pintarSug(); }
+  else if (e.key === 'ArrowUp' && sug.length) { e.preventDefault(); act = (act - 1 + sug.length) % sug.length; pintarSug(); }
+  else if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tBusca); agregarRapida(); }
+  else if (e.key === 'Escape') cerrarSug();
+});
+$('q-cant').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); agregarRapida(); } });
+$('q-btn').onclick = agregarRapida;
+$('sug').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) confirmarRapida(sug[+b.dataset.k]); });
+document.addEventListener('click', e => { if (!e.target.closest('.cz-rapida')) cerrarSug(); });
+
+// ── Lineas ──
+const cont = $('lineas');
 cont.addEventListener('click', async e => {
   const row = e.target.closest('.cz-l'); if (!row) return;
   const i = +row.dataset.i, l = L[i];
@@ -287,64 +350,80 @@ cont.addEventListener('change', e => {
   L[i][e.target.dataset.campo] = Math.max(0, +e.target.value || 0);
   repintarFila(i);
 });
-document.getElementById('sel-todas').onchange = e => { L.forEach(l => { l.sel = e.target.checked; }); pintar(); };
+$('sel-todas').onchange = e => { L.forEach(l => { l.sel = e.target.checked; }); pintar(); };
 
-// Agregar productos a mano (cotizacion completa, no solo lo que pidio el cliente)
-async function buscarAgregar() {
-  const q = document.getElementById('agregar-q').value.trim();
-  if (q.length < 2) return;
+// ── Requerimiento del cliente ──
+async function reconocer(ia) {
+  const texto = $('texto').value;
+  if (!texto.trim()) return toast('Pega primero el requerimiento del cliente.', true);
+  const b1 = $('btn-rec'), b2 = $('btn-ia');
+  b1.disabled = b2.disabled = true;
+  (ia ? b2 : b1).textContent = ia ? '✨ Leyendo con IA…' : 'Reconociendo…';
   try {
-    const res = await buscarProductos(q);
-    buscarAgregar.res = res;
-    document.getElementById('agregar-res').innerHTML = res.map(opcionBtn).join('') || '<div class="cz-vacio">Sin resultados.</div>';
-  } catch (err) { toast(err.message, true); }
+    const r = await api('/api/cotizador/reconocer', {texto, ia, lista: lista(), sucursal: suc()});
+    const nuevas = r.lineas.map(l => {
+      const f = l.opciones.find(o => o.codigo === l.elegida) || null;
+      return {...l, ficha: f, precio: f ? f.precio : 0, origen: 'texto', sel: true};
+    });
+    L = L.concat(nuevas);      // se agregan a la cotizacion que ya estaba armando
+    pintar();
+    $('texto').value = '';
+    toast(`${r.modelo_ia ? 'Leído con ' + r.modelo_ia + ': ' : ''}${nuevas.length} productos agregados. Revisa las líneas en rojo o amarillo.`);
+  } catch (e) { toast(e.message, true); }
+  finally { b1.disabled = b2.disabled = false; b1.textContent = 'Reconocer y agregar'; b2.textContent = '✨ Interpretar con IA'; }
 }
-document.getElementById('agregar-btn').onclick = buscarAgregar;
-document.getElementById('agregar-q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); buscarAgregar(); } });
-document.getElementById('agregar-res').addEventListener('click', e => {
-  const b = e.target.closest('[data-cod]'); if (!b) return;
-  const f = (buscarAgregar.res || []).find(o => o.codigo === +b.dataset.cod); if (!f) return;
-  L.push({descripcion: f.descripcion, cantidad: 1, cantidad_detectada: true, opciones: [{...f, tipo: 'manual'}], otras: [],
-          confianza: 'alta', ficha: f, precio: f.precio, elegida: f.codigo, origen: 'manual', sel: true});
-  pintar();
-  document.getElementById('agregar-res').innerHTML = '';
-  document.getElementById('agregar-q').value = '';
-  toast(`Agregado ${f.codigo}. Ajusta la cantidad en la línea ${L.length}.`);
-  document.querySelector(`.cz-l[data-i="${L.length - 1}"] [data-campo="cantidad"]`).focus();
-});
+$('btn-rec').onclick = () => reconocer(false);
+$('btn-ia').onclick = () => reconocer(true);
 
+// ── Salida ──
 function lineasElegidas() {
   return L.filter(l => l.sel && l.ficha && l.cantidad > 0).map(l => ({codigo: l.ficha.codigo, descripcion: l.ficha.descripcion, marca: l.ficha.marca,
     cantidad: l.cantidad, precio: Math.round(l.precio), texto: l.descripcion, aprender: !!l.tocada}));
 }
-document.getElementById('btn-excel').onclick = async () => {
+$('btn-copiar').onclick = async () => {
+  const lineas = lineasElegidas();
+  if (!lineas.length) return toast('Marca al menos una línea con producto.', true);
+  // En SAP basta con pegar el codigo (decision del usuario): uno por linea, en el orden de la cotizacion.
+  try {
+    await navigator.clipboard.writeText(lineas.map(l => l.codigo).join(String.fromCharCode(10)));
+    const pares = lineas.filter(l => l.aprender).map(l => ({texto: l.texto, codigo: l.codigo}));
+    if (pares.length) api('/api/cotizador/aprender', {pares}).catch(() => {});
+    toast(`Copiados ${lineas.length} códigos. Pégalos en la grilla de SAP.`);
+  } catch (e) { toast('El navegador no permitió copiar. Usa "Excel".', true); }
+};
+$('btn-excel').onclick = async () => {
   const lineas = lineasElegidas();
   if (!lineas.length) return toast('Marca al menos una línea con producto.', true);
   const r = await fetch('/api/cotizador/excel', {method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({lineas, cliente: document.getElementById('cliente').value})});
+    body: JSON.stringify({lineas, cliente: $('cliente').value})});
   if (!r.ok) { const j = await r.json().catch(() => ({})); return toast(j.msg || 'No se pudo generar el Excel.', true); }
   const blob = await r.blob(); const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = 'cotizacion_musa360.xlsx'; a.click(); URL.revokeObjectURL(a.href);
   toast(`Excel descargado con ${lineas.length} líneas.`);
 };
-document.getElementById('btn-copiar').onclick = async () => {
-  const lineas = lineasElegidas();
-  if (!lineas.length) return toast('Marca al menos una línea con producto.', true);
-  // En SAP basta con pegar el codigo (decision del usuario): uno por linea, en el orden de la cotizacion.
-  const codigos = lineas.map(l => l.codigo).join(String.fromCharCode(10));
-  try {
-    await navigator.clipboard.writeText(codigos);
-    const pares = lineas.filter(l => l.aprender).map(l => ({texto: l.texto, codigo: l.codigo}));
-    if (pares.length) api('/api/cotizador/aprender', {pares}).catch(() => {});
-    toast(`Copiados ${lineas.length} códigos. Pégalos en la grilla de SAP.`);
-  } catch (e) { toast('El navegador no permitió copiar. Usa "Descargar Excel".', true); }
+$('btn-nueva').onclick = () => {
+  if (L.length && !confirm('¿Vaciar la cotización y empezar otra?')) return;
+  L = []; $('cliente').value = ''; pintar(); $('q').focus();
 };
-document.getElementById('btn-rec').onclick = () => reconocer(false);
-document.getElementById('btn-ia').onclick = () => reconocer(true);
-// Cambiar la lista o la sucursal vuelve a leer el requerimiento (sin gastar IA) para recalcular precios y stock.
-document.getElementById('lista').onchange = () => { if (L.some(l => l.origen === 'texto')) reconocer(false); };
-document.getElementById('sucursal').onchange = () => { if (L.some(l => l.origen === 'texto')) reconocer(false); else pintar(); };
+$('cliente').addEventListener('input', guardar);
+// Cambiar lista o sucursal recalcula precio y stock de cada linea (sin volver a leer el requerimiento).
+async function refrescarFichas() {
+  for (const l of L) {
+    if (!l.ficha) continue;
+    try {
+      const r = await buscarProductos(String(l.ficha.codigo));
+      const f = r.find(o => o.codigo === l.ficha.codigo);
+      if (f) { const tipo = l.ficha.tipo; l.ficha = {...f, tipo}; l.precio = f.precio; }
+    } catch (e) {}
+  }
+  pintar();
+}
+$('lista').onchange = () => { refrescarFichas(); toast('Precios actualizados con la nueva lista.'); };
+$('sucursal').onchange = () => { refrescarFichas(); };
+
+restaurar();
 pintar();
+$('q').focus();
 })();
 </script>
 {% endblock %}
