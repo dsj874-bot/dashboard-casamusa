@@ -44,7 +44,8 @@ STOP = {"de", "la", "el", "los", "las", "con", "para", "y", "en", "un", "una", "
         "m", "rollo", "valor", "tira"}
 COLORES = {"blanco", "negro", "rojo", "azul", "verde", "gris", "amarillo", "cafe", "beige", "plata", "aluminio"}
 SINONIMOS = {
-    "conductor": "cable", "alambre": "cable", "mts": "m", "mt": "m", "metro": "m", "metros": "m", "mtrs": "m",
+    # "alambre" NO es sinonimo de cable: en el catalogo ALAMBRE = H07V (NYA), CABLE = flexible / LH / THHN.
+    "conductor": "cable", "mts": "m", "mt": "m", "metro": "m", "metros": "m", "mtrs": "m",
     "mm2": "mm", "pulgada": "pulg", "pulgadas": "pulg", "plg": "pulg", "termomagnetico": "automatico",
     "tomacorriente": "enchufe", "toma": "enchufe", "lampara": "ampolleta", "ampolletas": "ampolleta",
     "foco": "proyector", "blanca": "blanco", "negra": "negro", "roja": "rojo", "amarilla": "amarillo",
@@ -73,7 +74,8 @@ def _norm(txt):
                  ("luz fria", " 6500 "), ("blanco frio", " 6500 "), ("fria", " 6500 "), ("frio", " 6500 "),
                  ("luz calida", " 3000 "), ("calida", " 3000 "), ("calido", " 3000 "), ("luz neutra", " 4000 ")):
         t = re.sub(rf"\b{a}\b", b, t)
-    t = re.sub(r"(\d)\s*(mm2|mm|cm|mts|mt|m|w|v|a|k|lm|ma|kw|kv|ip)\b", r"\1 \2", t)
+    t = re.sub(r"(\d)\s*(awg|mm2|mm|cm|mts|mt|m|w|v|a|k|lm|ma|kw|kv|ip)\b", r"\1 \2", t)
+    t = re.sub(r"\bn[°o]?\s*(\d{1,2})\s+awg\b", r"\1 awg", t)          # "N°12 AWG" -> "12 awg"
     return t
 
 
@@ -89,7 +91,14 @@ def _tokens(txt):
             out += tok.split("x")
             continue
         out.append(tok)
-    return out
+    # Medida con su unidad como una sola pieza ("10awg", "2.5mm", "16a", "50w"): asi "10 AWG" no
+    # calza con "10 PARES 24AWG", y "16A" no con un "16" cualquiera.
+    medidas = [a + b for a, b in zip(out, out[1:]) if _es_num(a) and "x" not in a and b in UNIDADES_MEDIDA]
+    return out + medidas
+
+
+UNIDADES_MEDIDA = {"awg", "mm", "cm", "a", "w", "v", "k", "ma", "kw", "kv", "lm"}
+_RE_MEDIDA = re.compile(r"\d+(?:\.\d+)?(?:awg|mm|cm|a|w|v|k|ma|kw|kv|lm)")
 
 
 def _es_num(t):
@@ -278,7 +287,10 @@ def buscar(descripcion, referencia=None, limite=30):
                     for c in inv[t2]:
                         if t not in P[c]["toks"]:
                             puntos[c] += 0.8 * peso[t]
-    nums = [t for t in qtok if _es_num(t)]
+    # Medidas obligatorias: las que traen unidad ("10awg") y los numeros sueltos que no son parte de una.
+    con_unidad = [t for t in qtok if _RE_MEDIDA.fullmatch(t)]
+    partes = {re.match(r"\d+(?:\.\d+)?", t).group(0) for t in con_unidad}
+    nums = con_unidad + [t for t in qtok if _es_num(t) and t not in partes]
     res = []
     for c in set(puntos) | exactos:
         p = P[c]
@@ -331,8 +343,29 @@ def _aprendidos(textos):
     return out
 
 
+def _primera(descripcion):
+    """Primera palabra del producto en el catalogo (CABLE, ALAMBRE, INTERRUPTOR...)."""
+    t = _tokens(descripcion)
+    return t[0] if t else ""
+
+
+def _expandir(lineas):
+    """"cable 10/12 awg" son DOS medidas: una linea por medida (misma cantidad, para revisar)."""
+    out = []
+    for l in lineas:
+        m = re.search(r"\b(\d{1,2})\s*/\s*(\d{1,2})\s*(awg)\b", l["descripcion"], re.I)
+        if m:
+            for medida in (m.group(1), m.group(2)):
+                d = l["descripcion"][:m.start()] + f"{medida} AWG" + l["descripcion"][m.end():]
+                out.append({**l, "descripcion": d, "cantidad_detectada": False})
+        else:
+            out.append(l)
+    return out[:MAX_LINEAS]
+
+
 def reconocer(lineas, lista=LISTA_DEFECTO):
     lista = lista if lista in LISTAS else LISTA_DEFECTO
+    lineas = _expandir(lineas)
     cat = _catalogo()
     aprendido = _aprendidos([l["descripcion"] for l in lineas])
     out = []
@@ -376,6 +409,16 @@ def reconocer(lineas, lista=LISTA_DEFECTO):
         nac = sorted([x for x in pool if cat["P"][x[1]]["id_procedencia"] not in IMPORTADOS | ESPECIALES], key=orden, reverse=True)
         if nac:
             agregar(nac[0][1], nac[0][0], "nacional")
+        # Otra linea de producto que el cliente tambien nombro: "cable alambre 4mm" puede ser
+        # CABLE libre de halogeno o ALAMBRE NYA; se muestran las dos.
+        qset = set(_tokens(l["descripcion"]))
+        primeras = {_primera(cat["P"][o["codigo"]]["descripcion"]) for o in opciones}
+        for s, c in sorted(res, key=orden, reverse=True):
+            pw = _primera(cat["P"][c]["descripcion"])
+            if s >= max(0.35, top * 0.6) and pw in qset and pw not in primeras \
+                    and cat["P"][c]["id_procedencia"] not in ESPECIALES:
+                agregar(c, s, "otra_linea")
+                break
         if not opciones and res:
             agregar(res[0][1], res[0][0], "parecido")
         otras = [_ficha(c, s, lista) for s, c in res[:10] if c not in usados][:6]
@@ -406,6 +449,10 @@ def aprender(pares, usuario):
     if filas:
         with db.conexion_pool() as conn:
             with conn.cursor() as cur:
+                # Lo ultimo que eligio el vendedor para ese texto reemplaza lo aprendido antes
+                # (si no, un error aprendido seguiria ganando por tener mas "veces").
+                cur.executemany("DELETE FROM cotizador_aprendizaje WHERE texto_norm = %s AND codigo <> %s",
+                                [(t, c) for t, c, _ in filas])
                 cur.executemany("""INSERT INTO cotizador_aprendizaje (texto_norm, codigo, usuario) VALUES (%s,%s,%s)
                                    ON CONFLICT (texto_norm, codigo) DO UPDATE
                                    SET veces = cotizador_aprendizaje.veces + 1, usuario = EXCLUDED.usuario, actualizado_en = now()""",

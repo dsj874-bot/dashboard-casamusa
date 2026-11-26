@@ -1138,8 +1138,9 @@ def api_cotizador_excel():
     if not lineas:
         return jsonify({"ok": False, "msg": "No hay líneas con producto elegido."}), 400
     try:
-        data_loader_cotizador_pg.aprender([{"texto": l.get("texto"), "codigo": l["codigo"]} for l in lineas],
-                                          session.get("usuario"))
+        # Solo lo que el vendedor eligio a mano (ver cotizador.html: "tocada").
+        data_loader_cotizador_pg.aprender([{"texto": l.get("texto"), "codigo": l["codigo"]}
+                                           for l in lineas if l.get("aprender")], session.get("usuario"))
     except Exception as e:
         app.logger.warning("Cotizador: no se pudo guardar lo aprendido: %s", e)
     buf = data_loader_cotizador_pg.excel(lineas, (d.get("cliente") or "")[:120])

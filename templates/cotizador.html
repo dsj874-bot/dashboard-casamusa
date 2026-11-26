@@ -116,7 +116,7 @@ Tubo LED T8 18W 120cm 6500K - 30 un
 {% block extra_scripts %}
 <script>
 (() => {
-const TIPO = {aprendido: 'Aprendido', exacto: 'Código exacto', importado: 'Importado', marca: 'Marca pedida', nacional: 'Nacional', parecido: 'Parecido', manual: 'Elegido'};
+const TIPO = {aprendido: 'Aprendido', exacto: 'Código exacto', importado: 'Importado', marca: 'Marca pedida', nacional: 'Nacional', otra_linea: 'Otra línea', parecido: 'Parecido', manual: 'Elegido'};
 const CONF = {alta: 'var(--pos)', media: 'var(--amber)', baja: 'var(--red)', sin: 'var(--red)'};
 let L = [];   // lineas con estado: elegida (ficha), cantidad, precio
 
@@ -202,7 +202,9 @@ function totales() {
   document.getElementById('k-total').textContent = pesos(total);
 }
 function elegir(i, ficha) {
-  L[i].ficha = ficha; L[i].precio = ficha.precio; L[i].elegida = ficha.codigo;
+  // Solo se aprende lo que el vendedor eligio a mano: aceptar una sugerencia de baja confianza
+  // sin mirarla no debe quedar como "correcto" para la proxima vez.
+  L[i].ficha = ficha; L[i].precio = ficha.precio; L[i].elegida = ficha.codigo; L[i].tocada = true;
   if (!L[i].opciones.some(o => o.codigo === ficha.codigo)) L[i].opciones.push({...ficha, tipo: 'manual'});
   const div = document.querySelector(`.cz-l[data-i="${i}"]`);
   div.outerHTML = fila(L[i], i);
@@ -241,7 +243,7 @@ cont.addEventListener('change', e => {
 
 function lineasElegidas() {
   return L.filter(l => l.ficha && l.cantidad > 0).map(l => ({codigo: l.ficha.codigo, descripcion: l.ficha.descripcion, marca: l.ficha.marca,
-    cantidad: l.cantidad, precio: Math.round(l.precio), texto: l.descripcion}));
+    cantidad: l.cantidad, precio: Math.round(l.precio), texto: l.descripcion, aprender: !!l.tocada}));
 }
 document.getElementById('btn-excel').onclick = async () => {
   const lineas = lineasElegidas();
@@ -260,7 +262,8 @@ document.getElementById('btn-copiar').onclick = async () => {
   const tsv = lineas.map(l => l.codigo).join('\n');
   try {
     await navigator.clipboard.writeText(tsv);
-    api('/api/cotizador/aprender', {pares: lineas.map(l => ({texto: l.texto, codigo: l.codigo}))}).catch(() => {});
+    const pares = lineas.filter(l => l.aprender).map(l => ({texto: l.texto, codigo: l.codigo}));
+    if (pares.length) api('/api/cotizador/aprender', {pares}).catch(() => {});
     toast(`Copiados ${lineas.length} códigos. Pégalos en la grilla de SAP.`);
   } catch (e) { toast('El navegador no permitió copiar. Usa "Descargar Excel".', true); }
 };

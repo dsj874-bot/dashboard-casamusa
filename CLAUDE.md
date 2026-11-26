@@ -1472,3 +1472,8 @@ Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportu
 - **SIN costo ni margen** (decisión del usuario: está pensado para vendedores): `_ficha` no los manda al navegador.
 - **Salida:** Excel (código, descripción, marca, cantidad, precio, total) y "Copiar códigos para SAP" (solo los códigos, uno por línea: en SAP basta el código). Antes:
   precio). Al exportar/copiar se guarda lo elegido en `cotizador_aprendizaje`.
+- **Cotizador, ajustes 26-11 (caso "cable alambre 4mm / 10/12 awg"):** "alambre" ya NO es sinónimo de cable
+  (ALAMBRE = H07V/NYA); medidas con unidad van como una pieza ("10awg", "2.5mm", "16a") para que "10 AWG" no calce
+  con "10 pares 24AWG"; "10/12 awg" se separa en dos líneas (`_expandir`); opción "Otra línea" cuando el cliente nombra
+  dos familias (cable + alambre). **Aprendizaje: solo lo que el vendedor eligió a mano** (`tocada`), y lo nuevo
+  reemplaza lo aprendido antes para ese texto. Se borraron 3 aprendizajes equivocados de la prueba del usuario.
