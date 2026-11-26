@@ -1110,6 +1110,10 @@ def api_cotizador_reconocer():
             lineas, modelo = data_loader_cotizador_pg.interpretar_con_ia(texto)
         else:
             lineas = data_loader_cotizador_pg.separar_lineas(texto)
+        if d.get("ia"):
+            # Solo cuando la IA partio una frase en varios productos: si el vendedor pego lineas
+            # separadas, cada linea dice su propio color y no se le agrega uno ajeno.
+            lineas = data_loader_cotizador_pg.heredar_color(texto, lineas)
         if not lineas:
             return jsonify({"ok": False, "msg": "No encontré productos en el texto."}), 400
         return jsonify({"ok": True, "modelo_ia": modelo,

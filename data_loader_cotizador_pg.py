@@ -197,7 +197,10 @@ def interpretar_con_ia(texto):
     prompt = ("Eres asistente de una distribuidora de materiales eléctricos en Chile. Del siguiente requerimiento de un "
               "cliente, extrae SOLO los productos pedidos. Devuelve JSON: lista de objetos con 'cantidad' (número, 1 si no "
               "se indica), 'descripcion' (el producto con sus medidas, sin la cantidad), 'marca' (si el cliente la menciona, "
-              "si no null) y 'referencia' (código del fabricante si aparece, si no null). No inventes productos.\n\n"
+              "si no null) y 'referencia' (código del fabricante si aparece, si no null). No inventes productos. "
+              "Si el cliente pide varias medidas de un mismo producto en una frase (ej. 'cable negro de 4mm y 10/12 awg'), "
+              "haz un objeto por medida y repite en cada uno el tipo, el color y la marca que dijo (ej. 'cable negro 4mm', "
+              "'cable negro 10 AWG', 'cable negro 12 AWG').\n\n"
               + texto[:15000])
     modelos = [m for m in os.environ.get("GEMINI_MODELOS_COTIZADOR",
                                           "gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.8-flash").split(",") if m]
@@ -341,6 +344,19 @@ def _aprendidos(textos):
     for f in filas:
         out.setdefault(f["texto_norm"], f["codigo"])
     return out
+
+
+def heredar_color(texto, lineas):
+    """Si el requerimiento nombra UN solo color y una linea quedo sin color (ej. "cable negro de 4mm y
+    10/12 awg" partido en tres), esa linea hereda el color. Con dos o mas colores no se adivina."""
+    colores = {t for t in _tokens(texto) if t in COLORES}
+    if len(colores) != 1:
+        return lineas
+    color = colores.pop()
+    for l in lineas:
+        if not (set(_tokens(l["descripcion"])) & COLORES):
+            l["descripcion"] = f"{l['descripcion']} {color}"
+    return lineas
 
 
 def _primera(descripcion):
