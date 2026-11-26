@@ -128,7 +128,7 @@
     <label class="crm-f"><span>Monto mínimo</span><select id="f-m"><option value="0">$5 MM</option><option value="20000000">$20 MM</option><option value="50000000">$50 MM</option><option value="100000000">$100 MM</option></select></label>
     <label class="crm-f"><span>Buscar cliente</span><input type="search" id="f-q" placeholder="Nombre del cliente"></label>
   </div>
-  <p class="crm-ley">Cada tarjeta es una oportunidad: las versiones de cotización del mismo cliente con el mismo vendedor. <strong>Arrástrala</strong> para cambiarla de etapa; haz clic para abrir la ficha. Ganadas y perdidas: últimos 90 días.</p>
+  <p class="crm-ley">Cada tarjeta es una oportunidad: las versiones de cotización del mismo cliente con el mismo vendedor. <strong>Arrástrala</strong> para cambiarla de etapa; haz clic para abrir la ficha. Ganadas y perdidas: últimos 60 días.</p>
   <div class="crm-board" id="board"><div class="vacio">Cargando…</div></div>
 </section>
 
@@ -141,8 +141,8 @@
 <section class="crm-panel" id="p-gerencia">
   <div class="crm-kpis" id="kpis"></div>
   <div class="crm-grid2">
-    <div class="crm-box"><h3>Embudo</h3><div class="d">Monto por etapa (MM). Ganadas y perdidas: últimos 90 días.</div><div class="emb" id="emb"></div></div>
-    <div class="crm-box"><h3>Por vendedor</h3><div class="d">Oportunidades abiertas y cerradas en los últimos 90 días.</div><div class="crm-tw"><table class="crm-t" id="tv"></table></div></div>
+    <div class="crm-box"><h3>Embudo</h3><div class="d">Monto por etapa (MM). Ganadas y perdidas: últimos 60 días.</div><div class="emb" id="emb"></div></div>
+    <div class="crm-box"><h3>Por vendedor</h3><div class="d">Oportunidades abiertas y cerradas en los últimos 60 días.</div><div class="crm-tw"><table class="crm-t" id="tv"></table></div></div>
   </div>
   <div class="crm-grid2" style="margin-top:12px">
     <div class="crm-box"><h3>Por qué perdemos</h3><div class="d">Motivo registrado al dar por perdida.</div><div id="motivos"></div></div>
@@ -336,8 +336,8 @@ async function gerencia() {
   const k = [
     ['Pipeline abierto', mm(r.abierto), `${r.n_abiertas} oportunidades`],
     ['Pronóstico ponderado', mm(r.ponderado), 'monto × probabilidad'],
-    ['Ganadas (90 días)', r.ganadas, mm(r.monto_ganado) + ' con pedido o factura'],
-    ['Perdidas (90 días)', r.perdidas, Object.keys(r.motivos_perdida).length ? 'con motivo registrado' : 'aún sin registrar'],
+    ['Ganadas (60 días)', r.ganadas, mm(r.monto_ganado) + ' con pedido o factura'],
+    ['Perdidas (60 días)', r.perdidas, Object.keys(r.motivos_perdida).length ? 'con motivo registrado' : 'aún sin registrar'],
     ['Alertas activas', r.alertas, 'compromisos y falta de gestiones'],
     ['Sin dueño', r.sin_dueno.length, mm(r.sin_dueno.reduce((s, o) => s + o.monto, 0))],
   ];

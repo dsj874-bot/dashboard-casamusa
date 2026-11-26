@@ -43,6 +43,7 @@ MONTO_PROYECTO = 20_000_000
 MONTO_GRANDE = 100_000_000
 CRM_DESDE = dt.date(2026, 9, 1)
 DIAS_AGRUPAR = 60
+DIAS_CERRADAS_VISIBLES = 60     # ganadas/perdidas en tablero y vista gerencia (el usuario: 60, no 90)
 COTIZACIONES_EXCLUIDAS = (627636,)   # RUT digitado como precio (ver project-cotizaciones)
 
 SUCURSALES_PILOTO = {"CMD", "SE", "CANAL DIGITAL"}
@@ -309,7 +310,7 @@ def listar_pg(perfil):
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
             filas = _cargar(cur, perfil, "AND (o.etapa NOT IN ('ganada','perdida') OR o.cerrada_en >= %s)",
-                            (hoy - dt.timedelta(days=90),))
+                            (hoy - dt.timedelta(days=DIAS_CERRADAS_VISIBLES),))
             cal = _Calendario(cur, CRM_DESDE - dt.timedelta(days=30), hoy)
     ops = [_fila(o, hoy, cal) for o in filas]
     alertas = alertas_pg(perfil)
