@@ -6,7 +6,7 @@ vendedores de CMD, SE y CANAL DIGITAL en vendedor_home).
 
 Que hace:
 - sincronizar_pg(): arma las oportunidades desde cotizacion_linea. Toda
-  cotizacion de $5 MM o mas desde CRM_DESDE se agrega a la oportunidad
+  cotizacion de $5 MM o mas de los ultimos 60 dias y SIN factura se agrega a la oportunidad
   abierta del mismo cliente + vendedor si la ultima version tiene menos de
   60 dias; si no, abre una nueva. Si alguna cotizacion tiene pedido o
   factura, la oportunidad pasa sola a "ganada". Corre al terminar cada
@@ -41,7 +41,7 @@ import db
 MONTO_MIN = 5_000_000
 MONTO_PROYECTO = 20_000_000
 MONTO_GRANDE = 100_000_000
-CRM_DESDE = dt.date(2026, 9, 1)
+DIAS_COTIZACIONES = 60       # solo cotizaciones de los ultimos 60 dias (decision del usuario 2026-11-26)
 DIAS_AGRUPAR = 60
 DIAS_CERRADAS_VISIBLES = 60     # ganadas/perdidas en tablero y vista gerencia (el usuario: 60, no 90)
 COTIZACIONES_EXCLUIDAS = (627636,)   # RUT digitado como precio (ver project-cotizaciones)
@@ -82,6 +82,10 @@ CAMPOS_EDITABLES = ("etapa", "probabilidad", "fecha_cierre_est", "obra", "comuna
 
 # vendedor (nombre ERP) -> cuenta de Musa360. La llena app.py desde GERENTES.
 CUENTAS_VENDEDOR = {}
+
+
+def _desde():
+    return _hoy() - dt.timedelta(days=DIAS_COTIZACIONES)
 
 
 def _hoy():
@@ -155,12 +159,22 @@ def sincronizar_pg():
             WHERE fecha >= %s AND NOT (nro_cotizacion = ANY(%s))
             GROUP BY nro_cotizacion
            HAVING sum(total) >= %s
+              AND NOT bool_or(nro_factura IS NOT NULL)      -- con factura: ya se vendio, no se sigue
             ORDER BY min(fecha), nro_cotizacion""",
-        (CRM_DESDE, list(COTIZACIONES_EXCLUIDAS), MONTO_MIN))
+        (_desde(), list(COTIZACIONES_EXCLUIDAS), MONTO_MIN))
     home = sucursales_vendedores()
     cot = [c for c in cot if vendedor_en_piloto(c["vendedor"])]
+    vigentes = [c["n"] for c in cot]
     with db.conexion_pool() as conn:
         with conn.cursor() as cur:
+            # Limpieza: salen las cotizaciones que se facturaron o pasaron los 60 dias. Una oportunidad
+            # que se queda sin cotizaciones se borra, salvo que tenga gestiones reales del vendedor/lider
+            # (se conserva para no perder ese trabajo).
+            cur.execute("DELETE FROM crm_oportunidad_cotizacion WHERE NOT (nro_cotizacion = ANY(%s))", (vigentes,))
+            cur.execute("""DELETE FROM crm_oportunidad o
+                            WHERE NOT EXISTS (SELECT 1 FROM crm_oportunidad_cotizacion c WHERE c.oportunidad_id = o.id)
+                              AND NOT EXISTS (SELECT 1 FROM crm_gestion g WHERE g.oportunidad_id = o.id AND g.tipo = ANY(%s))""",
+                        (list(TIPOS_GESTION),))
             cur.execute("SELECT nro_cotizacion FROM crm_oportunidad_cotizacion")
             ya = {r["nro_cotizacion"] for r in cur.fetchall()}
             cur.execute("""SELECT id, codigo_cliente, vendedor, ultima_cot FROM crm_oportunidad
@@ -315,7 +329,7 @@ def listar_pg(perfil):
         with conn.cursor() as cur:
             filas = _cargar(cur, perfil, "AND (o.etapa NOT IN ('ganada','perdida') OR o.cerrada_en >= %s)",
                             (hoy - dt.timedelta(days=DIAS_CERRADAS_VISIBLES),))
-            cal = _Calendario(cur, CRM_DESDE - dt.timedelta(days=30), hoy)
+            cal = _Calendario(cur, hoy - dt.timedelta(days=DIAS_COTIZACIONES + 60), hoy)
     ops = [_fila(o, hoy, cal) for o in filas]
     alertas = alertas_pg(perfil)
     por_op = defaultdict(list)
@@ -324,7 +338,10 @@ def listar_pg(perfil):
     for o in ops:
         o["alertas"] = por_op.get(o["id"], [])
     return {"hoy": hoy.isoformat(), "oportunidades": ops,
-            "vendedores": vendedores_piloto() if perfil.get("ver_todo") else [],
+            # Solo vendedores con oportunidades abiertas (un vendedor sin cotizaciones abiertas no aparece).
+            "vendedores": sorted({o["dueno"] for o in ops if o["etapa"] not in ("ganada", "perdida")})
+                          if perfil.get("ver_todo") else [],
+            "vendedores_reasignar": [v for v in vendedores_piloto() if not retirado(v)] if perfil.get("ver_todo") else [],
             "etapas": [{"k": k, "n": v[0], "p": v[1]} for k, v in ETAPAS.items()],
             "tipos_gestion": TIPOS_GESTION, "motivos_perdida": MOTIVOS_PERDIDA,
             "puede_reasignar": bool(perfil.get("ver_todo"))}
@@ -337,7 +354,7 @@ def detalle_pg(op_id, perfil):
             filas = _cargar(cur, perfil, "AND o.id = %s", (op_id,))
             if not filas:
                 return None
-            cal = _Calendario(cur, CRM_DESDE - dt.timedelta(days=30), hoy)
+            cal = _Calendario(cur, hoy - dt.timedelta(days=DIAS_COTIZACIONES + 60), hoy)
             cur.execute("""SELECT nro_cotizacion, fecha, monto, convertida, monto_convertido, fecha_conversion
                              FROM crm_oportunidad_cotizacion WHERE oportunidad_id=%s ORDER BY fecha DESC, nro_cotizacion DESC""",
                         (op_id,))
@@ -498,7 +515,7 @@ def calcular_alertas_pg():
                                   proxima_accion, fecha_compromiso
                              FROM crm_oportunidad WHERE etapa NOT IN ('ganada','perdida')""")
             ops = cur.fetchall()
-            cal = _Calendario(cur, CRM_DESDE - dt.timedelta(days=30), hoy + dt.timedelta(days=1))
+            cal = _Calendario(cur, hoy - dt.timedelta(days=DIAS_COTIZACIONES + 60), hoy + dt.timedelta(days=1))
     out = []
     for op in ops:
         monto = float(op["monto"] or 0)

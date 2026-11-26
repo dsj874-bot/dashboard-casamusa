@@ -394,7 +394,7 @@ async function abrir(id) {
         <label class="crm-campo full">Obra / mandante<input name="obra" maxlength="200" value="${esc(o.obra)}"></label>
         <label class="crm-campo">Competidor<input name="competidor" maxlength="200" value="${esc(o.competidor)}"></label>
         <label class="crm-campo">Motivo de pérdida<select name="motivo_perdida">${opt(motivos, o.motivo_perdida || '')}</select></label>
-        ${D.puede_reasignar ? `<label class="crm-campo full">Dueño<select name="dueno">${opt(D.vendedores.map(v => [v, nom(v).replace(/&amp;/g, '&')]), o.dueno)}${D.vendedores.includes(o.dueno) ? '' : `<option value="${esc(o.dueno)}" selected>${nom(o.dueno)} (ya no está)</option>`}</select></label>` : ''}
+        ${D.puede_reasignar ? `<label class="crm-campo full">Dueño<select name="dueno">${opt(D.vendedores_reasignar.map(v => [v, nom(v).replace(/&amp;/g, '&')]), o.dueno)}${D.vendedores_reasignar.includes(o.dueno) ? '' : `<option value="${esc(o.dueno)}" selected>${nom(o.dueno)} (ya no está)</option>`}</select></label>` : ''}
         <label class="crm-campo full">Notas<textarea name="notas" rows="2" maxlength="2000">${esc(o.notas)}</textarea></label>
         <div class="crm-campo full"><button class="crm-btn" type="submit">Guardar cambios</button><div class="msg" id="md"></div></div>
       </form></div>

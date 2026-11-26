@@ -1434,7 +1434,7 @@ lo de abajo describe el diseño para San Isidro.
 Área propia "CRM Proyectos" en /inicio (NO dentro de Comercial, pedido del usuario), con menú `_crm_sidebar.html` (Tablero / Alertas / Vista gerencia, por #hash). Las cuentas de vendedor del piloto lo ven en su menú "Mi venta". Campana de alertas en la barra superior.
 Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportunidad_cotizacion`,
 `crm_gestion`, `crm_alerta`.
-- **Oportunidad:** cotizaciones de $5 MM o más desde el 01-09-2026 del mismo cliente + vendedor, con menos
+- **Oportunidad:** cotizaciones de $5 MM o más de los ÚLTIMOS 60 DÍAS y SIN factura (decisión 26-11; cada sincronización saca lo facturado o vencido, salvo oportunidades con gestiones reales), del mismo cliente + vendedor, con menos
   de 60 días entre versiones (Cliente Boleta: una por cotización). La arma `sincronizar_pg()` al terminar cada
   subida de cotizaciones y en el cron diario. Con pedido o factura pasa sola a **ganada**.
 - **Etapas:** cotizada → seguimiento → negociacion → ganada | perdida (perdida exige motivo). En el tablero las tarjetas se ARRASTRAN entre columnas (pedido del usuario); soltar en Perdida abre un cuadro con motivo y competidor; las ganadas con pedido/factura del ERP no se mueven (la sincronización las volvería a ganar). Registrar una
