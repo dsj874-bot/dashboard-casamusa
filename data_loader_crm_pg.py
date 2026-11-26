@@ -47,9 +47,9 @@ DIAS_CERRADAS_VISIBLES = 60     # ganadas/perdidas en tablero y vista gerencia (
 COTIZACIONES_EXCLUIDAS = (627636,)   # RUT digitado como precio (ver project-cotizaciones)
 
 SUCURSALES_PILOTO = {"CMD", "SE", "CANAL DIGITAL"}
-# Decision del usuario 2026-11-26: el piloto parte SOLO con las oportunidades
-# de Jorge Santana. Vaciar este set para abrirlo a toda SUCURSALES_PILOTO.
-VENDEDORES_PILOTO = {"JORGE SANTANA ANABALON"}
+# El piloto partio solo con Jorge Santana; desde el 2026-11-26 (pedido del usuario) son todos
+# los vendedores de San Isidro (SUCURSALES_PILOTO). Un set con nombres vuelve a acotarlo.
+VENDEDORES_PILOTO = set()
 JEFE_SUCURSAL = {
     "MT": "gcarrasco@casamusa.cl", "LC": "sarjona@casamusa.cl", "MR": "evalera@casamusa.cl",
     "CH": "jvillegas@casamusa.cl", "MP": "jvillegas@casamusa.cl",
