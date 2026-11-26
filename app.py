@@ -84,6 +84,8 @@ import data_loader_finanzas_pg
 import data_loader_ultima_linea_pg
 # CRM de proyectos (migracion 027, piloto San Isidro)
 import data_loader_crm_pg
+# Cotizador (migracion 028, demo solo dsepulveda)
+import data_loader_cotizador_pg
 # Analista IA (Gemini + herramientas de ventas y compras, migracion 020)
 import agente_ia
 
@@ -348,6 +350,11 @@ CRM_VENDEDOR_DE_CUENTA = {
     "dsepulveda@casamusa.cl": "DAVID SEPULVEDA JIMENEZ",
 }
 PREFIJOS_CRM = ("/crm", "/api/crm")
+
+# Cotizador (migracion 028, 2026-11-26): demo SOLO para dsepulveda (pedido del usuario,
+# "para mostrar como quedaria"). Para abrirlo, sumar aqui.
+USUARIOS_COTIZADOR = {"dsepulveda@casamusa.cl"}
+PREFIJOS_RESTRINGIDOS_COTIZADOR = ("/cotizador", "/api/cotizador")
 data_loader_crm_pg.CUENTAS_VENDEDOR = {
     **{g["vendedor"]: u for u, g in GERENTES.items() if g.get("vendedor")},
     **{v: u for u, v in CRM_VENDEDOR_DE_CUENTA.items()},
@@ -401,6 +408,8 @@ def _restringir_inventario_adquisiciones():
         permitidos = USUARIOS_FINANZAS
     elif path.startswith(PREFIJOS_RESTRINGIDOS_ULTIMA_LINEA):
         permitidos = USUARIOS_ULTIMA_LINEA
+    elif path.startswith(PREFIJOS_RESTRINGIDOS_COTIZADOR):
+        permitidos = USUARIOS_COTIZADOR
     else:
         return None
     if "usuario" not in session:
@@ -516,6 +525,7 @@ def inject_es_admin():
             + PREFIJOS_RESTRINGIDOS_SOLICITUDES + PREFIJOS_RESTRINGIDOS_LOGISTICA
             + PREFIJOS_RESTRINGIDOS_COTIZACIONES + PREFIJOS_RESTRINGIDOS_AGENTE
             + PREFIJOS_RESTRINGIDOS_FINANZAS + PREFIJOS_RESTRINGIDOS_ULTIMA_LINEA + PREFIJOS_CRM
+            + PREFIJOS_RESTRINGIDOS_COTIZADOR
         ),
         # Resumen de Adquisiciones tiene su propio "Datos al", separado
         # del de Ventas (ver _fecha_corte_adq_sesion()).
@@ -667,6 +677,7 @@ AREAS = [
     {"slug": "ultima_linea",  "nombre": "Última Línea",  "icono": "📊", "url": "/ultima_linea",  "activo": True},
     # CRM de proyectos (2026-11-26): area propia, no dentro de Comercial (pedido del usuario).
     {"slug": "crm",           "nombre": "CRM Proyectos", "icono": "🤝", "url": "/crm",           "activo": True},
+    {"slug": "cotizador",     "nombre": "Cotizador",     "icono": "🧾", "url": "/cotizador",     "activo": True},
 ]
 
 
@@ -690,11 +701,12 @@ def inicio():
             or (a["slug"] == "adquisiciones" and usuario in USUARIOS_ADQUISICIONES)
             or (a["slug"] == "ultima_linea" and usuario in USUARIOS_ULTIMA_LINEA)
             or (a["slug"] == "crm" and puede_crm)
+            or (a["slug"] == "cotizador" and usuario in USUARIOS_COTIZADOR)
         ]
     else:
         areas_visibles = [
             a for a in AREAS
-            if a["slug"] not in ("inventario", "adquisiciones", "forecast", "solicitudes", "logistica", "ultima_linea", "crm")
+            if a["slug"] not in ("inventario", "adquisiciones", "forecast", "solicitudes", "logistica", "ultima_linea", "crm", "cotizador")
             or (a["slug"] == "solicitudes" and usuario in USUARIOS_SOLICITUDES)
             or (a["slug"] == "logistica" and usuario in USUARIOS_LOGISTICA)
             or (a["slug"] == "inventario" and usuario in USUARIOS_INVENTARIO)
@@ -702,6 +714,7 @@ def inicio():
             or (a["slug"] == "forecast" and usuario in USUARIOS_FORECAST)
             or (a["slug"] == "ultima_linea" and usuario in USUARIOS_ULTIMA_LINEA)
             or (a["slug"] == "crm" and puede_crm)
+            or (a["slug"] == "cotizador" and usuario in USUARIOS_COTIZADOR)
         ]
     # Finanzas: activa solo para USUARIOS_FINANZAS; el resto de la gerencia
     # la sigue viendo como "en construccion".
@@ -1072,6 +1085,76 @@ def api_crm_resumen(perfil):
 @admin_requerido
 def api_crm_sincronizar():
     return _crm_json(data_loader_crm_pg.sincronizar_pg)
+
+
+# ══════════════════════════════════════════════════════
+#  COTIZADOR (migracion 028, demo solo dsepulveda)
+# ══════════════════════════════════════════════════════
+@app.route("/cotizador")
+@login_requerido
+def cotizador():
+    return render_template("cotizador.html", active="cotizador", session_nombre=session.get("nombre"),
+                           listas=data_loader_cotizador_pg.LISTAS, lista_defecto=data_loader_cotizador_pg.LISTA_DEFECTO)
+
+
+@app.route("/api/cotizador/reconocer", methods=["POST"])
+@login_requerido
+def api_cotizador_reconocer():
+    d = request.get_json(silent=True) or {}
+    texto = (d.get("texto") or "")[:60000]
+    if not texto.strip():
+        return jsonify({"ok": False, "msg": "Pega el requerimiento del cliente."}), 400
+    try:
+        modelo = None
+        if d.get("ia"):
+            lineas, modelo = data_loader_cotizador_pg.interpretar_con_ia(texto)
+        else:
+            lineas = data_loader_cotizador_pg.separar_lineas(texto)
+        if not lineas:
+            return jsonify({"ok": False, "msg": "No encontré productos en el texto."}), 400
+        return jsonify({"ok": True, "modelo_ia": modelo,
+                        **data_loader_cotizador_pg.reconocer(lineas, d.get("lista"))})
+    except RuntimeError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 502
+    except Exception as e:
+        app.logger.exception("Cotizador fallo")
+        return jsonify({"ok": False, "msg": f"Error: {e}"}), 500
+
+
+@app.route("/api/cotizador/buscar")
+@login_requerido
+def api_cotizador_buscar():
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify({"ok": True, "resultados": []})
+    return jsonify({"ok": True, **data_loader_cotizador_pg.buscar_manual(q[:200], request.args.get("lista"))})
+
+
+@app.route("/api/cotizador/excel", methods=["POST"])
+@login_requerido
+def api_cotizador_excel():
+    d = request.get_json(silent=True) or {}
+    lineas = [l for l in (d.get("lineas") or []) if l.get("codigo")][:500]
+    if not lineas:
+        return jsonify({"ok": False, "msg": "No hay líneas con producto elegido."}), 400
+    try:
+        data_loader_cotizador_pg.aprender([{"texto": l.get("texto"), "codigo": l["codigo"]} for l in lineas],
+                                          session.get("usuario"))
+    except Exception as e:
+        app.logger.warning("Cotizador: no se pudo guardar lo aprendido: %s", e)
+    buf = data_loader_cotizador_pg.excel(lineas, (d.get("cliente") or "")[:120])
+    return send_file(buf, as_attachment=True, download_name="cotizacion_musa360.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/api/cotizador/aprender", methods=["POST"])
+@login_requerido
+def api_cotizador_aprender():
+    d = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"ok": True, **data_loader_cotizador_pg.aprender(d.get("pares"), session.get("usuario"))})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
 
 
 @app.route("/api/cron/crm_alertas")

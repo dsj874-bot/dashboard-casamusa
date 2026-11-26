@@ -1452,3 +1452,22 @@ Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportu
   `CRM_SMTP_PASSWORD` (opcionales `CRM_SMTP_HOST`/`PORT`/`CRM_MAIL_FROM`; Gmail por defecto). Las cuentas de
   vendedor no son correos: a ellos solo les llega dentro de Musa360.
 - Vendedores del piloto SIN cuenta en Musa360 (no ven sus alertas): Carmen Orellana, Daniel Gatica, Marianna Salas.
+
+## Cotizador (migración 028, 2026-11-26) — demo solo dsepulveda
+Área propia "Cotizador" en /inicio (`USUARIOS_COTIZADOR`, prefijos `/cotizador`, `/api/cotizador`). Datos y motor en
+`data_loader_cotizador_pg.py`; tablas `precio_lista` y `cotizador_aprendizaje`.
+- **Precios:** export de SAP `data/comercial/Precios/<mes>/AAMM_Precio_Venta.xlsx` (CODIGO_CM + LP_BASE_CM,
+  LP_BASE_CMD, LP_D1_CM…LP_D4_CM). Se carga con `python scripts/cargar_precios.py` (toma el más reciente; COPY a
+  tabla temporal y reemplazo en una transacción). D1..D4 = 60/64/66/68% de la base; lo vendido en nov-2026 calza
+  con D1 → lista por defecto. `data/` no va a git ni a Vercel: los precios viven solo en la base.
+- **Flujo:** se pega el requerimiento (texto o filas de Excel). `separar_lineas` saca cantidad + descripción con
+  reglas; "Interpretar con IA" usa Gemini (`GEMINI_MODELOS_COTIZADOR`, por defecto flash-lite) para textos en prosa.
+- **Búsqueda sin IA** sobre ~19 mil productos (catálogo en memoria 30 min; la 1ª consulta de una instancia tarda
+  ~10-25 s): código o referencia exacta, lo aprendido, y si no palabras ponderadas por rareza. Normaliza polos
+  ("2x16A" → "2P 16A"), luz fría/cálida → 6500/3000, plurales y sinónimos; una medida que no calza castiga fuerte
+  (0,55 por medida), largos de empaque ("rollo 100 mts") no cuentan, la marca del cliente no puntúa.
+- **Opciones por línea, en el orden que pidió el usuario:** importado (id_procedencia 3/7, mismo tipo de producto,
+  con stock primero; o el equivalente de `productos_obligatorios`) → marca pedida → nacional. Los códigos 6
+  (especiales) solo si no hay otra. Stock de las 6 sucursales, SIN Merma.
+- **Salida:** Excel (código, descripción, marca, cantidad, precio, total) y "Copiar para SAP" (código ⇥ cantidad ⇥
+  precio). Al exportar/copiar se guarda lo elegido en `cotizador_aprendizaje`.
