@@ -665,6 +665,8 @@ AREAS = [
     {"slug": "forecast",      "nombre": "Forecast",      "icono": "🔮", "url": "/forecast",      "activo": True},
     {"slug": "solicitudes",   "nombre": "Solicitudes de Inventario", "icono": "📝", "url": "/solicitudes",   "activo": True},
     {"slug": "ultima_linea",  "nombre": "Última Línea",  "icono": "📊", "url": "/ultima_linea",  "activo": True},
+    # CRM de proyectos (2026-11-26): area propia, no dentro de Comercial (pedido del usuario).
+    {"slug": "crm",           "nombre": "CRM Proyectos", "icono": "🤝", "url": "/crm",           "activo": True},
 ]
 
 
@@ -672,6 +674,7 @@ AREAS = [
 @login_requerido
 def inicio():
     usuario = session.get("usuario")
+    puede_crm = _crm_perfil() is not None
     if usuario not in USUARIOS_GERENCIA:
         # No es gerencia (Jefe de Sucursal, E-commerce, etc) -- ve
         # Comercial siempre, ni siquiera como tile deshabilitado
@@ -686,17 +689,19 @@ def inicio():
             or (a["slug"] == "inventario" and usuario in USUARIOS_INVENTARIO)
             or (a["slug"] == "adquisiciones" and usuario in USUARIOS_ADQUISICIONES)
             or (a["slug"] == "ultima_linea" and usuario in USUARIOS_ULTIMA_LINEA)
+            or (a["slug"] == "crm" and puede_crm)
         ]
     else:
         areas_visibles = [
             a for a in AREAS
-            if a["slug"] not in ("inventario", "adquisiciones", "forecast", "solicitudes", "logistica", "ultima_linea")
+            if a["slug"] not in ("inventario", "adquisiciones", "forecast", "solicitudes", "logistica", "ultima_linea", "crm")
             or (a["slug"] == "solicitudes" and usuario in USUARIOS_SOLICITUDES)
             or (a["slug"] == "logistica" and usuario in USUARIOS_LOGISTICA)
             or (a["slug"] == "inventario" and usuario in USUARIOS_INVENTARIO)
             or (a["slug"] == "adquisiciones" and usuario in USUARIOS_ADQUISICIONES)
             or (a["slug"] == "forecast" and usuario in USUARIOS_FORECAST)
             or (a["slug"] == "ultima_linea" and usuario in USUARIOS_ULTIMA_LINEA)
+            or (a["slug"] == "crm" and puede_crm)
         ]
     # Finanzas: activa solo para USUARIOS_FINANZAS; el resto de la gerencia
     # la sigue viendo como "en construccion".

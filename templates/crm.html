@@ -2,8 +2,10 @@
 
 {% block title %}CRM de Proyectos{% endblock %}
 {% block page_title %}CRM de Proyectos{% endblock %}
-{% block page_subtitle %}Seguimiento de cotizaciones de $5 MM o más · piloto San Isidro{% endblock %}
+{% block page_subtitle %}Seguimiento de cotizaciones de $5 MM o más{% endblock %}
 {% block boton_actualizar %}{% endblock %}
+
+{% block sidebar_nav %}{% include "_crm_sidebar.html" %}{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -331,12 +333,16 @@ document.addEventListener('click', e => {
   const t = e.target.closest('[data-id]');
   if (t && !t.closest('.ficha')) { e.preventDefault(); abrir(+t.dataset.id); }
 });
-document.querySelectorAll('.crm-tab').forEach(t => t.addEventListener('click', () => {
-  document.querySelectorAll('.crm-tab').forEach(x => x.setAttribute('aria-selected', x === t));
-  document.querySelectorAll('.crm-panel').forEach(p => p.classList.toggle('on', p.id === 'p-' + t.dataset.p));
-}));
+function pestana(p) {
+  if (!document.getElementById('p-' + p)) p = 'tablero';
+  document.querySelectorAll('.crm-tab').forEach(x => x.setAttribute('aria-selected', x.dataset.p === p));
+  document.querySelectorAll('.crm-panel').forEach(x => x.classList.toggle('on', x.id === 'p-' + p));
+  document.querySelectorAll('.crm-nav').forEach(x => x.classList.toggle('active', x.dataset.p === p));
+}
+document.querySelectorAll('.crm-tab').forEach(t => t.addEventListener('click', () => { history.replaceState(null, '', '#' + t.dataset.p); pestana(t.dataset.p); }));
+window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#op-')) pestana(location.hash.slice(1)); });
+pestana(location.hash.startsWith('#op-') ? 'tablero' : (location.hash.slice(1) || 'tablero'));
 ['f-m', 'f-q'].concat(GERENCIA ? ['f-ve'] : []).forEach(id => document.getElementById(id).addEventListener('input', () => D && tablero()));
-if (location.hash === '#alertas') document.querySelector('.crm-tab[data-p="alertas"]').click();
 if (location.hash.startsWith('#op-')) { cargar().then(() => abrir(+location.hash.slice(4))); } else { cargar().catch(e => { document.getElementById('board').innerHTML = `<div class="vacio">${esc(e.message)}</div>`; }); }
 })();
 </script>

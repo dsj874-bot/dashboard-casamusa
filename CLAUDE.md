@@ -1431,7 +1431,7 @@ if(d.error) { /* manejar error */ return; }
 **Piloto (decisión del usuario):** solo las oportunidades de Jorge Santana (`VENDEDORES_PILOTO` en
 `data_loader_crm_pg`). Vaciar ese set abre San Isidro completo (`SUCURSALES_PILOTO`), que es el paso siguiente;
 lo de abajo describe el diseño para San Isidro.
-Pantalla `/crm` (Comercial → Análisis y menú del vendedor) + campana de alertas en la barra superior.
+Área propia "CRM Proyectos" en /inicio (NO dentro de Comercial, pedido del usuario), con menú `_crm_sidebar.html` (Tablero / Alertas / Vista gerencia, por #hash). Las cuentas de vendedor del piloto lo ven en su menú "Mi venta". Campana de alertas en la barra superior.
 Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportunidad_cotizacion`,
 `crm_gestion`, `crm_alerta`.
 - **Oportunidad:** cotizaciones de $5 MM o más desde el 01-09-2026 del mismo cliente + vendedor, con menos

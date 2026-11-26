@@ -569,7 +569,9 @@ def resumen_pg(perfil):
         "perdidas": len(per), "motivos_perdida": dict(motivos),
         "sin_dueno": [o for o in ab if o["sin_dueno"]],
         "alertas": sum(len(o["alertas"]) for o in ab),
-        "por_etapa": {k: sum(o["monto"] for o in ops if o["etapa"] == k) for k in ETAPAS},
+        # Ganadas: lo que efectivamente tiene pedido o factura (igual que la columna del tablero).
+        "por_etapa": {k: sum((o["monto_ganado"] or o["monto"]) if k == "ganada" else o["monto"]
+                             for o in ops if o["etapa"] == k) for k in ETAPAS},
         "por_vendedor": [{"vendedor": k, **x} for k, x in sorted(v.items(), key=lambda kv: -kv[1]["abierto"])],
     }
 

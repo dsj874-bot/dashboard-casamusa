@@ -1,0 +1,12 @@
+<div class="nav-section-title">CRM Proyectos</div>
+<a href="/crm#tablero" class="nav-item crm-nav" data-p="tablero">
+  <span class="nav-icon">🗂️</span><span class="nav-label"> Tablero</span>
+</a>
+<a href="/crm#alertas" class="nav-item crm-nav" data-p="alertas">
+  <span class="nav-icon">🔔</span><span class="nav-label"> Alertas</span>
+</a>
+{% if crm_gerencia %}
+<a href="/crm#gerencia" class="nav-item crm-nav" data-p="gerencia">
+  <span class="nav-icon">📈</span><span class="nav-label"> Vista gerencia</span>
+</a>
+{% endif %}
