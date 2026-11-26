@@ -104,7 +104,7 @@ Tubo LED T8 18W 120cm 6500K - 30 un
     <div class="cz-k"><div class="l">Reconocidas con confianza</div><div class="v" id="k-conf">0</div></div>
     <div class="cz-k"><div class="l">Total neto</div><div class="v" id="k-total">$0</div></div>
     <div class="cz-acc">
-      <button class="cz-btn sec" id="btn-copiar" title="Copia código, cantidad y precio separados por tabulación, para pegar en la grilla de SAP">📋 Copiar para SAP</button>
+      <button class="cz-btn sec" id="btn-copiar" title="Copia solo los códigos, uno por línea, para pegar en la grilla de SAP">📋 Copiar códigos para SAP</button>
       <button class="cz-btn" id="btn-excel">⬇ Descargar Excel</button>
     </div>
   </div>
@@ -256,11 +256,12 @@ document.getElementById('btn-excel').onclick = async () => {
 document.getElementById('btn-copiar').onclick = async () => {
   const lineas = lineasElegidas();
   if (!lineas.length) return toast('No hay líneas con producto elegido.', true);
-  const tsv = lineas.map(l => [l.codigo, l.cantidad, l.precio].join('\t')).join('\n');
+  // En SAP basta con pegar el codigo (decision del usuario): uno por linea, en el orden de la cotizacion.
+  const tsv = lineas.map(l => l.codigo).join('\n');
   try {
     await navigator.clipboard.writeText(tsv);
     api('/api/cotizador/aprender', {pares: lineas.map(l => ({texto: l.texto, codigo: l.codigo}))}).catch(() => {});
-    toast(`Copiadas ${lineas.length} líneas (código, cantidad, precio). Pégalas en la grilla de SAP.`);
+    toast(`Copiados ${lineas.length} códigos. Pégalos en la grilla de SAP.`);
   } catch (e) { toast('El navegador no permitió copiar. Usa "Descargar Excel".', true); }
 };
 document.getElementById('btn-rec').onclick = () => reconocer(false);
