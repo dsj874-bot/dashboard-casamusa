@@ -2,181 +2,212 @@
 
 {% block title %}Cotizador{% endblock %}
 {% block page_title %}Cotizador{% endblock %}
-{% block page_subtitle %}Arma la cotización, copia los códigos y genérala en SAP{% endblock %}
+{% block page_subtitle %}Elige productos, pon cantidades y copia los códigos para SAP{% endblock %}
 {% block boton_actualizar %}{% endblock %}
 
 {% block sidebar_nav %}
 <div class="nav-section-title">Cotizador</div>
-<a href="/cotizador" class="nav-item active"><span class="nav-icon">🧾</span><span class="nav-label"> Cotización</span></a>
+<a href="/cotizador" class="nav-item active"><span class="nav-icon">🧾</span><span class="nav-label"> Cotización rápida</span></a>
 {% endblock %}
 
 {% block extra_head %}
 <style>
   .cz-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
-  .cz-f { display: flex; flex-direction: column; gap: 4px; }
+  .cz-f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .cz-f > span { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
   .cz-in, .cz-f input, .cz-f select { background: var(--surface2); border: 1px solid var(--border); color: var(--text);
-    border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 12.5px; }
+    border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 12.5px; min-width: 0; }
   .cz-btn { background: var(--accent); color: #fff; border: 0; border-radius: 9px; padding: 9px 14px; font: inherit; font-size: 13px;
     font-weight: 700; cursor: pointer; white-space: nowrap; }
   .cz-btn.sec { background: var(--surface2); color: var(--text); border: 1px solid var(--border); font-weight: 600; }
-  .cz-btn:disabled { opacity: .6; cursor: default; }
+  .cz-btn.grande { padding: 12px 20px; font-size: 14px; }
+  .cz-btn:disabled { opacity: .5; cursor: default; }
   .cz-ayuda { font-size: 11.5px; color: var(--muted2); line-height: 1.5; }
   :is(.cz-btn, .cz-op, textarea, input, select, button, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  /* Encabezado de la cotizacion */
-  .cz-cab { display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; gap: 12px; align-items: end; }
-  .cz-acc { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  /* Pasos */
+  .cz-pasos { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .cz-paso { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--muted2); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .cz-paso .n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--surface2); font-size: 12px; }
+  .cz-paso[aria-current="step"] { border-color: var(--accent); color: var(--text-strong); }
+  .cz-paso[aria-current="step"] .n { background: var(--accent); color: #fff; }
+  .cz-paso:disabled { cursor: default; opacity: .6; }
+  .cz-vista { display: none; } .cz-vista.on { display: block; }
 
-  /* Fila rapida para agregar */
-  .cz-rapida { display: grid; grid-template-columns: 1fr 110px auto; gap: 8px; margin-top: 12px; position: relative; }
-  .cz-rapida .cz-in { font-size: 13.5px; padding: 10px 12px; }
-  .cz-sug { position: absolute; top: 100%; left: 0; right: 0; z-index: 50; margin-top: 4px; background: var(--surface); border: 1px solid var(--border);
-    border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.35); max-height: 360px; overflow-y: auto; display: none; }
-  .cz-sug.on { display: block; }
-
-  /* Tabla de la cotizacion */
-  .cz-tabla { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
-  .cz-enc, .cz-l { display: grid; grid-template-columns: 30px 26px minmax(260px, 1fr) 96px 116px 116px 26px; gap: 10px; align-items: start; }
-  .cz-enc { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); padding: 0 12px; }
-  .cz-enc .r, .cz-l .r { text-align: right; }
-  .cz-l { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--conf); border-radius: 11px; padding: 10px 12px; }
-  .cz-l.off { opacity: .5; }
-  .cz-l input[type=checkbox], .cz-todas input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; margin-top: 2px; }
-  .cz-n { font-size: 12px; color: var(--muted); font-weight: 700; padding-top: 2px; }
-  .cz-prod .d { font-size: 13px; color: var(--text-strong); font-weight: 600; line-height: 1.35; }
-  .cz-prod .m { font-size: 11.5px; color: var(--muted2); margin-top: 3px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .cz-prod .pidio { font-size: 11.5px; color: var(--muted2); margin-top: 4px; font-style: italic; }
-  .cz-l .cz-in { width: 100%; text-align: right; padding: 7px 8px; }
-  .cz-l .tot { font-size: 14px; font-weight: 800; color: var(--text-strong); font-variant-numeric: tabular-nums; padding-top: 6px; text-align: right; }
-  .cz-quitar { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; padding: 4px 0 0; line-height: 1; }
-  .cz-quitar:hover { color: var(--red); }
-  .cz-ops { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-  .cz-op { background: var(--surface2); border: 1px solid var(--border); color: var(--muted2); border-radius: 8px; padding: 4px 8px;
-    font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; }
-  .cz-op[aria-pressed="true"] { border-color: var(--accent); color: var(--text-strong); background: rgba(34,163,71,.14); }
-  .cz-op .tp { text-transform: uppercase; letter-spacing: .4px; font-size: 9.5px; margin-right: 4px; color: var(--muted); }
-  .cz-op[aria-pressed="true"] .tp { color: var(--accent); }
-  .chip { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; font-weight: 700; background: var(--surface2); color: var(--muted2); border: 1px solid var(--border); }
+  /* Paso 1: selector */
+  .cz-filtros { display: grid; grid-template-columns: 2fr 1.2fr 1.2fr 1fr 1fr; gap: 10px; align-items: end; }
+  .cz-chk { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text); cursor: pointer; padding-bottom: 8px; }
+  .cz-chk input, .cz-t input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+  .cz-barra { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 12px 0 8px; flex-wrap: wrap; }
+  .cz-barra .info { font-size: 12px; color: var(--muted2); }
+  .cz-tw { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+  .cz-t { border-collapse: collapse; width: 100%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .cz-t th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 600;
+    padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0; background: var(--surface); }
+  .cz-t td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .cz-t tr:last-child td { border-bottom: 0; }
+  .cz-t .r { text-align: right; white-space: nowrap; }
+  .cz-t tbody tr { cursor: pointer; }
+  .cz-t tbody tr:hover { background: var(--surface2); }
+  .cz-t tbody tr.sel { background: rgba(34,163,71,.10); }
+  .cz-t .d { color: var(--text-strong); font-weight: 600; }
+  .cz-scroll { max-height: 58vh; overflow-y: auto; }
+  .chip { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; font-weight: 700; background: var(--surface2); color: var(--muted2); border: 1px solid var(--border); white-space: nowrap; }
   .chip.imp { background: rgba(59,130,246,.15); color: var(--blue-light); border-color: transparent; }
   .chip.nac { background: rgba(148,163,184,.15); color: var(--muted-light); border-color: transparent; }
   .chip.esp { background: rgba(245,158,11,.15); color: var(--amber); border-color: transparent; }
   .chip.ok { background: rgba(34,197,94,.14); color: var(--pos); border-color: transparent; }
   .chip.mal { background: rgba(239,68,68,.14); color: var(--red); border-color: transparent; }
-  .cz-mas { margin-top: 6px; }
-  .cz-mas summary { font-size: 11.5px; color: var(--muted2); cursor: pointer; }
-  .cz-otras { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
-  .cz-otra { display: flex; justify-content: space-between; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
-    padding: 7px 10px; font-size: 12px; color: var(--text); cursor: pointer; text-align: left; font-family: inherit; width: 100%; }
-  .cz-otra:hover, .cz-otra.act { border-color: var(--accent); }
-  .cz-buscar { display: flex; gap: 6px; margin-top: 6px; }
-  .cz-buscar input { flex: 1; }
-  .cz-vacio { color: var(--muted); font-size: 12.5px; padding: 22px; text-align: center; background: var(--surface); border: 1px dashed var(--border); border-radius: 11px; }
-
-  /* Totales */
-  .cz-pie { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 10px; }
-  .cz-todas { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted2); cursor: pointer; }
-  .cz-totales { display: grid; grid-template-columns: auto 130px; gap: 4px 16px; font-variant-numeric: tabular-nums; font-size: 13px; }
-  .cz-totales .l { color: var(--muted2); text-align: right; }
-  .cz-totales .v { text-align: right; color: var(--text); }
-  .cz-totales .t { font-size: 18px; font-weight: 800; color: var(--text-strong); }
-
-  /* Requerimiento del cliente (ayuda opcional) */
-  .cz-req { margin-top: 14px; }
+  .cz-flota { position: sticky; bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px;
+    background: var(--surface2); border: 1px solid var(--accent); border-radius: 12px; padding: 10px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+  .cz-flota .cuenta { font-size: 13px; color: var(--text); } .cz-flota .cuenta b { font-size: 16px; color: var(--text-strong); }
+  .cz-req { margin-top: 12px; }
   .cz-req summary { font-size: 13px; font-weight: 700; color: var(--text); cursor: pointer; }
   .cz-req-g { display: grid; grid-template-columns: 1fr 220px; gap: 12px; margin-top: 10px; }
-  .cz-req textarea { width: 100%; min-height: 120px; resize: vertical; background: var(--surface2); color: var(--text);
+  .cz-req textarea { width: 100%; min-height: 110px; resize: vertical; background: var(--surface2); color: var(--text);
     border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font: 13px/1.5 ui-monospace, Consolas, monospace; }
   .cz-req-b { display: flex; flex-direction: column; gap: 8px; }
 
+  /* Paso 2: cantidades */
+  .cz-cant { width: 100px; text-align: right; font-size: 14px !important; font-weight: 700; }
+  .cz-quitar { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; }
+  .cz-quitar:hover { color: var(--red); }
+  .cz-ops { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+  .cz-op { background: var(--surface2); border: 1px solid var(--border); color: var(--muted2); border-radius: 7px; padding: 3px 7px;
+    font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; }
+  .cz-op[aria-pressed="true"] { border-color: var(--accent); color: var(--text-strong); background: rgba(34,163,71,.14); }
+  .cz-pidio { font-size: 11.5px; color: var(--muted2); font-style: italic; margin-top: 3px; }
+
+  /* Paso 3: cotizacion rapida */
+  .cz-cot { max-width: 860px; margin: 0 auto; }
+  .cz-cot h2 { margin: 0; font-size: 18px; color: var(--text-strong); }
+  .cz-cot .sub { font-size: 12px; color: var(--muted2); margin-top: 2px; }
+  .cz-totales { display: grid; grid-template-columns: 1fr 150px; gap: 6px 16px; font-variant-numeric: tabular-nums; margin-top: 12px; font-size: 13.5px; }
+  .cz-totales .l { text-align: right; color: var(--muted2); } .cz-totales .v { text-align: right; color: var(--text); }
+  .cz-totales .t { font-size: 24px; font-weight: 800; color: var(--text-strong); }
+  .cz-final { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; margin-top: 16px; }
+  .cz-vacio { color: var(--muted); font-size: 12.5px; padding: 26px; text-align: center; }
   .cz-toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--surface2); color: var(--text);
     border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 9px; padding: 9px 14px; font-size: 12.5px; z-index: 300; display: none; }
   .cz-toast.err { border-left-color: var(--red); }
-
-  @media (max-width: 1000px) {
-    .cz-cab { grid-template-columns: 1fr 1fr; } .cz-acc { grid-column: 1 / -1; justify-content: flex-start; }
-    .cz-enc { display: none; }
-    .cz-l { grid-template-columns: 26px 1fr 1fr 26px; }
-    .cz-l .cz-n { display: none; } .cz-l .cz-prod { grid-column: 2 / -1; } .cz-l .tot { grid-column: 2 / 4; }
-    .cz-req-g { grid-template-columns: 1fr; }
-  }
+  @media (max-width: 1000px) { .cz-filtros { grid-template-columns: 1fr 1fr; } .cz-req-g { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="cz-card">
-  <div class="cz-cab">
-    <label class="cz-f"><span>Cliente</span><input id="cliente" maxlength="120" placeholder="Nombre del cliente (opcional)"></label>
-    <label class="cz-f"><span>Lista de precios</span><select id="lista">
-      {% for k, n in listas.items() %}<option value="{{ k }}" {% if k == lista_defecto %}selected{% endif %}>{{ n }}</option>{% endfor %}
-    </select></label>
-    <label class="cz-f"><span>Stock de mi sucursal</span><select id="sucursal">
-      <option value="">Todas las sucursales</option>
-      {% for s in sucursales %}<option value="{{ s }}" {% if s == sucursal_defecto %}selected{% endif %}>{{ s }}</option>{% endfor %}
-    </select></label>
-    <div class="cz-acc">
-      <button class="cz-btn sec" id="btn-nueva" title="Vacía la cotización para empezar otra">Nueva</button>
+<div class="cz-pasos" role="list">
+  <button class="cz-paso" data-ir="1" aria-current="step"><span class="n">1</span> Seleccionar productos</button>
+  <button class="cz-paso" data-ir="2"><span class="n">2</span> Cantidades</button>
+  <button class="cz-paso" data-ir="3"><span class="n">3</span> Cotización</button>
+</div>
+
+<!-- PASO 1 -->
+<section class="cz-vista on" id="v1">
+  <div class="cz-card">
+    <div class="cz-filtros">
+      <label class="cz-f"><span>Buscar</span><input id="f-q" autocomplete="off" placeholder="Código, referencia o descripción"></label>
+      <label class="cz-f"><span>Familia</span><select id="f-fam"><option value="">Todas</option></select></label>
+      <label class="cz-f"><span>Subfamilia</span><select id="f-sub"><option value="">Todas</option></select></label>
+      <label class="cz-f"><span>Marca</span><select id="f-marca"><option value="">Todas</option></select></label>
+      <label class="cz-f"><span>Stock de</span><select id="sucursal">
+        <option value="">Todas las sucursales</option>
+        {% for s in sucursales %}<option value="{{ s }}" {% if s == sucursal_defecto %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select></label>
+    </div>
+    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:8px">
+      <label class="cz-chk"><input type="checkbox" id="f-stock"> Solo con stock</label>
+      <label class="cz-f" style="flex-direction:row;align-items:center;gap:8px"><span>Lista de precios</span><select id="lista">
+        {% for k, n in listas.items() %}<option value="{{ k }}" {% if k == lista_defecto %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select></label>
+    </div>
+  </div>
+
+  <div class="cz-barra"><span class="info" id="info">Elige una familia o una marca, o escribe qué buscas.</span></div>
+  <div class="cz-tw cz-scroll">
+    <table class="cz-t">
+      <thead><tr><th></th><th>Código</th><th>Producto</th><th>Marca</th><th>Procedencia</th><th class="r">Stock</th><th class="r">Precio</th></tr></thead>
+      <tbody id="catalogo"></tbody>
+    </table>
+  </div>
+
+  <details class="cz-card cz-req">
+    <summary>📩 ¿El cliente mandó una lista? Pégala y Musa360 marca los productos por ti</summary>
+    <div class="cz-req-g">
+      <textarea id="texto" spellcheck="false" placeholder="Pega el requerimiento: una línea por producto, filas de Excel o el correo completo."></textarea>
+      <div class="cz-req-b">
+        <button class="cz-btn" id="btn-rec">Reconocer y seleccionar</button>
+        <button class="cz-btn sec" id="btn-ia">✨ Interpretar con IA</button>
+        <div class="cz-ayuda">Sugiere importado primero, luego la marca pedida y luego nacional. Trae también las cantidades del cliente.</div>
+      </div>
+    </div>
+  </details>
+
+  <div class="cz-flota">
+    <span class="cuenta"><b id="n-sel">0</b> productos seleccionados</span>
+    <button class="cz-btn" id="a-paso2" disabled>Siguiente: cantidades →</button>
+  </div>
+</section>
+
+<!-- PASO 2 -->
+<section class="cz-vista" id="v2">
+  <div class="cz-tw">
+    <table class="cz-t">
+      <thead><tr><th>Código</th><th>Producto</th><th class="r">Stock</th><th class="r">Precio unit.</th><th class="r">Cantidad</th><th class="r">Total</th><th></th></tr></thead>
+      <tbody id="cantidades"></tbody>
+    </table>
+  </div>
+  <div class="cz-flota">
+    <button class="cz-btn sec" data-ir="1">← Agregar más productos</button>
+    <span class="cuenta">Neto <b id="neto2">$0</b></span>
+    <button class="cz-btn" id="a-paso3">Ver cotización →</button>
+  </div>
+</section>
+
+<!-- PASO 3 -->
+<section class="cz-vista" id="v3">
+  <div class="cz-card cz-cot">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-end;flex-wrap:wrap">
+      <div><h2>Cotización rápida</h2><div class="sub" id="cot-sub"></div></div>
+      <label class="cz-f" style="min-width:240px"><span>Cliente</span><input id="cliente" maxlength="120" placeholder="Nombre del cliente (opcional)"></label>
+    </div>
+    <div class="cz-tw" style="margin-top:12px">
+      <table class="cz-t">
+        <thead><tr><th>Código</th><th>Producto</th><th class="r">Cantidad</th><th class="r">Precio unit.</th><th class="r">Total</th></tr></thead>
+        <tbody id="resumen"></tbody>
+      </table>
+    </div>
+    <div class="cz-totales">
+      <span class="l">Neto</span><span class="v" id="t-neto">$0</span>
+      <span class="l">IVA 19%</span><span class="v" id="t-iva">$0</span>
+      <span class="l t">Total</span><span class="v t" id="t-total">$0</span>
+    </div>
+    <div class="cz-final">
+      <button class="cz-btn sec" data-ir="2">← Volver a editar</button>
       <button class="cz-btn sec" id="btn-excel">⬇ Excel</button>
-      <button class="cz-btn" id="btn-copiar" title="Copia los códigos de las líneas marcadas, uno por línea, para pegar en SAP">📋 Copiar códigos para SAP</button>
+      <button class="cz-btn sec" id="btn-nueva">Nueva cotización</button>
+      <button class="cz-btn grande" id="btn-copiar">📋 Copiar códigos para SAP</button>
     </div>
+    <p class="cz-ayuda" style="text-align:right;margin-top:8px">Pega los códigos en la grilla de SAP para generar la cotización. Precios de la lista de SAP elegida (netos).</p>
   </div>
-
-  <div class="cz-rapida">
-    <input class="cz-in" id="q" autocomplete="off" placeholder="Agregar producto: código, referencia o descripción (ej. 164063 · diferencial 2P 25A · cable thhn 12 awg negro)">
-    <input class="cz-in" id="q-cant" type="number" min="0" step="any" value="1" aria-label="Cantidad" title="Cantidad">
-    <button class="cz-btn" id="q-btn">Agregar</button>
-    <div class="cz-sug" id="sug" role="listbox"></div>
-  </div>
-  <div class="cz-ayuda" style="margin-top:6px">Con el código exacto se agrega directo. Si escribes una descripción, elige de la lista (flechas + Enter).</div>
-</div>
-
-<div class="cz-tabla">
-  <div class="cz-enc"><span></span><span>#</span><span>Producto</span><span class="r">Cantidad</span><span class="r">Precio unit.</span><span class="r">Total</span><span></span></div>
-  <div id="lineas"></div>
-</div>
-
-<div class="cz-pie">
-  <label class="cz-todas"><input type="checkbox" id="sel-todas" checked> Marcar todas</label>
-  <div class="cz-totales">
-    <span class="l">Líneas marcadas</span><span class="v" id="k-n">0</span>
-    <span class="l">Neto</span><span class="v" id="k-neto">$0</span>
-    <span class="l">IVA 19%</span><span class="v" id="k-iva">$0</span>
-    <span class="l t">Total</span><span class="v t" id="k-total">$0</span>
-  </div>
-</div>
-
-<details class="cz-card cz-req">
-  <summary>📩 Pegar requerimiento del cliente (opcional): Musa360 reconoce los productos y los agrega a la cotización</summary>
-  <div class="cz-req-g">
-    <textarea id="texto" spellcheck="false" placeholder="Pega lo que mandó el cliente: una línea por producto, filas de Excel o el correo completo.
-10 cable libre halógeno 2,5mm blanco rollo 100 mts
-5 interruptor automático 2x16A schneider"></textarea>
-    <div class="cz-req-b">
-      <button class="cz-btn" id="btn-rec">Reconocer y agregar</button>
-      <button class="cz-btn sec" id="btn-ia" title="Usa Gemini para leer correos o textos desordenados">✨ Interpretar con IA</button>
-      <div class="cz-ayuda">Sugiere <strong>importado primero</strong>, luego la marca que pidió el cliente y luego nacional. Puedes cambiar la opción en cada línea.</div>
-    </div>
-  </div>
-</details>
-
-<p class="cz-ayuda" style="margin-top:12px">Musa360 no cierra la cotización: marca las líneas, copia los códigos y genérala en SAP. Los precios son de la lista de SAP elegida (netos).</p>
+</section>
 <div class="cz-toast" id="toast" role="status" aria-live="polite"></div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
 (() => {
-const TIPO = {aprendido: 'Aprendido', exacto: 'Código exacto', importado: 'Importado', marca: 'Marca pedida', nacional: 'Nacional', otra_linea: 'Otra línea', parecido: 'Parecido', manual: 'Elegido'};
-const CONF = {alta: 'var(--pos)', media: 'var(--amber)', baja: 'var(--red)', sin: 'var(--red)'};
-const CLAVE = 'musa360_cotizador_borrador';
-let L = [];
-
+const TIPO = {aprendido: 'Aprendido', exacto: 'Código exacto', importado: 'Importado', marca: 'Marca pedida', nacional: 'Nacional', otra_linea: 'Otra línea', parecido: 'Parecido'};
+const CLAVE = 'musa360_cotizador_v3';
+const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const pesos = v => '$' + Math.round(v || 0).toLocaleString('es-CL');
 const num = v => (+v || 0).toLocaleString('es-CL', {maximumFractionDigits: 2});
-const $ = id => document.getElementById(id);
-const suc = () => $('sucursal').value;
-const lista = () => $('lista').value;
+const suc = () => $('sucursal').value, lista = () => $('lista').value;
+let SEL = [];          // [{ficha, cantidad, texto?, opciones?, tocada?}] en el orden en que se eligieron
+let CAT = [];          // resultados visibles del catalogo
+let FILTROS = {familias: [], marcas: []};
+
 function toast(t, err) {
   const e = $('toast'); e.textContent = t; e.className = 'cz-toast' + (err ? ' err' : ''); e.style.display = 'block';
   clearTimeout(toast.t); toast.t = setTimeout(() => { e.style.display = 'none'; }, 3500);
@@ -187,203 +218,155 @@ async function api(url, body) {
   if (!j.ok) throw new Error(j.msg || 'Error');
   return j;
 }
-
-// ── Borrador en el navegador (solo comodidad: si falla, la pantalla funciona igual) ──
-function guardar() {
-  try { localStorage.setItem(CLAVE, JSON.stringify({L, cliente: $('cliente').value, lista: lista(), sucursal: suc()})); } catch (e) {}
-}
+function guardar() { try { localStorage.setItem(CLAVE, JSON.stringify({SEL, cliente: $('cliente').value})); } catch (e) {} }
 function restaurar() {
-  try {
-    const b = JSON.parse(localStorage.getItem(CLAVE) || 'null');
-    if (!b || !Array.isArray(b.L)) return;
-    L = b.L; $('cliente').value = b.cliente || '';
-    if (b.lista) $('lista').value = b.lista;
-    if (b.sucursal !== undefined) $('sucursal').value = b.sucursal;
-  } catch (e) {}
+  try { const b = JSON.parse(localStorage.getItem(CLAVE) || 'null'); if (b && Array.isArray(b.SEL)) { SEL = b.SEL; $('cliente').value = b.cliente || ''; } } catch (e) {}
 }
-
-// ── Pintado ──
-function stockOtras(f) {
-  const s = Object.entries(f.stock || {}).filter(([k]) => k !== suc()).map(([k, v]) => `${k} ${num(v)}`).join(' · ');
-  return s ? (suc() ? 'Otras sucursales: ' : '') + s : (suc() ? 'Sin stock en otras sucursales' : 'Sin stock en sucursales');
-}
-function stockChip(f) {
-  if (suc()) { const v = (f.stock || {})[suc()] || 0; return `<span class="chip ${v > 0 ? 'ok' : 'mal'}">${esc(suc())}: ${num(v)}</span>`; }
-  return `<span class="chip ${f.stock_total > 0 ? 'ok' : 'mal'}">stock ${num(f.stock_total)}</span>`;
-}
-const stockCorto = f => suc() ? `${esc(suc())} ${num((f.stock || {})[suc()] || 0)} · total ${num(f.stock_total)}` : `stock ${num(f.stock_total)}`;
 const proc = f => `<span class="chip ${f.procedencia === 'Importado' ? 'imp' : f.procedencia === 'Especial' ? 'esp' : 'nac'}">${esc(f.procedencia)}</span>`;
-const opcionBtn = o => `<button class="cz-otra" data-cod="${o.codigo}"><span>${o.codigo} · ${esc(o.descripcion)} ${proc(o)}</span><span>${pesos(o.precio)} · ${stockCorto(o)}</span></button>`;
+function stockCelda(f) {
+  if (suc()) { const v = (f.stock || {})[suc()] || 0; return `<span class="chip ${v > 0 ? 'ok' : 'mal'}">${esc(suc())} ${num(v)}</span><div class="cz-ayuda">total ${num(f.stock_total)}</div>`; }
+  return `<span class="chip ${f.stock_total > 0 ? 'ok' : 'mal'}">${num(f.stock_total)}</span>`;
+}
+const idx = cod => SEL.findIndex(s => s.ficha.codigo === cod);
 
-function fila(l, i) {
-  const f = l.ficha, leida = l.origen === 'texto';
-  const caja = f && f.embalaje > 1 && l.cantidad % f.embalaje !== 0 ? `<span class="chip esp">embalaje de ${num(f.embalaje)}</span>` : '';
-  return `<div class="cz-l ${l.sel ? '' : 'off'}" style="--conf:${leida ? CONF[l.confianza] : 'var(--accent)'}" data-i="${i}">
-    <input type="checkbox" data-sel ${l.sel ? 'checked' : ''} aria-label="Incluir línea ${i + 1}">
-    <span class="cz-n">${i + 1}</span>
-    <div class="cz-prod">
-      ${f ? `<div class="d">${esc(f.descripcion)}</div>
-        <div class="m"><b>${f.codigo}</b> · ${esc(f.marca || '')} ${proc(f)} ${stockChip(f)} ${caja}</div>
-        <div class="m">${esc(stockOtras(f))}</div>`
-        : `<div class="d" style="color:var(--red)">Sin producto: búscalo en "Cambiar producto"</div>`}
-      ${leida ? `<div class="pidio">Pidió: «${esc(l.descripcion)}» · confianza ${esc(l.confianza)}${l.cantidad_detectada === false ? ' · revisar cantidad' : ''}</div>
-        <div class="cz-ops">${l.opciones.map(o => `<button class="cz-op" data-cod="${o.codigo}" aria-pressed="${f && f.codigo === o.codigo}"><span class="tp">${TIPO[o.tipo] || ''}</span>${o.codigo}</button>`).join('')}</div>` : ''}
-      <details class="cz-mas" ${f ? '' : 'open'}><summary>Cambiar producto</summary>
-        <div class="cz-otras">${(l.otras || []).map(opcionBtn).join('')}</div>
-        <div class="cz-buscar"><input class="cz-in" style="text-align:left" placeholder="Buscar por código, referencia o descripción" data-buscar><button class="cz-btn sec" data-accion="buscar">Buscar</button></div>
-        <div class="cz-otras" data-resultados></div>
-      </details>
-    </div>
-    <input class="cz-in" type="number" min="0" step="any" value="${l.cantidad}" data-campo="cantidad" aria-label="Cantidad línea ${i + 1}">
-    <input class="cz-in" type="number" min="0" step="1" value="${Math.round(l.precio)}" data-campo="precio" aria-label="Precio línea ${i + 1}" ${f ? '' : 'disabled'}>
-    <div class="tot">${pesos(f ? l.cantidad * l.precio : 0)}</div>
-    <button class="cz-quitar" data-accion="quitar" title="Quitar línea" aria-label="Quitar línea ${i + 1}">✕</button>
-  </div>`;
+// ── Pasos ──
+function ir(n) {
+  if (n >= 2 && !SEL.length) return toast('Primero selecciona al menos un producto.', true);
+  document.querySelectorAll('.cz-vista').forEach(v => v.classList.toggle('on', v.id === 'v' + n));
+  document.querySelectorAll('.cz-paso').forEach(p => p.toggleAttribute('aria-current', +p.dataset.ir === n));
+  document.querySelectorAll('.cz-paso').forEach(p => { if (+p.dataset.ir === n) p.setAttribute('aria-current', 'step'); });
+  if (n === 2) pintarCantidades();
+  if (n === 3) pintarResumen();
+  window.scrollTo({top: 0, behavior: 'smooth'});
 }
-function pintar() {
-  $('lineas').innerHTML = L.length ? L.map(fila).join('')
-    : '<div class="cz-vacio">La cotización está vacía. Agrega productos arriba o pega el requerimiento del cliente abajo.</div>';
-  totales();
-}
-function totales() {
-  const sel = L.filter(l => l.sel && l.ficha);
-  const neto = sel.reduce((s, l) => s + l.cantidad * l.precio, 0);
-  $('k-n').textContent = `${sel.length} de ${L.length}`;
-  $('k-neto').textContent = pesos(neto);
-  $('k-iva').textContent = pesos(neto * 0.19);
-  $('k-total').textContent = pesos(neto * 1.19);
-  $('sel-todas').checked = L.length > 0 && L.every(l => l.sel);
-  guardar();
-}
-function repintarFila(i) { document.querySelector(`.cz-l[data-i="${i}"]`).outerHTML = fila(L[i], i); totales(); }
+document.addEventListener('click', e => { const b = e.target.closest('[data-ir]'); if (b) ir(+b.dataset.ir); });
+$('a-paso2').onclick = () => ir(2);
+$('a-paso3').onclick = () => ir(3);
 
-function agregarFicha(f, cantidad) {
-  const ya = L.findIndex(l => l.ficha && l.ficha.codigo === f.codigo);
-  if (ya >= 0) {                  // el mismo codigo dos veces: suma la cantidad
-    L[ya].cantidad = (+L[ya].cantidad || 0) + cantidad; L[ya].sel = true;
-    pintar(); toast(`${f.codigo} ya estaba: cantidad ${num(L[ya].cantidad)}.`); return;
-  }
-  L.push({descripcion: f.descripcion, cantidad, cantidad_detectada: true, opciones: [{...f, tipo: 'manual'}], otras: [],
-          confianza: 'alta', ficha: f, precio: f.precio, elegida: f.codigo, origen: 'manual', sel: true});
-  pintar(); toast(`Agregado ${f.codigo} × ${num(cantidad)}.`);
-}
-function elegir(i, ficha) {
-  // Solo se aprende lo que el vendedor eligio a mano (no aceptar sugerencias sin mirarlas).
-  L[i].ficha = ficha; L[i].precio = ficha.precio; L[i].elegida = ficha.codigo;
-  if (L[i].origen === 'texto') L[i].tocada = true; else L[i].descripcion = ficha.descripcion;
-  if (!L[i].opciones.some(o => o.codigo === ficha.codigo)) L[i].opciones.push({...ficha, tipo: 'manual'});
-  repintarFila(i);
-}
-async function buscarProductos(q) {
-  return (await api(`/api/cotizador/buscar?q=${encodeURIComponent(q)}&lista=${lista()}&sucursal=${suc()}`)).resultados;
-}
-
-// ── Fila rapida: codigo / descripcion + cantidad ──
-let sug = [], act = -1, tBusca;
-function cerrarSug() { $('sug').classList.remove('on'); sug = []; act = -1; }
-function pintarSug() {
-  $('sug').innerHTML = sug.length ? sug.map((o, k) => opcionBtn(o).replace('class="cz-otra"', `class="cz-otra${k === act ? ' act' : ''}" data-k="${k}"`)).join('')
-    : '<div class="cz-vacio" style="border:0">Sin resultados.</div>';
-  $('sug').classList.add('on');
-}
-async function buscarRapida() {
-  const q = $('q').value.trim();
-  if (q.length < 2) return cerrarSug();
-  try { sug = await buscarProductos(q); act = sug.length ? 0 : -1; pintarSug(); } catch (e) { toast(e.message, true); }
-}
-function cantRapida() { return Math.max(0, +$('q-cant').value || 1); }
-function confirmarRapida(o) {
-  agregarFicha(o, cantRapida());
-  $('q').value = ''; $('q-cant').value = 1; cerrarSug(); $('q').focus();
-}
-async function agregarRapida() {
-  const q = $('q').value.trim();
-  if (!q) return;
-  if (sug.length && act >= 0) return confirmarRapida(sug[act]);
+// ── Paso 1: selector ──
+async function cargarFiltros() {
   try {
-    const r = await buscarProductos(q);
-    const exacto = /^\d{6}$/.test(q) ? r.find(o => String(o.codigo) === q) : null;
-    if (exacto) return confirmarRapida(exacto);
-    sug = r; act = r.length ? 0 : -1; pintarSug();
+    FILTROS = await api('/api/cotizador/filtros');
+    $('f-fam').innerHTML = '<option value="">Todas</option>' + FILTROS.familias.map(f => `<option>${esc(f.familia)}</option>`).join('');
+    $('f-marca').innerHTML = '<option value="">Todas</option>' + FILTROS.marcas.map(m => `<option>${esc(m)}</option>`).join('');
   } catch (e) { toast(e.message, true); }
 }
-$('q').addEventListener('input', () => { clearTimeout(tBusca); tBusca = setTimeout(buscarRapida, 300); });
-$('q').addEventListener('keydown', e => {
-  if (e.key === 'ArrowDown' && sug.length) { e.preventDefault(); act = (act + 1) % sug.length; pintarSug(); }
-  else if (e.key === 'ArrowUp' && sug.length) { e.preventDefault(); act = (act - 1 + sug.length) % sug.length; pintarSug(); }
-  else if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tBusca); agregarRapida(); }
-  else if (e.key === 'Escape') cerrarSug();
+$('f-fam').onchange = () => {
+  const f = FILTROS.familias.find(x => x.familia === $('f-fam').value);
+  $('f-sub').innerHTML = '<option value="">Todas</option>' + (f ? f.subfamilias.map(s => `<option>${esc(s)}</option>`).join('') : '');
+  buscarCatalogo();
+};
+let tCat;
+async function buscarCatalogo() {
+  const p = new URLSearchParams({q: $('f-q').value.trim(), familia: $('f-fam').value, subfamilia: $('f-sub').value, marca: $('f-marca').value,
+                                 solo_stock: $('f-stock').checked ? '1' : '', sucursal: suc(), lista: lista()});
+  $('info').textContent = 'Buscando…';
+  try {
+    const r = await api('/api/cotizador/catalogo?' + p);
+    CAT = r.productos;
+    $('info').textContent = r.msg || (r.total > CAT.length ? `Mostrando ${CAT.length} de ${r.total}. Afina con filtros o búsqueda.` : `${r.total} productos.`);
+    pintarCatalogo();
+  } catch (e) { $('info').textContent = e.message; }
+}
+function pintarCatalogo() {
+  $('catalogo').innerHTML = CAT.map(f => `<tr class="${idx(f.codigo) >= 0 ? 'sel' : ''}" data-cod="${f.codigo}">
+      <td><input type="checkbox" ${idx(f.codigo) >= 0 ? 'checked' : ''} aria-label="Seleccionar ${f.codigo}"></td>
+      <td>${f.codigo}</td><td class="d">${esc(f.descripcion)}</td><td>${esc(f.marca || '')}</td><td>${proc(f)}</td>
+      <td class="r">${stockCelda(f)}</td><td class="r">${pesos(f.precio)}</td></tr>`).join('')
+    || `<tr><td colspan="7" class="cz-vacio">${CAT.length ? '' : 'Sin productos para mostrar.'}</td></tr>`;
+  contar();
+}
+$('catalogo').addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-cod]'); if (!tr) return;
+  const cod = +tr.dataset.cod, f = CAT.find(x => x.codigo === cod), i = idx(cod);
+  if (i >= 0) SEL.splice(i, 1); else SEL.push({ficha: f, cantidad: 1});
+  tr.classList.toggle('sel', i < 0); tr.querySelector('input').checked = i < 0;
+  contar(); guardar();
 });
-$('q-cant').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); agregarRapida(); } });
-$('q-btn').onclick = agregarRapida;
-$('sug').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) confirmarRapida(sug[+b.dataset.k]); });
-document.addEventListener('click', e => { if (!e.target.closest('.cz-rapida')) cerrarSug(); });
+function contar() { $('n-sel').textContent = SEL.length; $('a-paso2').disabled = !SEL.length; }
+['f-sub', 'f-marca', 'f-stock'].forEach(id => $(id).addEventListener('change', buscarCatalogo));
+$('f-q').addEventListener('input', () => { clearTimeout(tCat); tCat = setTimeout(buscarCatalogo, 350); });
+$('f-q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tCat); buscarCatalogo(); } });
 
-// ── Lineas ──
-const cont = $('lineas');
-cont.addEventListener('click', async e => {
-  const row = e.target.closest('.cz-l'); if (!row) return;
-  const i = +row.dataset.i, l = L[i];
-  if (e.target.closest('[data-accion="quitar"]')) { L.splice(i, 1); pintar(); return; }
-  const b = e.target.closest('[data-cod]');
-  if (b) {
-    const cod = +b.dataset.cod;
-    const f = l.opciones.find(o => o.codigo === cod) || (l.otras || []).find(o => o.codigo === cod) || (l._busqueda || []).find(o => o.codigo === cod);
-    if (f) elegir(i, f);
-    return;
-  }
-  if (e.target.closest('[data-accion="buscar"]')) {
-    const q = row.querySelector('[data-buscar]').value.trim();
-    if (q.length < 2) return;
-    try {
-      l._busqueda = await buscarProductos(q);
-      row.querySelector('[data-resultados]').innerHTML = l._busqueda.map(opcionBtn).join('') || '<div class="cz-vacio">Sin resultados.</div>';
-    } catch (err) { toast(err.message, true); }
-  }
-});
-cont.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('[data-buscar]')) { e.preventDefault(); e.target.closest('.cz-l').querySelector('[data-accion="buscar"]').click(); } });
-cont.addEventListener('change', e => {
-  const row = e.target.closest('.cz-l'); if (!row) return;
-  const i = +row.dataset.i;
-  if (e.target.matches('[data-sel]')) { L[i].sel = e.target.checked; row.classList.toggle('off', !L[i].sel); totales(); return; }
-  if (!e.target.dataset.campo) return;
-  L[i][e.target.dataset.campo] = Math.max(0, +e.target.value || 0);
-  repintarFila(i);
-});
-$('sel-todas').onchange = e => { L.forEach(l => { l.sel = e.target.checked; }); pintar(); };
-
-// ── Requerimiento del cliente ──
+// Requerimiento del cliente: marca los productos reconocidos con su cantidad
 async function reconocer(ia) {
   const texto = $('texto').value;
   if (!texto.trim()) return toast('Pega primero el requerimiento del cliente.', true);
   const b1 = $('btn-rec'), b2 = $('btn-ia');
-  b1.disabled = b2.disabled = true;
-  (ia ? b2 : b1).textContent = ia ? '✨ Leyendo con IA…' : 'Reconociendo…';
+  b1.disabled = b2.disabled = true; (ia ? b2 : b1).textContent = ia ? '✨ Leyendo con IA…' : 'Reconociendo…';
   try {
     const r = await api('/api/cotizador/reconocer', {texto, ia, lista: lista(), sucursal: suc()});
-    const nuevas = r.lineas.map(l => {
-      const f = l.opciones.find(o => o.codigo === l.elegida) || null;
-      return {...l, ficha: f, precio: f ? f.precio : 0, origen: 'texto', sel: true};
+    let n = 0, sin = 0;
+    r.lineas.forEach(l => {
+      const f = l.opciones.find(o => o.codigo === l.elegida);
+      if (!f) { sin++; return; }
+      const i = idx(f.codigo);
+      if (i >= 0) SEL[i].cantidad += l.cantidad;
+      else SEL.push({ficha: f, cantidad: l.cantidad, texto: l.descripcion, opciones: l.opciones, confianza: l.confianza});
+      n++;
     });
-    L = L.concat(nuevas);      // se agregan a la cotizacion que ya estaba armando
-    pintar();
+    contar(); guardar(); pintarCatalogo();
     $('texto').value = '';
-    toast(`${r.modelo_ia ? 'Leído con ' + r.modelo_ia + ': ' : ''}${nuevas.length} productos agregados. Revisa las líneas en rojo o amarillo.`);
+    toast(`${n} productos seleccionados${sin ? `, ${sin} sin reconocer (búscalos arriba)` : ''}. Revisa en Cantidades.`);
+    if (n) ir(2);
   } catch (e) { toast(e.message, true); }
-  finally { b1.disabled = b2.disabled = false; b1.textContent = 'Reconocer y agregar'; b2.textContent = '✨ Interpretar con IA'; }
+  finally { b1.disabled = b2.disabled = false; b1.textContent = 'Reconocer y seleccionar'; b2.textContent = '✨ Interpretar con IA'; }
 }
 $('btn-rec').onclick = () => reconocer(false);
 $('btn-ia').onclick = () => reconocer(true);
 
-// ── Salida ──
-function lineasElegidas() {
-  return L.filter(l => l.sel && l.ficha && l.cantidad > 0).map(l => ({codigo: l.ficha.codigo, descripcion: l.ficha.descripcion, marca: l.ficha.marca,
-    cantidad: l.cantidad, precio: Math.round(l.precio), texto: l.descripcion, aprender: !!l.tocada}));
+// ── Paso 2: cantidades ──
+function pintarCantidades() {
+  $('cantidades').innerHTML = SEL.map((s, i) => {
+    const f = s.ficha;
+    const caja = f.embalaje > 1 && s.cantidad % f.embalaje !== 0 ? ` <span class="chip esp">embalaje de ${num(f.embalaje)}</span>` : '';
+    const ops = s.opciones && s.opciones.length > 1 ? `<div class="cz-ops">${s.opciones.map(o =>
+      `<button class="cz-op" data-op="${o.codigo}" aria-pressed="${o.codigo === f.codigo}"><b style="font-size:9.5px;text-transform:uppercase">${TIPO[o.tipo] || ''}</b> ${o.codigo}</button>`).join('')}</div>` : '';
+    return `<tr data-i="${i}">
+      <td>${f.codigo}</td>
+      <td><div class="d">${esc(f.descripcion)}</div><div class="cz-ayuda">${esc(f.marca || '')} ${proc(f)}${caja}</div>
+        ${s.texto ? `<div class="cz-pidio">Pidió: «${esc(s.texto)}»</div>${ops}` : ''}</td>
+      <td class="r">${stockCelda(f)}</td>
+      <td class="r">${pesos(f.precio)}</td>
+      <td class="r"><input class="cz-in cz-cant" type="number" min="0" step="any" value="${s.cantidad}" aria-label="Cantidad ${f.codigo}"></td>
+      <td class="r"><b>${pesos(s.cantidad * f.precio)}</b></td>
+      <td><button class="cz-quitar" title="Quitar" aria-label="Quitar ${f.codigo}">✕</button></td></tr>`;
+  }).join('') || '<tr><td colspan="7" class="cz-vacio">No hay productos seleccionados.</td></tr>';
+  $('neto2').textContent = pesos(neto());
+}
+const neto = () => SEL.reduce((t, s) => t + (+s.cantidad || 0) * s.ficha.precio, 0);
+$('cantidades').addEventListener('change', e => {
+  const tr = e.target.closest('tr[data-i]'); if (!tr || !e.target.matches('.cz-cant')) return;
+  SEL[+tr.dataset.i].cantidad = Math.max(0, +e.target.value || 0);
+  guardar(); pintarCantidades();
+  const sig = document.querySelector(`#cantidades tr[data-i="${+tr.dataset.i + 1}"] .cz-cant`); if (sig) sig.focus();
+});
+$('cantidades').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('.cz-cant')) { e.preventDefault(); e.target.blur(); } });
+$('cantidades').addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-i]'); if (!tr) return;
+  const s = SEL[+tr.dataset.i];
+  if (e.target.closest('.cz-quitar')) { SEL.splice(+tr.dataset.i, 1); guardar(); pintarCantidades(); contar(); return; }
+  const b = e.target.closest('[data-op]');
+  if (b) { const o = s.opciones.find(x => x.codigo === +b.dataset.op); if (o) { s.ficha = o; s.tocada = true; guardar(); pintarCantidades(); } }
+});
+
+// ── Paso 3: cotizacion rapida ──
+function pintarResumen() {
+  const lineas = SEL.filter(s => +s.cantidad > 0);
+  $('resumen').innerHTML = lineas.map(s => `<tr><td>${s.ficha.codigo}</td><td>${esc(s.ficha.descripcion)}</td>
+      <td class="r">${num(s.cantidad)}</td><td class="r">${pesos(s.ficha.precio)}</td><td class="r"><b>${pesos(s.cantidad * s.ficha.precio)}</b></td></tr>`).join('');
+  const n = neto();
+  $('t-neto').textContent = pesos(n); $('t-iva').textContent = pesos(n * 0.19); $('t-total').textContent = pesos(n * 1.19);
+  const sinStock = lineas.filter(s => suc() ? !((s.ficha.stock || {})[suc()] > 0) : !(s.ficha.stock_total > 0)).length;
+  $('cot-sub').textContent = `${lineas.length} productos · ${$('lista').selectedOptions[0].text}${suc() ? ' · stock ' + suc() : ''}${sinStock ? ` · ${sinStock} sin stock` : ''}`;
+}
+function lineasFinales() {
+  return SEL.filter(s => +s.cantidad > 0).map(s => ({codigo: s.ficha.codigo, descripcion: s.ficha.descripcion, marca: s.ficha.marca,
+    cantidad: +s.cantidad, precio: Math.round(s.ficha.precio), texto: s.texto || s.ficha.descripcion, aprender: !!(s.tocada && s.texto)}));
 }
 $('btn-copiar').onclick = async () => {
-  const lineas = lineasElegidas();
-  if (!lineas.length) return toast('Marca al menos una línea con producto.', true);
-  // En SAP basta con pegar el codigo (decision del usuario): uno por linea, en el orden de la cotizacion.
+  const lineas = lineasFinales();
+  if (!lineas.length) return toast('No hay productos con cantidad.', true);
   try {
     await navigator.clipboard.writeText(lineas.map(l => l.codigo).join(String.fromCharCode(10)));
     const pares = lineas.filter(l => l.aprender).map(l => ({texto: l.texto, codigo: l.codigo}));
@@ -392,38 +375,32 @@ $('btn-copiar').onclick = async () => {
   } catch (e) { toast('El navegador no permitió copiar. Usa "Excel".', true); }
 };
 $('btn-excel').onclick = async () => {
-  const lineas = lineasElegidas();
-  if (!lineas.length) return toast('Marca al menos una línea con producto.', true);
-  const r = await fetch('/api/cotizador/excel', {method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({lineas, cliente: $('cliente').value})});
+  const lineas = lineasFinales();
+  if (!lineas.length) return toast('No hay productos con cantidad.', true);
+  const r = await fetch('/api/cotizador/excel', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lineas, cliente: $('cliente').value})});
   if (!r.ok) { const j = await r.json().catch(() => ({})); return toast(j.msg || 'No se pudo generar el Excel.', true); }
-  const blob = await r.blob(); const a = document.createElement('a');
+  const blob = await r.blob(), a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = 'cotizacion_musa360.xlsx'; a.click(); URL.revokeObjectURL(a.href);
-  toast(`Excel descargado con ${lineas.length} líneas.`);
 };
 $('btn-nueva').onclick = () => {
-  if (L.length && !confirm('¿Vaciar la cotización y empezar otra?')) return;
-  L = []; $('cliente').value = ''; pintar(); $('q').focus();
+  if (!confirm('¿Empezar una cotización nueva? Se borra la actual.')) return;
+  SEL = []; $('cliente').value = ''; guardar(); contar(); pintarCatalogo(); ir(1);
 };
 $('cliente').addEventListener('input', guardar);
-// Cambiar lista o sucursal recalcula precio y stock de cada linea (sin volver a leer el requerimiento).
-async function refrescarFichas() {
-  for (const l of L) {
-    if (!l.ficha) continue;
-    try {
-      const r = await buscarProductos(String(l.ficha.codigo));
-      const f = r.find(o => o.codigo === l.ficha.codigo);
-      if (f) { const tipo = l.ficha.tipo; l.ficha = {...f, tipo}; l.precio = f.precio; }
-    } catch (e) {}
+// Cambiar lista o sucursal: vuelve a traer precio y stock de lo visible y de lo seleccionado.
+async function refrescar() {
+  buscarCatalogo();
+  for (const s of SEL) {
+    try { const r = await api(`/api/cotizador/buscar?q=${s.ficha.codigo}&lista=${lista()}&sucursal=${suc()}`);
+          const f = r.resultados.find(o => o.codigo === s.ficha.codigo); if (f) s.ficha = f; } catch (e) {}
   }
-  pintar();
+  guardar();
 }
-$('lista').onchange = () => { refrescarFichas(); toast('Precios actualizados con la nueva lista.'); };
-$('sucursal').onchange = () => { refrescarFichas(); };
+$('lista').onchange = refrescar;
+$('sucursal').onchange = refrescar;
 
-restaurar();
-pintar();
-$('q').focus();
+restaurar(); contar(); cargarFiltros(); pintarCatalogo();
+$('f-q').focus();
 })();
 </script>
 {% endblock %}

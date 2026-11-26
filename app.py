@@ -1154,6 +1154,22 @@ def api_cotizador_buscar():
                                                                          request.args.get("sucursal"))})
 
 
+@app.route("/api/cotizador/filtros")
+@login_requerido
+def api_cotizador_filtros():
+    return jsonify({"ok": True, **data_loader_cotizador_pg.filtros_catalogo()})
+
+
+@app.route("/api/cotizador/catalogo")
+@login_requerido
+def api_cotizador_catalogo():
+    a = request.args
+    return jsonify({"ok": True, **data_loader_cotizador_pg.listar_catalogo(
+        q=(a.get("q") or "")[:200], familia=a.get("familia") or "", subfamilia=a.get("subfamilia") or "",
+        marca=a.get("marca") or "", solo_stock=a.get("solo_stock") == "1", sucursal=a.get("sucursal"),
+        lista=a.get("lista"))})
+
+
 @app.route("/api/cotizador/excel", methods=["POST"])
 @login_requerido
 def api_cotizador_excel():

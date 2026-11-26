@@ -113,7 +113,7 @@ def _catalogo():
     if time.time() - _cache["t"] < 1800:
         return _cache
     prods = db.query_all(
-        """SELECT p.codigo, p.referencia, p.descripcion, p.marca, p.familia, p.id_procedencia, p.procedencia,
+        """SELECT p.codigo, p.referencia, p.descripcion, p.marca, p.familia, p.subfamilia, p.id_procedencia, p.procedencia,
                   p.embalaje, pl.lp_base_cm, pl.lp_base_cmd, pl.lp_d1_cm, pl.lp_d2_cm, pl.lp_d3_cm, pl.lp_d4_cm
              FROM public.productos p LEFT JOIN precio_lista pl ON pl.codigo = p.codigo
             WHERE coalesce(p.marca,'') <> 'SERV' AND coalesce(p.familia,'') <> 'SERVICIOS'""")
@@ -472,6 +472,59 @@ def buscar_manual(q, lista=LISTA_DEFECTO, sucursal=None):
     sucursal = sucursal if sucursal in SUCURSALES_STOCK else None
     res, _ = buscar(q, limite=12)
     return {"resultados": [_ficha(c, s, lista, None, sucursal) for s, c in res]}
+
+
+# ── Selector de productos (paso 1 del cotizador) ──────────────────────
+def _vendible(p):
+    """Se muestra en el selector: con precio en la lista y que no sea especial de proyecto (codigo 6)."""
+    return p["id_procedencia"] not in ESPECIALES and p["lp_base_cm"] is not None and float(p["lp_base_cm"]) > 1
+
+
+def filtros_catalogo():
+    cat = _catalogo()
+    arbol, marcas = defaultdict(set), defaultdict(int)
+    for p in cat["P"].values():
+        if not _vendible(p):
+            continue
+        fam = (p["familia"] or "SIN FAMILIA").strip()
+        arbol[fam].add((p["subfamilia"] or "").strip())
+        marcas[(p["marca"] or "").strip()] += 1
+    return {"familias": [{"familia": f, "subfamilias": sorted(s for s in subs if s)} for f, subs in sorted(arbol.items())],
+            "marcas": sorted(m for m in marcas if m)}
+
+
+def listar_catalogo(q="", familia="", subfamilia="", marca="", solo_stock=False, sucursal=None,
+                    lista=LISTA_DEFECTO, limite=150):
+    """Productos para elegir: con texto, ordenados por parecido; sin texto, los mas vendidos de la
+    familia / marca elegida. "Solo con stock" mira la sucursal elegida (o cualquiera si es Todas)."""
+    lista = lista if lista in LISTAS else LISTA_DEFECTO
+    sucursal = sucursal if sucursal in SUCURSALES_STOCK else None
+    cat = _catalogo()
+
+    def pasa(p):
+        if not _vendible(p):
+            return False
+        if familia and (p["familia"] or "").strip() != familia:
+            return False
+        if subfamilia and (p["subfamilia"] or "").strip() != subfamilia:
+            return False
+        if marca and (p["marca"] or "").strip() != marca:
+            return False
+        if solo_stock:
+            return bool(p["stock"].get(sucursal)) if sucursal else bool(p["stock"])
+        return True
+
+    q = (q or "").strip()
+    if q:
+        res, _ = buscar(q, limite=400)
+        codigos = [(s, c) for s, c in res if pasa(cat["P"][c])]
+    else:
+        if not (familia or marca):
+            return {"productos": [], "total": 0, "msg": "Elige una familia o una marca, o escribe qué buscas."}
+        codigos = sorted(((0.0, c) for c, p in cat["P"].items() if pasa(p)),
+                         key=lambda x: -cat["P"][x[1]]["venta"])
+    total = len(codigos)
+    return {"productos": [_ficha(c, s, lista, None, sucursal) for s, c in codigos[:limite]], "total": total}
 
 
 def aprender(pares, usuario):

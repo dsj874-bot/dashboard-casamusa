@@ -1486,3 +1486,8 @@ Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportu
   descripción → lista con flechas + Enter; el mismo código suma cantidad). Tabla con cantidad, precio, total, quitar
   y casilla; neto + IVA 19% + total (asume precios de lista NETOS, pendiente confirmar). "Pegar requerimiento" quedó
   como ayuda desplegable que AGREGA líneas. Borrador en localStorage (`musa360_cotizador_borrador`), botón "Nueva".
+- **Cotizador en 3 pasos (26-11, definición del usuario):** 1) **Seleccionar productos**: catálogo navegable
+  (`/api/cotizador/filtros`, `/api/cotizador/catalogo`: familia, subfamilia, marca, solo con stock, búsqueda; sin texto
+  muestra los más vendidos; excluye códigos 6 y sin precio) con casillas; el requerimiento del cliente es un atajo que
+  marca productos con su cantidad. 2) **Cantidades**. 3) **Cotización rápida**: líneas, neto, IVA 19%, total y
+  "Copiar códigos para SAP" (+ Excel, Nueva). Borrador en localStorage `musa360_cotizador_v3`.
