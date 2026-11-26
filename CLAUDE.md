@@ -1469,5 +1469,6 @@ Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportu
 - **Opciones por línea, en el orden que pidió el usuario:** importado (id_procedencia 3/7, mismo tipo de producto,
   con stock primero; o el equivalente de `productos_obligatorios`) → marca pedida → nacional. Los códigos 6
   (especiales) solo si no hay otra. Stock de las 6 sucursales, SIN Merma.
+- **SIN costo ni margen** (decisión del usuario: está pensado para vendedores): `_ficha` no los manda al navegador.
 - **Salida:** Excel (código, descripción, marca, cantidad, precio, total) y "Copiar para SAP" (código ⇥ cantidad ⇥
   precio). Al exportar/copiar se guarda lo elegido en `cotizador_aprendizaje`.

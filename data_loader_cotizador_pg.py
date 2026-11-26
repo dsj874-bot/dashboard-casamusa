@@ -12,7 +12,7 @@ copiadas de Excel). Por cada linea:
   3. Se proponen hasta 3 opciones, en el orden que pidio el usuario:
      IMPORTADO primero (codigos 3/7), luego la MARCA que pidio el cliente, luego
      NACIONAL. Los codigos 6 (especiales por proyecto) solo entran si no hay otra.
-  4. Precio de la lista de SAP elegida (precio_lista), costo (CUP), margen y
+  4. Precio de la lista de SAP elegida (precio_lista), SIN costo ni margen (es para vendedores), y
      stock de las 6 sucursales (sin Merma: ver memoria del cable en Merma).
 Lo que el vendedor confirma queda en cotizador_aprendizaje y se reconoce solo
 la proxima vez.
@@ -101,7 +101,7 @@ def _catalogo():
         return _cache
     prods = db.query_all(
         """SELECT p.codigo, p.referencia, p.descripcion, p.marca, p.familia, p.id_procedencia, p.procedencia,
-                  p.embalaje, p.cup, pl.lp_base_cm, pl.lp_base_cmd, pl.lp_d1_cm, pl.lp_d2_cm, pl.lp_d3_cm, pl.lp_d4_cm
+                  p.embalaje, pl.lp_base_cm, pl.lp_base_cmd, pl.lp_d1_cm, pl.lp_d2_cm, pl.lp_d3_cm, pl.lp_d4_cm
              FROM public.productos p LEFT JOIN precio_lista pl ON pl.codigo = p.codigo
             WHERE coalesce(p.marca,'') <> 'SERV' AND coalesce(p.familia,'') <> 'SERVICIOS'""")
     stock = defaultdict(dict)
@@ -308,14 +308,14 @@ def buscar(descripcion, referencia=None, limite=30):
 def _ficha(c, s, lista, tipo=None):
     p = _catalogo()["P"][c]
     precio = float(p[lista] or 0) if p.get(lista) is not None else 0.0
-    cup = float(p["cup"] or 0)
+    # Sin costo ni margen (decision del usuario 2026-11-26: el cotizador es para vendedores, y a ellos
+    # el margen no se les muestra en ninguna pantalla). No basta con esconderlo: no sale del servidor.
     return {
         "codigo": c, "descripcion": p["descripcion"], "marca": p["marca"], "referencia": p["referencia"],
         "procedencia": "Importado" if p["id_procedencia"] in IMPORTADOS else
                        ("Especial" if p["id_procedencia"] in ESPECIALES else "Nacional"),
         "embalaje": float(p["embalaje"] or 1), "stock": p["stock"], "stock_total": sum(p["stock"].values()),
-        "cup": cup, "precio": precio, "margen": (1 - cup / precio) * 100 if precio > 0 and cup > 0 else None,
-        "venta_12m": p["venta"], "score": round(s, 3), "tipo": tipo,
+        "precio": precio, "score": round(s, 3), "tipo": tipo,
     }
 
 

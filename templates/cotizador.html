@@ -103,7 +103,6 @@ Tubo LED T8 18W 120cm 6500K - 30 un
     <div class="cz-k"><div class="l">Líneas</div><div class="v" id="k-n">0</div></div>
     <div class="cz-k"><div class="l">Reconocidas con confianza</div><div class="v" id="k-conf">0</div></div>
     <div class="cz-k"><div class="l">Total neto</div><div class="v" id="k-total">$0</div></div>
-    <div class="cz-k"><div class="l">Margen</div><div class="v" id="k-mg">—</div></div>
     <div class="cz-acc">
       <button class="cz-btn sec" id="btn-copiar" title="Copia código, cantidad y precio separados por tabulación, para pegar en la grilla de SAP">📋 Copiar para SAP</button>
       <button class="cz-btn" id="btn-excel">⬇ Descargar Excel</button>
@@ -163,7 +162,6 @@ function proc(f) {
 function fila(l, i) {
   const f = l.ficha;
   const sub = f ? l.cantidad * l.precio : 0;
-  const mg = f && l.precio > 0 && f.cup > 0 ? (1 - f.cup / l.precio) * 100 : null;
   const caja = f && f.embalaje > 1 && l.cantidad % f.embalaje !== 0 ? `<span class="chip esp">embalaje de ${num(f.embalaje)}</span>` : '';
   return `<div class="cz-l" style="--conf:${CONF[l.confianza]}" data-i="${i}">
     <div class="cz-n">${i + 1}</div>
@@ -176,8 +174,7 @@ function fila(l, i) {
       <div class="cz-ops">${l.opciones.map(o => `<button class="cz-op" data-cod="${o.codigo}" aria-pressed="${f && f.codigo === o.codigo}"><span class="tp">${TIPO[o.tipo] || ''}</span>${o.codigo}</button>`).join('')}</div>
       ${f ? `<div class="cz-prod"><div class="d">${esc(f.descripcion)}</div>
         <div class="m"><b>${f.codigo}</b> · ${esc(f.marca || '')} ${proc(f)}
-          <span class="chip ${f.stock_total > 0 ? 'ok' : 'mal'}" title="${esc(stockTxt(f))}">stock ${num(f.stock_total)}</span>${caja}
-          <span>costo ${pesos(f.cup)}</span></div>
+          <span class="chip ${f.stock_total > 0 ? 'ok' : 'mal'}" title="${esc(stockTxt(f))}">stock ${num(f.stock_total)}</span>${caja}</div>
         <div class="m">${esc(stockTxt(f))}</div></div>`
         : '<div class="cz-vacio" style="padding:6px;text-align:left">No encontré este producto. Búscalo abajo.</div>'}
       <details class="cz-mas" ${f ? '' : 'open'}><summary>Otras alternativas y búsqueda</summary>
@@ -188,7 +185,6 @@ function fila(l, i) {
     </div>
     <div class="cz-num">
       <label style="font-size:11px;color:var(--muted)">Precio unitario<br><input class="cz-in" type="number" min="0" step="1" value="${Math.round(l.precio)}" data-campo="precio" ${f ? '' : 'disabled'}></label>
-      <div class="mg" style="color:${mg == null ? 'var(--muted)' : mg < 20 ? 'var(--red)' : mg < 30 ? 'var(--amber)' : 'var(--pos)'}">${mg == null ? 'margen —' : 'margen ' + mg.toFixed(0) + '%'}</div>
       <div class="sub">${pesos(sub)}</div>
     </div>
   </div>`;
@@ -201,11 +197,9 @@ function pintar() {
 function totales() {
   const con = L.filter(l => l.ficha);
   const total = con.reduce((s, l) => s + l.cantidad * l.precio, 0);
-  const costo = con.reduce((s, l) => s + l.cantidad * (l.ficha.cup || 0), 0);
   document.getElementById('k-n').textContent = L.length;
   document.getElementById('k-conf').textContent = `${L.filter(l => l.confianza === 'alta' || l.confianza === 'media').length} de ${L.length}`;
   document.getElementById('k-total').textContent = pesos(total);
-  document.getElementById('k-mg').textContent = total > 0 && costo > 0 ? ((1 - costo / total) * 100).toFixed(1) + '%' : '—';
 }
 function elegir(i, ficha) {
   L[i].ficha = ficha; L[i].precio = ficha.precio; L[i].elegida = ficha.codigo;
