@@ -359,6 +359,20 @@ def heredar_color(texto, lineas):
     return lineas
 
 
+def heredar_color_continuacion(lineas):
+    """Lineas pegadas por separado: "cable alambre negro 4mm" y debajo "cable alambre 10/12 awg".
+    Una linea sin color hereda el de la anterior si es el mismo producto (misma primera palabra)."""
+    previa = None
+    for l in lineas:
+        toks = _tokens(l["descripcion"])
+        colores = [t for t in toks if t in COLORES]
+        if colores:
+            previa = (toks[0] if toks else None, colores[0])
+        elif previa and toks and toks[0] == previa[0]:
+            l["descripcion"] = f"{l['descripcion']} {previa[1]}"
+    return lineas
+
+
 def _primera(descripcion):
     """Primera palabra del producto en el catalogo (CABLE, ALAMBRE, INTERRUPTOR...)."""
     t = _tokens(descripcion)
