@@ -128,7 +128,7 @@
     <label class="crm-f"><span>Monto mínimo</span><select id="f-m"><option value="0">$5 MM</option><option value="20000000">$20 MM</option><option value="50000000">$50 MM</option><option value="100000000">$100 MM</option></select></label>
     <label class="crm-f"><span>Buscar cliente</span><input type="search" id="f-q" placeholder="Nombre del cliente"></label>
   </div>
-  <p class="crm-ley">Cada tarjeta es una oportunidad: las versiones de cotización del mismo cliente con el mismo vendedor. <strong>Arrástrala</strong> para cambiarla de etapa; haz clic para abrir la ficha. Ganadas y perdidas: últimos 60 días.</p>
+  <p class="crm-ley">Cada tarjeta es una oportunidad: las versiones de cotización del mismo cliente con el mismo vendedor. <strong>Arrástrala</strong> para cambiarla de etapa; haz clic para abrir la ficha. Ordenadas de la más reciente a la más antigua. Ganadas y perdidas: últimos 60 días.</p>
   <div class="crm-board" id="board"><div class="vacio">Cargando…</div></div>
 </section>
 
@@ -302,14 +302,16 @@ board.addEventListener('drop', e => {
 function tablero() {
   const L = filtradas();
   document.getElementById('board').innerHTML = D.etapas.map(e => {
-    const c = L.filter(o => o.etapa === e.k);
+    // Mas recientes arriba (ultima version cotizada); a igual fecha, la de mayor monto primero.
+    const c = L.filter(o => o.etapa === e.k)
+      .sort((a, b) => (b.ultima_cot || '').localeCompare(a.ultima_cot || '') || b.monto - a.monto);
     const tot = c.reduce((s, o) => s + (e.k === 'ganada' ? (o.monto_ganado || o.monto) : o.monto), 0);
     return `<div class="crm-col" data-k="${e.k}"><div class="crm-col-h"><div class="t"><span>${e.n}</span><span>${c.length}</span></div><div class="m">${mm(tot)}</div></div>
       <div class="crm-col-b">${c.map(o => `<button class="crm-card" style="--est:${COLOR[o.etapa]}" data-id="${o.id}"
         draggable="${movible(o)}" title="${movible(o) ? 'Arrastra la tarjeta para cambiarla de etapa' : 'Ganada con pedido o factura en el ERP'}">
         <div class="cl">${nom(o.cliente)}</div>
         <div class="row"><span class="monto">${mm(o.monto)}</span><span class="sub">${o.probabilidad}%</span></div>
-        <div class="sub">${nom(o.dueno)} · últ. versión ${hace(o.ultima_cot)}</div>
+        <div class="sub">${nom(o.dueno)} · ${fecha(o.ultima_cot)} (${hace(o.ultima_cot)})</div>
         <div class="chips">${chips(o)}</div></button>`).join('') || '<div class="vacio">Sin oportunidades</div>'}</div></div>`;
   }).join('');
 }
