@@ -341,7 +341,9 @@ PREFIJOS_RESTRINGIDOS_ULTIMA_LINEA = ("/ultima_linea", "/api/ultima_linea")
 # Santana). La gerencia del CRM ve todo; cada vendedor del piloto ve solo
 # lo suyo. Para abrirlo a otra sucursal: SUCURSALES_PILOTO en
 # data_loader_crm_pg (y sus jefes ya estan en JEFE_SUCURSAL).
-USUARIOS_CRM_GERENCIA = {"dsepulveda@casamusa.cl", "emusa@casamusa.cl", "jsantana@casamusa.cl"}
+# 2026-11-27: se suma Marcelo Gatica (reemplaza a Freddy Flores en San Isidro) con la misma vista
+# que Jorge, "tal cual como esta, despues lo depuramos" (pedido del usuario).
+USUARIOS_CRM_GERENCIA = {"dsepulveda@casamusa.cl", "emusa@casamusa.cl", "jsantana@casamusa.cl", "mgatica.mp"}
 # Cuentas de gerencia/canal que ademas venden con su nombre en el ERP.
 CRM_VENDEDOR_DE_CUENTA = {
     "jsantana@casamusa.cl": "JORGE SANTANA ANABALON",

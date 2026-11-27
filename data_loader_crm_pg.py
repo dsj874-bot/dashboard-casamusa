@@ -62,8 +62,11 @@ JEFE_SUCURSAL = {
 LIDER_VENTAS = "jsantana@casamusa.cl"
 GERENTE_GENERAL = "emusa@casamusa.cl"
 OBSERVADORES = {"dsepulveda@casamusa.cl"}       # ven todo y reciben copia del resumen
-# Vendedores que se fueron (dotacion nov-2026): sus oportunidades quedan "sin dueño".
+# Vendedores que se fueron (dotacion nov-2026): sus oportunidades quedan "sin dueño"...
 VENDEDORES_RETIRADOS = ("FREDDY FLORES", "MARCELINO TORO", "NORAMBUENA", "TRIZIO")
+# ...salvo que tengan reemplazo: la cartera pasa sola al que lo reemplaza (decision del usuario
+# 2026-11-27: Marcelo Gatica reemplaza a Freddy Flores, quien habia reemplazado a Marcelino Toro).
+REEMPLAZOS = {"FREDDY FLORES MIX": "MARCELO GATICA", "MARCELINO TORO MACHUCA": "MARCELO GATICA"}
 
 # Dias habiles despues del inicio de la alerta para subir a jefe / lider / GG.
 ESCALERA_NORMAL = (1, 3, 5)
@@ -110,6 +113,10 @@ def sucursales_vendedores():
 
 
 def vendedor_en_piloto(vendedor):
+    if vendedor in REEMPLAZOS.values():
+        return True                      # el reemplazo de un vendedor del piloto entra con su cartera
+    if vendedor in REEMPLAZOS:
+        return True                      # las cotizaciones del que se fue siguen contando (a nombre del reemplazo)
     if VENDEDORES_PILOTO:
         return vendedor in VENDEDORES_PILOTO
     return sucursales_vendedores().get(vendedor) in SUCURSALES_PILOTO
@@ -207,8 +214,10 @@ def sincronizar_pg():
                     """INSERT INTO crm_oportunidad (codigo_cliente, cliente, vendedor, dueno, sucursal,
                                                    monto, primera_cot, ultima_cot, actualizada_por)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'sistema') RETURNING id""",
-                    [(g["clave"][0], g["c"]["cliente"], g["c"]["vendedor"], g["c"]["vendedor"],
-                      home.get(g["c"]["vendedor"]), g["c"]["monto"], g["c"]["fecha"], g["c"]["fecha"]) for g in grupos],
+                    [(g["clave"][0], g["c"]["cliente"], g["c"]["vendedor"],
+                      REEMPLAZOS.get(g["c"]["vendedor"], g["c"]["vendedor"]),     # dueño: el reemplazo si se fue
+                      home.get(g["c"]["vendedor"]) or home.get(REEMPLAZOS.get(g["c"]["vendedor"])),
+                      g["c"]["monto"], g["c"]["fecha"], g["c"]["fecha"]) for g in grupos],
                     returning=True)
                 while True:
                     ids_nuevos.append(cur.fetchone()["id"])
@@ -341,7 +350,8 @@ def listar_pg(perfil):
             # Solo vendedores con oportunidades abiertas (un vendedor sin cotizaciones abiertas no aparece).
             "vendedores": sorted({o["dueno"] for o in ops if o["etapa"] not in ("ganada", "perdida")})
                           if perfil.get("ver_todo") else [],
-            "vendedores_reasignar": [v for v in vendedores_piloto() if not retirado(v)] if perfil.get("ver_todo") else [],
+            "vendedores_reasignar": sorted({v for v in vendedores_piloto() if not retirado(v)} | set(REEMPLAZOS.values()))
+                                    if perfil.get("ver_todo") else [],
             "etapas": [{"k": k, "n": v[0], "p": v[1]} for k, v in ETAPAS.items()],
             "tipos_gestion": TIPOS_GESTION, "motivos_perdida": MOTIVOS_PERDIDA,
             "puede_reasignar": bool(perfil.get("ver_todo"))}
@@ -426,7 +436,9 @@ def actualizar_pg(op_id, perfil, cambios, usuario):
                         continue
                     if not vendedor_en_piloto(v):
                         raise ValueError("Ese vendedor no está en el piloto.")
-                    sets += ["dueno=%s", "sucursal=%s"]; vals += [v, sucursales_vendedores().get(v)]
+                    # Un reemplazo (ej. Marcelo Gatica, que figura en Maipu) hereda la sucursal de la oportunidad.
+                    suc_nueva = op["sucursal"] if v in REEMPLAZOS.values() else sucursales_vendedores().get(v)
+                    sets += ["dueno=%s", "sucursal=%s"]; vals += [v, suc_nueva]
                     log.append(f"Reasignada de {op['dueno'].title()} a {v.title()}")
                 else:
                     nuevo = _texto(v, 2000 if k == "notas" else 200)

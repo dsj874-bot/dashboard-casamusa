@@ -1494,3 +1494,7 @@ Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportu
 - **Asistente IA en el paso 1:** botón "✨ Asistente IA" junto al buscador; una frase/pregunta (con ?, " y ", 7+ palabras
   o varias líneas) va sola a la IA al apretar Enter. Muestra un grupo por cada cosa pedida ("Pidió: «…»") con sus
   opciones y 3 alternativas, y deja marcada la recomendada con la cantidad del cliente. Sin cuota de IA cae a reglas.
+- **Reemplazos (27-11):** `REEMPLAZOS` en data_loader_crm_pg (Freddy Flores y Marcelino Toro → **Marcelo Gatica**,
+  que pasó a SE en vendedor_home el 27-11). Las cotizaciones del que se fue siguen contando con dueño = reemplazo
+  (no quedan "sin dueño"). Marcelo Gatica (`mgatica.mp`) está en `USUARIOS_CRM_GERENCIA` con la misma vista que Jorge
+  ("tal cual, después lo depuramos").
