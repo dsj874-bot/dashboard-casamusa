@@ -108,6 +108,15 @@
   .tl { display: flex; flex-direction: column; gap: 10px; border-left: 2px solid var(--border); margin-left: 4px; padding-left: 12px; font-size: 12.5px; }
   .tl .f { font-size: 11px; color: var(--muted); }
   .cots { font-size: 12.5px; }
+  .crm-t tr.fila-cli { cursor: pointer; } .crm-t tr.fila-cli:hover td { background: var(--surface2); }
+  .seg { display: inline-block; width: 20px; text-align: center; border-radius: 5px; font-weight: 800; font-size: 11px; }
+  .seg.A { background: rgba(34,197,94,.18); color: var(--pos); } .seg.B { background: rgba(59,130,246,.18); color: var(--blue-light); } .seg.C { background: var(--surface2); color: var(--muted2); }
+  .barras { display: flex; align-items: flex-end; gap: 3px; height: 70px; margin-top: 6px; }
+  .barras div { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 1px; opacity: .85; }
+  .barras div.cero { background: var(--border); }
+  .barras-ej { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 3px; }
+  .lista-mini { font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
+  .lista-mini div { display: flex; justify-content: space-between; gap: 8px; }
   @media (max-width: 900px) { .crm-grid2 { grid-template-columns: 1fr; } .crm-board { grid-template-columns: repeat(5, 250px); }
     .alerta { grid-template-columns: 1fr; } .campos { grid-template-columns: 1fr; } }
 </style>
@@ -116,6 +125,7 @@
 {% block content %}
 <div class="crm-tabs" role="tablist">
   <button class="crm-tab" role="tab" aria-selected="true" data-p="tablero">Tablero</button>
+  <button class="crm-tab" role="tab" aria-selected="false" data-p="clientes">Clientes</button>
   <button class="crm-tab" role="tab" aria-selected="false" data-p="alertas">Alertas<span class="cnt" id="cnt-alertas" hidden></span></button>
   {% if crm_gerencia %}<button class="crm-tab" role="tab" aria-selected="false" data-p="gerencia">Vista gerencia</button>{% endif %}
 </div>
@@ -130,6 +140,19 @@
   </div>
   <p class="crm-ley">Cada tarjeta es una oportunidad: las versiones de cotización del mismo cliente con el mismo vendedor. <strong>Arrástrala</strong> para cambiarla de etapa; haz clic para abrir la ficha. Ordenadas de la más reciente a la más antigua. Ganadas y perdidas: últimos 60 días.</p>
   <div class="crm-board" id="board"><div class="vacio">Cargando…</div></div>
+</section>
+
+<section class="crm-panel" id="p-clientes">
+  <p class="crm-ley">Cartera de San Isidro: clientes que hicieron al menos la mitad de su compra de 24 meses en CMD, Santiago Empresas o Digital. Dueño: el vendedor que más le vende (si se fue, su reemplazo; si no hay, sin dueño). Alertas solo para segmentos A y B.</p>
+  <div class="crm-kpis" id="cli-kpis"><div class="vacio">Cargando cartera…</div></div>
+  <div class="crm-filtros">
+    <label class="crm-f"><span>Dueño</span><select id="c-dueno"><option value="">Todos</option><option value="__sin">Sin dueño</option></select></label>
+    <label class="crm-f"><span>Segmento</span><select id="c-seg"><option value="AB">A y B</option><option value="A">A (5 MM o más)</option><option value="B">B (1 a 5 MM)</option><option value="C">C (menos de 1 MM)</option><option value="">Todos</option></select></label>
+    <label class="crm-f"><span>Estado</span><select id="c-est"><option value="">Todos</option><option value="alerta">Con alerta</option><option value="dejo_de_comprar">Dejó de comprar</option><option value="bajo_ritmo">Bajó su ritmo</option><option value="cotiza_no_compra">Cotiza y no compra</option><option value="sin_dueno">Sin dueño</option><option value="perdido">Perdido (12+ meses sin comprar)</option></select></label>
+    <label class="crm-f"><span>Buscar cliente</span><input type="search" id="c-q" placeholder="Nombre o RUT"></label>
+  </div>
+  <div class="crm-tw crm-box" style="padding:0"><table class="crm-t" id="cli-tabla"></table></div>
+  <p class="crm-ley" id="cli-pie" style="margin-top:8px"></p>
 </section>
 
 <section class="crm-panel" id="p-alertas">
@@ -327,10 +350,161 @@ function alertas() {
       <div><div class="niv">Nivel ${a.nivel}</div><div class="sub" style="font-size:11px;color:var(--muted2)">${esc(a.nivel_txt)}</div></div>
       <div><div class="cl">${nom(a.cliente)} · ${mm(a.monto)}</div><div>${esc(a.texto)}</div><div style="font-size:11.5px;color:var(--muted2)">${nom(a.dueno)}</div></div>
       <button class="crm-btn sec" data-id="${a.oportunidad_id}">Abrir</button></div>`;
+    const ac = r.alertas_clientes || [], acm = ac.filter(a => a.para_mi), aco = ac.filter(a => !a.para_mi);
+    cnt.hidden = !(mias.length + acm.length); cnt.textContent = mias.length + acm.length;
+    const filaC = a => `<div class="alerta" style="--sev:${NIVEL_COLOR[a.nivel]}">
+      <div><div class="niv">Nivel ${a.nivel}</div><div class="sub" style="font-size:11px;color:var(--muted2)">${esc(a.nivel_txt)}</div></div>
+      <div><div class="cl">${nom(a.cliente)} · <span class="seg ${a.segmento}">${a.segmento}</span> · ${mm(a.monto)} en 24 m</div><div>${esc(a.texto)}</div><div style="font-size:11.5px;color:var(--muted2)">${a.dueno ? nom(a.dueno) : 'Sin dueño'}</div></div>
+      <button class="crm-btn sec" data-cli-abrir="${esc(a.cc)}">Abrir</button></div>`;
     document.getElementById('alertas').innerHTML =
-      `<div class="crm-h4">Para mí (${mias.length})</div><div class="alertas">${mias.map(fila).join('') || '<div class="vacio">No tienes alertas pendientes.</div>'}</div>` +
-      (otras.length ? `<div class="crm-h4">Otras alertas del equipo (${otras.length})</div><div class="alertas">${otras.map(fila).join('')}</div>` : '');
+      `<div class="crm-h4">Clientes · para mí (${acm.length})</div><div class="alertas">${acm.map(filaC).join('') || '<div class="vacio">Sin alertas de clientes.</div>'}</div>` +
+      (aco.length ? `<div class="crm-h4">Clientes · otras del equipo (${aco.length})</div><div class="alertas">${aco.map(filaC).join('')}</div>` : '') +
+      `<div class="crm-h4">Cotizaciones · para mí (${mias.length})</div><div class="alertas">${mias.map(fila).join('') || '<div class="vacio">No tienes alertas pendientes.</div>'}</div>` +
+      (otras.length ? `<div class="crm-h4">Cotizaciones · otras del equipo (${otras.length})</div><div class="alertas">${otras.map(fila).join('')}</div>` : '');
+    document.querySelectorAll('[data-cli-abrir]').forEach(b => b.addEventListener('click', () => abrirCliente(b.dataset.cliAbrir)));
   }).catch(e => { document.getElementById('alertas').innerHTML = `<div class="vacio">${esc(e.message)}</div>`; });
+}
+
+// ── Clientes (otra mirada del CRM) ──────────────────
+let C = null;
+const MOTIVO_TXT = {dejo_de_comprar: 'Dejó de comprar', bajo_ritmo: 'Bajó su ritmo', cotiza_no_compra: 'Cotiza y no compra', sin_dueno: 'Sin dueño', compromiso_vencido: 'Compromiso'};
+async function cargarClientes() {
+  C = await api('/api/crm/clientes');
+  const sel = document.getElementById('c-dueno'), actual = sel.value;
+  sel.querySelectorAll('option.v').forEach(o => o.remove());
+  C.duenos.forEach(v => { const o = document.createElement('option'); o.className = 'v'; o.value = v; o.textContent = nom(v).replace(/&amp;/g, '&'); sel.appendChild(o); });
+  sel.value = actual;
+  const s = C.segmentos, am = C.alertas_por_motivo, sd = C.clientes.filter(c => c.sin_dueno && c.segmento !== 'C');
+  const k = [
+    ['Clientes A', (s.A || {}).n || 0, mm((s.A || {}).t || 0) + ' en 24 meses'],
+    ['Clientes B', (s.B || {}).n || 0, mm((s.B || {}).t || 0) + ' en 24 meses'],
+    ['Clientes C', (s.C || {}).n || 0, mm((s.C || {}).t || 0) + ' (sin alertas)'],
+    ['Dejaron de comprar', am.dejo_de_comprar || 0, 'A y B, hasta 12 meses sin comprar'],
+    ['Bajaron su ritmo', am.bajo_ritmo || 0, 'compran menos de la mitad'],
+    ['Sin dueño', sd.length, mm(sd.reduce((t, c) => t + c.t24_si, 0)) + ' en 24 meses'],
+  ];
+  document.getElementById('cli-kpis').innerHTML = k.map(([l, v, x]) => `<div class="crm-kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${x}</div></div>`).join('');
+  pintarClientes();
+}
+function pintarClientes() {
+  if (!C) return;
+  const du = document.getElementById('c-dueno').value, sg = document.getElementById('c-seg').value,
+        es = document.getElementById('c-est').value, q = document.getElementById('c-q').value.trim().toLowerCase();
+  let L = C.clientes.filter(c => (!sg || sg.includes(c.segmento))
+    && (!du || (du === '__sin' ? c.sin_dueno : c.dueno === du))
+    && (!q || (c.cliente || '').toLowerCase().includes(q) || (c.cc || '').toLowerCase().includes(q))
+    && (!es || (es === 'alerta' ? c.alertas.length : es === 'perdido' ? c.perdido : c.alertas.some(a => a.motivo === es))));
+  L.sort((a, b) => (Math.max(-1, ...b.alertas.map(x => x.nivel)) - Math.max(-1, ...a.alertas.map(x => x.nivel))) || b.t24_si - a.t24_si);
+  const total = L.length; L = L.slice(0, 300);
+  const varia = c => c.t12p > 0 ? Math.round((c.t12 / c.t12p - 1) * 100) : null;
+  document.getElementById('cli-tabla').innerHTML = '<tr><th>Cliente</th><th>Seg.</th><th>Dueño</th><th>Venta 12 m</th><th>vs año ant.</th><th>Última compra</th><th>Cotiz. 60 d</th><th>Oport. abiertas</th><th>Alertas</th></tr>' +
+    L.map(c => { const v = varia(c); return `<tr class="fila-cli" data-cc="${esc(c.cc)}">
+      <td><b>${nom(c.cliente)}</b><div style="font-size:11px;color:var(--muted2)">${esc(c.comuna || '')}</div></td>
+      <td><span class="seg ${c.segmento}">${c.segmento}</span></td>
+      <td>${c.dueno ? nom(c.dueno) : '<span class="chip red">Sin dueño</span>'}</td>
+      <td>${mm(c.t12)}</td>
+      <td style="color:${v == null ? 'var(--muted)' : v < 0 ? 'var(--red)' : 'var(--pos)'}">${v == null ? '—' : (v > 0 ? '+' : '') + v + '%'}</td>
+      <td>${c.dias_sin_compra == null ? '—' : 'hace ' + c.dias_sin_compra + ' d'}</td>
+      <td>${c.cot_n ? c.cot_n + ' · ' + mm(c.cot_t) : '—'}</td>
+      <td>${c.opp_n ? c.opp_n + ' · ' + mm(c.opp_t) : '—'}</td>
+      <td style="white-space:normal">${c.alertas.map(a => `<span class="chip ${a.nivel >= 2 ? 'red' : 'amb'}">${MOTIVO_TXT[a.motivo] || a.motivo}</span>`).join(' ') || (c.perdido ? '<span class="chip">Perdido</span>' : '')}</td></tr>`; }).join('');
+  document.getElementById('cli-pie').textContent = total > 300 ? `Mostrando 300 de ${total} clientes. Usa los filtros para acotar.` : `${total} clientes.`;
+}
+['c-dueno', 'c-seg', 'c-est', 'c-q'].forEach(id => document.getElementById(id).addEventListener('input', pintarClientes));
+document.getElementById('cli-tabla').addEventListener('click', e => { const tr = e.target.closest('[data-cc]'); if (tr) abrirCliente(tr.dataset.cc); });
+
+async function abrirCliente(cc) {
+  const f = document.getElementById('ficha');
+  f.innerHTML = '<div class="vacio">Cargando cliente…</div>';
+  document.body.classList.add('ficha-abierta');
+  let c;
+  try { c = (await api('/api/crm/cliente/' + encodeURIComponent(cc))).cliente; }
+  catch (e) { f.innerHTML = `<button class="crm-btn sec cerrar" id="cerrar">Cerrar</button><div class="vacio">${esc(e.message)}</div>`; document.getElementById('cerrar').onclick = cerrar; return; }
+  const m = c.maestro || {}, pes = v => '$' + Math.round(+v || 0).toLocaleString('es-CL');
+  const mx = Math.max(1, ...c.serie.map(x => x.t));
+  const v = c.t12p > 0 ? Math.round((c.t12 / c.t12p - 1) * 100) : null;
+  const tipos = Object.entries((C && C.tipos_gestion) || {llamada: 'Llamada', visita: 'Visita', correo: 'Correo', whatsapp: 'WhatsApp', reunion: 'Reunión', nota: 'Nota'});
+  const manana = new Date(Date.now() + 864e5).toISOString().slice(0, 10), hoy = new Date().toISOString().slice(0, 10);
+  const reasig = C && C.puede_reasignar ? `<div class="sec"><div class="sec-t">Dueño y notas</div><form id="fcd" class="campos">
+      <label class="crm-campo">Dueño<select name="dueno"><option value="">${c.dueno_manual ? '(volver al calculado)' : 'Calculado: ' + nom(c.dueno || 'sin dueño')}</option>${C.vendedores_reasignar.map(x => `<option value="${esc(x)}" ${c.dueno_manual && c.dueno === x ? 'selected' : ''}>${nom(x)}</option>`).join('')}</select></label>
+      <span></span>
+      <label class="crm-campo full">Notas<textarea name="notas" rows="2" maxlength="2000"></textarea></label>
+      <div class="crm-campo full"><button class="crm-btn" type="submit">Guardar</button><div class="msg" id="mcd"></div></div></form></div>` : '';
+  f.innerHTML = `
+    <button class="crm-btn sec cerrar" id="cerrar">Cerrar</button>
+    <h2>${nom(c.cliente)}</h2>
+    <div class="chips" style="margin-top:8px"><span class="seg ${c.segmento}">${c.segmento}</span>
+      ${c.dueno ? `<span class="chip">${nom(c.dueno)}</span>` : '<span class="chip red">Sin dueño</span>'}
+      ${c.perdido ? '<span class="chip">Perdido</span>' : ''}${m.congelado === 'Y' ? '<span class="chip red">Congelado en SAP</span>' : ''}</div>
+    ${c.alertas.length ? `<div style="margin-top:10px">${c.alertas.map(a => `<div class="msg err">⚠ ${esc(a.texto)} (nivel ${a.nivel}: ${esc(a.nivel_txt)})</div>`).join('')}</div>` : ''}
+
+    <div class="sec"><div class="sec-t">Compras</div>
+      <div class="campos">
+        <div class="crm-campo">Últimos 12 meses<div class="dato">${mm(c.t12)} ${v == null ? '' : `<span style="color:${v < 0 ? 'var(--red)' : 'var(--pos)'}">(${v > 0 ? '+' : ''}${v}% vs año anterior)</span>`}</div></div>
+        <div class="crm-campo">24 meses en San Isidro<div class="dato">${mm(c.t24_si)}</div></div>
+        <div class="crm-campo">Última compra<div class="dato">${fecha(c.ult)} (hace ${c.dias_sin_compra} días)</div></div>
+        <div class="crm-campo">Frecuencia<div class="dato">${c.intervalo ? 'cada ~' + c.intervalo + ' días' : '—'} · ${c.meses} de 24 meses</div></div>
+      </div>
+      <div class="barras">${c.serie.map(x => `<div class="${x.t > 0 ? '' : 'cero'}" style="height:${Math.max(2, x.t / mx * 100)}%" title="${x.mes.slice(0, 7)}: ${mm(x.t)}"></div>`).join('')}</div>
+      <div class="barras-ej"><span>${c.serie[0].mes.slice(0, 7)}</span><span>${c.serie[c.serie.length - 1].mes.slice(0, 7)}</span></div></div>
+
+    <div class="sec"><div class="sec-t">Qué compra (12 meses)</div>
+      <div class="lista-mini">${c.familias.map(x => `<div><span>${esc(x.familia)}</span><b>${mm(x.t12)}</b></div>`).join('') || '<div class="vacio">Sin compras en 12 meses.</div>'}</div>
+      ${c.familias_dejadas.length ? `<div class="sec-t" style="margin-top:10px">Dejó de comprar (compraba el año anterior, nada en 6 meses)</div>
+        <div class="lista-mini">${c.familias_dejadas.map(x => `<div><span>${esc(x.familia)}</span><span style="color:var(--red)">${mm(x.t12p)} el año anterior</span></div>`).join('')}</div>` : ''}</div>
+
+    <div class="sec"><div class="sec-t">Negocios abiertos y cotizaciones (60 días)</div>
+      ${c.oportunidades.length ? `<div class="lista-mini">${c.oportunidades.map(o => `<div><a href="#" data-op-abrir="${o.id}" style="color:var(--text)">Oportunidad · ${esc(o.etapa)} · ${fecha(o.ultima_cot)}</a><b>${mm(o.monto)}</b></div>`).join('')}</div>` : ''}
+      <table class="crm-t cots" style="margin-top:6px"><tr><th>Cotización</th><th>Fecha</th><th>Vendedor</th><th>Monto</th><th>Pedido</th></tr>
+        ${c.cotizaciones.map(x => `<tr><td>N° ${x.nro}</td><td>${fecha(x.fecha)}</td><td>${nom(x.vendedor)}</td><td>${mm(x.monto)}</td><td>${x.convertida ? '<span style="color:var(--pos)">Sí</span>' : 'No'}</td></tr>`).join('') || '<tr><td colspan="5" class="vacio">Sin cotizaciones en 60 días.</td></tr>'}</table></div>
+
+    <div class="sec"><div class="sec-t">Registrar gestión con el cliente</div>
+      <form id="fcg" class="campos">
+        <label class="crm-campo">Tipo<select name="tipo" required><option value="">Elegir…</option>${tipos.map(([k, n]) => `<option value="${k}">${esc(n)}</option>`).join('')}</select></label><span></span>
+        <label class="crm-campo full">Qué se hizo<textarea name="nota" rows="2" maxlength="2000" required placeholder="Ej. llamé a ${esc(m.contacto || 'el contacto')}, está con obra parada hasta enero"></textarea></label>
+        <label class="crm-campo">Próximo compromiso<input name="proxima_accion" maxlength="200"></label>
+        <label class="crm-campo">Fecha<input type="date" name="fecha_compromiso" min="${hoy}" value="${manana}"></label>
+        <div class="crm-campo full"><button class="crm-btn" type="submit">Guardar gestión</button><div class="msg" id="mcg"></div></div></form></div>
+
+    <div class="sec"><div class="sec-t">Contacto y crédito (SAP)</div>
+      <div class="campos">
+        <div class="crm-campo">Contacto<div class="dato">${esc(m.contacto || '—')}</div></div>
+        <div class="crm-campo">Teléfono<div class="dato">${esc(m.telefono || m.celular || '—')}</div></div>
+        <div class="crm-campo full">Correo<div class="dato">${esc(m.correo || '—')}</div></div>
+        <div class="crm-campo full">Dirección<div class="dato">${esc([m.direccion, m.comuna, m.region].filter(Boolean).join(', ') || '—')}</div></div>
+        <div class="crm-campo">RUT<div class="dato">${esc(m.rut || '—')}</div></div>
+        <div class="crm-campo">Condición de pago<div class="dato">${esc(m.condicion_pago || '—')}</div></div>
+        <div class="crm-campo">Línea de crédito<div class="dato">${pes(m.linea_credito)}</div></div>
+        <div class="crm-campo">Saldo / disponible<div class="dato">${pes(m.saldo_cuenta)} / ${pes(m.credito_disponible)}</div></div>
+        <div class="crm-campo full">Vendedor en SAP<div class="dato">${nom(m.vendedor_sap || '—')}${m.vendedor_sap && c.dueno && m.vendedor_sap !== c.dueno ? ' <span class="chip amb">distinto al dueño</span>' : ''}</div></div>
+      </div></div>
+
+    <div class="sec"><div class="sec-t">Últimas compras</div>
+      <table class="crm-t cots"><tr><th>Fecha</th><th>Documento</th><th>Sucursal</th><th>Vendedor</th><th>Monto</th></tr>
+        ${c.documentos.map(x => `<tr><td>${fecha(x.fecha)}</td><td>${x.doc}</td><td>${esc(x.sucursal || '')}</td><td>${nom(x.vendedor)}</td><td>${mm(x.monto)}</td></tr>`).join('')}</table></div>
+    ${reasig}
+    <div class="sec"><div class="sec-t">Historial con el cliente</div>
+      <div class="tl">${c.gestiones.map(g => `<div><div class="f">${fecha(g.creada_en)} · ${esc(g.tipo_txt)} · ${esc(g.usuario)}</div>${esc(g.nota)}${g.proxima_accion ? `<div class="f">Compromiso: ${esc(g.proxima_accion)} para el ${fecha(g.fecha_compromiso)}</div>` : ''}</div>`).join('') || '<div class="vacio">Sin gestiones todavía.</div>'}</div></div>`;
+  document.getElementById('cerrar').onclick = cerrar;
+  document.getElementById('cerrar').focus();
+  f.querySelectorAll('[data-op-abrir]').forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); abrir(+a.dataset.opAbrir); }));
+  document.getElementById('fcg').onsubmit = async ev => {
+    ev.preventDefault();
+    const fd = Object.fromEntries(new FormData(ev.target));
+    if (!fd.proxima_accion) fd.fecha_compromiso = '';
+    const mg = document.getElementById('mcg'), b = ev.target.querySelector('button'); b.disabled = true;
+    try { await post(`/api/crm/cliente/${encodeURIComponent(cc)}/gestion`, fd); await cargarClientes(); abrirCliente(cc); }
+    catch (e) { mg.className = 'msg err'; mg.textContent = e.message; b.disabled = false; }
+  };
+  const fcd = document.getElementById('fcd');
+  if (fcd) fcd.onsubmit = async ev => {
+    ev.preventDefault();
+    const fd = Object.fromEntries(new FormData(ev.target));
+    if (!fd.notas) delete fd.notas;
+    const mg = document.getElementById('mcd'), b = ev.target.querySelector('button'); b.disabled = true;
+    try { await post(`/api/crm/cliente/${encodeURIComponent(cc)}`, fd); await cargarClientes(); abrirCliente(cc); }
+    catch (e) { mg.className = 'msg err'; mg.textContent = e.message; b.disabled = false; }
+  };
 }
 
 async function gerencia() {
@@ -445,6 +619,7 @@ function pestana(p) {
   document.querySelectorAll('.crm-tab').forEach(x => x.setAttribute('aria-selected', x.dataset.p === p));
   document.querySelectorAll('.crm-panel').forEach(x => x.classList.toggle('on', x.id === 'p-' + p));
   document.querySelectorAll('.crm-nav').forEach(x => x.classList.toggle('active', x.dataset.p === p));
+  if (p === 'clientes' && !C) cargarClientes().catch(e => { document.getElementById('cli-kpis').innerHTML = `<div class="vacio">${esc(e.message)}</div>`; });
 }
 document.querySelectorAll('.crm-tab').forEach(t => t.addEventListener('click', () => { history.replaceState(null, '', '#' + t.dataset.p); pestana(t.dataset.p); }));
 window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#op-')) pestana(location.hash.slice(1)); });

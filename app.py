@@ -84,6 +84,8 @@ import data_loader_finanzas_pg
 import data_loader_ultima_linea_pg
 # CRM de proyectos (migracion 027, piloto San Isidro)
 import data_loader_crm_pg
+# CRM: mirada de clientes (migracion 029)
+import data_loader_crm_clientes_pg
 # Cotizador (migracion 028, demo solo dsepulveda)
 import data_loader_cotizador_pg
 # Analista IA (Gemini + herramientas de ventas y compras, migracion 020)
@@ -1066,14 +1068,54 @@ def api_crm_gestion(perfil, op_id):
 @login_requerido
 @_crm_requerido
 def api_crm_alertas(perfil):
-    return _crm_json(lambda: {"alertas": data_loader_crm_pg.alertas_pg(perfil)})
+    return _crm_json(lambda: {"alertas": data_loader_crm_pg.alertas_pg(perfil),
+                              "alertas_clientes": data_loader_crm_clientes_pg.alertas_pg(perfil)})
 
 
 @app.route("/api/crm/alertas/conteo")
 @login_requerido
 @_crm_requerido
 def api_crm_alertas_conteo(perfil):
-    return _crm_json(lambda: {"n": data_loader_crm_pg.conteo_alertas_pg(perfil)})
+    def contar():
+        n = data_loader_crm_pg.conteo_alertas_pg(perfil)
+        try:
+            # De clientes la campana cuenta solo lo escalado (nivel 1+) y los compromisos vencidos;
+            # el resto (cientos de "dejo de comprar" nivel 0) se ve en la pestaña Alertas.
+            n += sum(1 for a in data_loader_crm_clientes_pg.alertas_pg(perfil)
+                     if a["para_mi"] and (a["nivel"] >= 1 or a["motivo"] == "compromiso_vencido"))
+        except Exception as e:      # la campana nunca debe romper la pagina
+            app.logger.warning("CRM clientes: conteo fallo: %s", e)
+        return {"n": n}
+    return _crm_json(contar)
+
+
+# ── CRM: mirada de clientes (migracion 029). La de cotizaciones sigue igual. ──
+@app.route("/api/crm/clientes")
+@login_requerido
+@_crm_requerido
+def api_crm_clientes(perfil):
+    return _crm_json(data_loader_crm_clientes_pg.listar_pg, perfil)
+
+
+@app.route("/api/crm/cliente/<cc>", methods=["GET", "POST"])
+@login_requerido
+@_crm_requerido
+def api_crm_cliente(perfil, cc):
+    if request.method == "POST":
+        return _crm_json(data_loader_crm_clientes_pg.actualizar_pg, cc[:40], perfil,
+                         request.get_json(silent=True) or {}, session.get("usuario"))
+    d = data_loader_crm_clientes_pg.ficha_pg(cc[:40], perfil)
+    if d is None:
+        return jsonify({"ok": False, "msg": "Cliente fuera de la cartera o sin acceso."}), 404
+    return jsonify({"ok": True, "cliente": d})
+
+
+@app.route("/api/crm/cliente/<cc>/gestion", methods=["POST"])
+@login_requerido
+@_crm_requerido
+def api_crm_cliente_gestion(perfil, cc):
+    return _crm_json(data_loader_crm_clientes_pg.registrar_gestion_pg, cc[:40], perfil,
+                     request.get_json(silent=True) or {}, session.get("usuario"))
 
 
 @app.route("/api/crm/resumen")
@@ -1212,6 +1254,11 @@ def api_cron_crm_alertas():
     if secreto_esperado and request.headers.get("Authorization", "") != f"Bearer {secreto_esperado}":
         return jsonify({"ok": False, "msg": "No autorizado."}), 401
     resultado = {"ok": True}
+    try:
+        resultado["cartera_clientes"] = data_loader_crm_clientes_pg.refrescar_cartera_pg()
+    except Exception as e:
+        app.logger.warning("CRM clientes: la cartera no se pudo recalcular en el cron: %s", e)
+        resultado["cartera_clientes"] = {"error": str(e)}
     try:
         resultado["sincronizacion"] = data_loader_crm_pg.sincronizar_pg()
     except Exception as e:

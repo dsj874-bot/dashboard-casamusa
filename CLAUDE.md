@@ -1498,3 +1498,18 @@ Datos y reglas en `data_loader_crm_pg.py`; tablas `crm_oportunidad`, `crm_oportu
   que pasó a SE en vendedor_home el 27-11). Las cotizaciones del que se fue siguen contando con dueño = reemplazo
   (no quedan "sin dueño"). Marcelo Gatica (`mgatica.mp`) está en `USUARIOS_CRM_GERENCIA` con la misma vista que Jorge
   ("tal cual, después lo depuramos").
+
+## CRM de clientes (migración 029, 2026-11-27) — otra mirada, el CRM de cotizaciones sigue igual
+Pestaña **Clientes** en /crm (+ menú lateral). Motor en `data_loader_crm_clientes_pg.py`; tablas `cliente_maestro`
+(maestro SAP, `python scripts/cargar_clientes.py`, reemplaza todo; trae datos personales: NO exponer en `ia`),
+`crm_cliente` (dueño manual, compromiso, última gestión), `crm_cliente_gestion`, `crm_cartera_cache` (ventas 24 m
+precalculadas: la consulta toma ~25-50 s; la renueva el cron `/api/cron/crm_alertas`, vale 26 h). Índice nuevo
+`idx_ventas_codigo_cliente_fecha` (ficha de cliente 4 s → 0,5 s).
+- **Cartera San Isidro:** ≥50% de la compra de 24 m en CMD/SE/CANAL DIGITAL, sin Cliente Boleta (~3.200 clientes).
+- **Dueño:** el que más le vende en SI; si se fue → `REEMPLAZOS` (Toro/Flores → Marcelo Gatica); si no → sin dueño
+  (Norambuena, Ema Sepúlveda…). Dueño manual manda. **Segmento** A ≥5 MM, B 1-5 MM, C <1 MM (24 m en SI).
+- **Alertas (solo A y B, no "perdidos" = 12+ meses sin comprar):** dejó de comprar (>2,5× su intervalo y ≥60 días;
+  reloj desde `LANZAMIENTO` 27-11 para no mandar lo viejo al GG), bajó su ritmo (90 d < mitad de su trimestre
+  normal), cotiza y no compra (3+ cotizaciones en 60 d sin pedido y sin compras), sin dueño (nivel 2, Jorge),
+  compromiso vencido. Una gestión las apaga 21 días. La campana cuenta solo las de nivel ≥1 y compromisos.
+- Sin margen ni costo. Mismo acceso que el CRM (`_crm_perfil`).
