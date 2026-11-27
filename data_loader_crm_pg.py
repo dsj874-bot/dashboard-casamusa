@@ -122,6 +122,14 @@ def vendedor_en_piloto(vendedor):
     return sucursales_vendedores().get(vendedor) in SUCURSALES_PILOTO
 
 
+def _vendedores_con_cartera():
+    try:
+        import data_loader_crm_clientes_pg      # import aqui: ese modulo importa este
+        return data_loader_crm_clientes_pg.vendedores_con_cartera()
+    except Exception:
+        return sorted({v for v in vendedores_piloto() if not retirado(v)} | set(REEMPLAZOS.values()))
+
+
 def vendedores_piloto():
     return sorted(v for v in sucursales_vendedores()
                   if vendedor_en_piloto(v) and not v.upper().startswith("VENTA"))
@@ -350,8 +358,8 @@ def listar_pg(perfil):
             # Solo vendedores con oportunidades abiertas (un vendedor sin cotizaciones abiertas no aparece).
             "vendedores": sorted({o["dueno"] for o in ops if o["etapa"] not in ("ganada", "perdida")})
                           if perfil.get("ver_todo") else [],
-            "vendedores_reasignar": sorted({v for v in vendedores_piloto() if not retirado(v)} | set(REEMPLAZOS.values()))
-                                    if perfil.get("ver_todo") else [],
+            # Solo vendedores con cartera en San Isidro (sin clientes no se les asigna nada).
+            "vendedores_reasignar": _vendedores_con_cartera() if perfil.get("ver_todo") else [],
             "etapas": [{"k": k, "n": v[0], "p": v[1]} for k, v in ETAPAS.items()],
             "tipos_gestion": TIPOS_GESTION, "motivos_perdida": MOTIVOS_PERDIDA,
             "puede_reasignar": bool(perfil.get("ver_todo"))}

@@ -232,9 +232,17 @@ def listar_pg(perfil):
         for a in c["alertas"]:
             motivos[a["motivo"]] += 1
     return {"hoy": hoy.isoformat(), "clientes": salida, "duenos": duenos,
-            "vendedores_reasignar": sorted({v for v in CRM.vendedores_piloto() if not CRM.retirado(v)} | set(CRM.REEMPLAZOS.values())),
+            "vendedores_reasignar": vendedores_con_cartera(),
             "segmentos": dict(seg), "alertas_por_motivo": dict(motivos), "tipos_gestion": CRM.TIPOS_GESTION,
             "puede_reasignar": bool(perfil.get("ver_todo"))}
+
+
+def vendedores_con_cartera():
+    """Vendedores que se pueden elegir como dueño: los que hoy atienden al menos un cliente A o B
+    de San Isidro, mas los reemplazos. Deja fuera a quien no tiene cartera (pedido del usuario
+    2026-11-27: aparecia David Sepulveda sin clientes)."""
+    con = {c["dueno"] for c in _cartera() if c["dueno"] and c["segmento"] in ("A", "B")}
+    return sorted((con | set(CRM.REEMPLAZOS.values())) - {None})
 
 
 def alertas_pg(perfil):
