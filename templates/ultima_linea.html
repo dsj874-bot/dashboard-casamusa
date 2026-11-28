@@ -24,6 +24,8 @@
     padding: 6px 12px; border-radius: 6px; cursor: pointer; }
   .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
   .seg button:focus-visible, .ul-f select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ch-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
+  .ch-tog button { padding: 4px 10px; font-size: 11.5px; }
   .ul-der { margin-left: auto; font-size: 11px; color: var(--muted2); text-align: right; line-height: 1.45; }
   .ul-der strong { color: var(--text); }
 
@@ -144,8 +146,12 @@
 </div>
 
 <div class="ul-graf">
-  <div class="ul-card"><div class="ul-titulo">Venta vs punto de equilibrio</div>
-    <div class="ul-sub">La barra es la venta; la raya, lo mínimo que la sucursal necesita vender.</div>
+  <div class="ul-card"><div class="ch-cab"><div class="ul-titulo">Venta vs punto de equilibrio</div>
+      <div class="seg ch-tog" id="ch-pe-tog" role="group" aria-label="Qué mostrar en el gráfico">
+        <button type="button" data-gpe="prom" aria-pressed="true">Promedio</button>
+        <button type="button" data-gpe="curso" aria-pressed="false">Mes en curso</button>
+      </div></div>
+    <div class="ul-sub" id="ch-pe-sub">La barra es la venta; la raya, lo mínimo que la sucursal necesita vender.</div>
     <div class="ul-chart"><canvas id="ch-pe" role="img" aria-label="Venta y punto de equilibrio por sucursal"></canvas></div></div>
   <div class="ul-card"><div class="ul-titulo">Última línea de la empresa, mes a mes</div>
     <div class="ul-sub" id="ch-mes-sub">Margen del mes menos el gasto mensual del GG. El mes en curso va proyectado.</div>
@@ -183,7 +189,8 @@ const holgPill = h => {
 };
 
 const estado = {escenario: 'real', periodo: 'prom', reparto: 'margen', ne: '1'};
-let chPe, chMes, primeraCarga = true;
+estado.gpe = 'prom';   // base del gráfico venta vs equilibrio (no viaja a la API)
+let chPe, chMes, primeraCarga = true, ultimo = null;
 
 function opcionesPeriodo(d) {
   const sel = document.getElementById('f-periodo');
@@ -197,7 +204,8 @@ function opcionesPeriodo(d) {
 
 async function cargar() {
   document.getElementById('ul-der').textContent = 'Cargando…';
-  const q = new URLSearchParams(estado);
+  const {gpe, ...params} = estado;
+  const q = new URLSearchParams(params);
   const r = await fetch('/api/ultima_linea?' + q);
   const d = await r.json();
   if (!d.ok) { document.getElementById('ul-der').textContent = 'Error: ' + d.msg; return; }
@@ -209,6 +217,7 @@ async function cargar() {
   const [a, m, di] = d.corte.split('-');
   document.getElementById('ul-der').innerHTML = `Venta al <strong>${di}-${m}-${a}</strong><br>Millones de pesos`;
   document.getElementById('f-ne').style.display = d.escenario === '2027' ? 'none' : '';
+  ultimo = d;
   pintarEquilibrio(d); pintarKpis(d); pintarTabla(d); pintarGraficos(d);
 }
 
@@ -335,7 +344,16 @@ function pintarGraficos(d) {
   Chart.defaults.color = cssVar('--muted2');
   Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
   const grid = cssVar('--border'), pos = cssVar('--pos'), neg = cssVar('--red'), txt = cssVar('--text'), amb = cssVar('--amber');
-  const filas = d.filas.filter(f => !f.especial).sort((a, b) => b.venta - a.venta);
+  // El gráfico elige su propia base: promedio de meses cerrados o mes en curso proyectado.
+  const g = d.grafico, tog = document.getElementById('ch-pe-tog');
+  tog.style.display = g && g.curso ? '' : 'none';
+  if (g && !g[estado.gpe]) estado.gpe = 'prom';
+  tog.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.gpe === estado.gpe));
+  const src = g ? g[estado.gpe].barras : d.filas.filter(f => !f.especial);
+  document.getElementById('ch-pe-sub').textContent = (g ? g[estado.gpe].titulo + '. ' : '')
+    + (g && estado.gpe === 'curso' ? 'Venta al día proyectada al cierre por días hábiles' + (d.con_ne && d.ne_total ? ', más los NE por facturar' : '') + '. ' : '')
+    + 'La barra es la venta; la raya, lo mínimo que la sucursal necesita vender.';
+  const filas = src.slice().sort((a, b) => b.venta - a.venta);
   if (chPe) chPe.destroy();
   chPe = new Chart(document.getElementById('ch-pe'), {
     type: 'bar',
@@ -380,6 +398,10 @@ document.querySelectorAll('[data-ne]').forEach(b => b.addEventListener('click', 
   document.querySelectorAll('[data-ne]').forEach(x => x.setAttribute('aria-pressed', x === b)); cargar();
 }));
 document.getElementById('f-periodo').addEventListener('change', e => { estado.periodo = e.target.value; cargar(); });
+document.querySelectorAll('[data-gpe]').forEach(b => b.addEventListener('click', () => {
+  estado.gpe = b.dataset.gpe;
+  if (ultimo) pintarGraficos(ultimo);
+}));
 cargar();
 </script>
 {% endblock %}

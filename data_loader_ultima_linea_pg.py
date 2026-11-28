@@ -343,7 +343,26 @@ def get_panel(escenario="real", periodo="prom", reparto="margen", con_ne=True):
             f["ul_anio"] = anio_c.get(f["canal"])
         total["ul_acum"] = t_acum["ultima_linea"]
         total["ul_anio"] = t_anio["ultima_linea"]
+
+    # Grafico "Venta vs punto de equilibrio": el usuario elige ahi mismo entre el
+    # promedio de los meses cerrados y el mes en curso proyectado (2026-11-28),
+    # sin cambiar el periodo de la tabla.
+    grafico = None
+    if escenario != "2027":
+        def _barras(b):
+            f_, _ = _calcular(b, reparto)
+            return [{"nombre": x["nombre"], "venta": x["venta"], "pe": x["pe"]} for x in f_ if not x.get("especial")]
+        b_prom = _base_real(datos, cerrados)
+        for c, b in b_prom.items():
+            n = (len(cerrados) if c == ESPECIAL else b["meses"]) or 1
+            b_prom[c] = {k: (x / n if k != "meses" else n) for k, x in b.items()}
+        grafico = {"prom": {"titulo": f"Promedio ene–{MESES[cerrados[-1] - 1].lower() if cerrados else ''}",
+                            "barras": _barras(b_prom)}}
+        if md_hoy:
+            grafico["curso"] = {"titulo": f"{MESES[mes_actual - 1]} proyectado",
+                                "barras": _barras(_base_real({mes_actual: proyectar(md_hoy)}, [mes_actual]))}
     return {
+        "grafico": grafico,
         "corte": corte.isoformat(), "anio": anio, "escenario": escenario, "periodo": periodo,
         "reparto": reparto, "con_ne": bool(con_ne), "ne_total": ne_total,
         "ne_por_canal": ne, "mg_ne": {c: m * 100 for c, m in mg_ne.items()}, "etiqueta": etiqueta, "nota_periodo": nota_periodo,
