@@ -128,7 +128,11 @@
 </div>
 
 <div class="ul-card">
-  <div class="ul-titulo"><span id="t-etiqueta">Última línea por sucursal</span></div>
+  <div class="ch-cab"><div class="ul-titulo"><span id="t-etiqueta">Última línea por sucursal</span></div>
+    <div class="seg ch-tog" id="t-tog" role="group" aria-label="Qué mostrar en la tabla">
+      <button type="button" data-tper="prom" aria-pressed="true">Promedio</button>
+      <button type="button" data-tper="curso" aria-pressed="false">Mes en curso</button>
+    </div></div>
   <div class="ul-sub" id="t-nota">Millones de pesos.</div>
   <div class="ul-wrap">
     <table class="ul-tabla">
@@ -313,6 +317,13 @@ function pintarKpis(d) {
 
 function pintarTabla(d) {
   document.getElementById('t-etiqueta').textContent = 'Última línea por sucursal · ' + d.etiqueta;
+  // Atajo Promedio / Mes en curso (proyectado): mueve el mismo selector de Período.
+  const enCurso = (d.meses_disponibles.find(m => m.nombre.includes('(en curso)')) || {}).valor;
+  const tTog = document.getElementById('t-tog');
+  tTog.style.display = d.escenario === '2027' || !enCurso ? 'none' : '';
+  tTog.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed',
+    b.dataset.tper === 'prom' ? d.periodo === 'prom' : d.periodo === enCurso));
+  tTog.dataset.curso = enCurso || '';
   document.getElementById('t-nota').textContent = 'Millones de pesos. ' + d.nota_periodo +
     (d.reparto === 'margen' ? ' Indirectas repartidas por margen.' : ' Indirectas repartidas por venta, como en el archivo del GG.');
   const fila = (f, total) => `<tr class="${total ? 'total' : ''}">
@@ -398,6 +409,12 @@ document.querySelectorAll('[data-ne]').forEach(b => b.addEventListener('click', 
   document.querySelectorAll('[data-ne]').forEach(x => x.setAttribute('aria-pressed', x === b)); cargar();
 }));
 document.getElementById('f-periodo').addEventListener('change', e => { estado.periodo = e.target.value; cargar(); });
+document.querySelectorAll('[data-tper]').forEach(b => b.addEventListener('click', () => {
+  const curso = document.getElementById('t-tog').dataset.curso;
+  estado.periodo = b.dataset.tper === 'curso' && curso ? curso : 'prom';
+  estado.gpe = b.dataset.tper === 'curso' && curso ? 'curso' : 'prom';   // el gráfico acompaña a la tabla
+  cargar();
+}));
 document.querySelectorAll('[data-gpe]').forEach(b => b.addEventListener('click', () => {
   estado.gpe = b.dataset.gpe;
   if (ultimo) pintarGraficos(ultimo);
